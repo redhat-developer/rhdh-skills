@@ -1,0 +1,3 @@
+interface:
+  display_name: 'RHDH Dependency PR Triage'
+  short_description: 'Triage Renovate and Dependabot PRs'
