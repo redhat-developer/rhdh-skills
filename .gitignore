@@ -39,6 +39,7 @@ client_secret*.json
 
 # Personal workspace wrapper (not part of the skill repo)
 rhdh-local-setup/
+rhdh-feature-docs-output/**
 
 # Temporary testing checkouts
 tmp/
