@@ -29,9 +29,10 @@ natural-language request to a full job name, the override options, and execution
 `~/.config/openshift-ci/kubeconfig` so it never disturbs the user's current
 cluster context. It consumes an existing `oc` session and never performs a login.
 
-When `oc` is missing, the dedicated kubeconfig is absent, or the session has
-expired, stop and tell the user to run `/setup-rhdh-skills openshift-ci`. Setup
-owns login; this skill does not.
+Live submission and `--status` require that session. When `oc` is missing, the
+dedicated kubeconfig is absent, or the session has expired, stop and tell the
+user to run `/setup-rhdh-skills openshift-ci`. Setup owns login; this skill does
+not. Offline previews and public job/tag listings do not require authentication.
 
 The public script hands `scripts/gangway_adapter.py` only a kubeconfig path and
 the request payload. That adapter alone retrieves the transient credential and
@@ -40,14 +41,17 @@ tokens out of arguments, output, and anything reported back.
 
 ## Execution rules
 
-Triggering a job is an external write; `--dry-run` and `--list` are not. Follow
-`/mutation-gate`, with the full job name as the target.
+Triggering a job is an external write; `--dry-run`, `--list`, `--list-tags`, and
+`--status` are not. Follow `/mutation-gate`, with the full job name as the target.
 
-- Preview with `--dry-run` first. It prints the adapter request without
-  executing.
-- The preview carries the full command, the parameters, what the run will cost
-  and touch, and how to abort it. Get explicit approval before running without
-  `--dry-run`.
+- Preview with `--dry-run` first. It validates the supported nightly name and
+  flags offline, then prints the adapter request without accessing credentials,
+  creating configuration, or making network requests. It does not validate job,
+  image, or chart existence. Live submission checks the owning repository's
+  configured job list and stops if membership cannot be verified.
+- The preview carries the full command, parameters, resource impact, unknown
+  cost, abort guidance, failure behavior, and verification steps. Use it in the
+  write gate; get explicit approval before running without `--dry-run`.
 - GKE and OSD-GCP each share one cluster. Never start a second job on the same
   platform while one is running; warn the user before triggering either.
 - Approval to inspect or dry-run is not approval to execute. Ask again.
