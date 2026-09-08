@@ -57,7 +57,7 @@ tree is clean before writing.
   `tag@sha256`, copy `.nvm/`, rewrite `konflux.additional-tags` `node-v*` to
   match `.nvmrc`, and set overlays `versions.json` `node` to that version.
   Catalog maps `release-1.Y` → GitLab `rhdh-1.Y-rhel-9` and
-  `release-2.Y` → GitLab `release-2.Y`. Catalog has no
+  `release-2.Y` → GitLab `release-2.Y` (using UBI10 / RHEL10). Catalog has no
   `rpms.lock.yaml`. Do not `[skip-build]` the catalog builder commit.
 - On rhdh-operator `main`, raise `go.mod` to the Go toolset image when the
   image is newer. Never lower `go` or `toolchain` to match an older image;
