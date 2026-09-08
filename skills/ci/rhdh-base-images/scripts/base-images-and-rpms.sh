@@ -85,12 +85,10 @@ validate_branch() {
 
 scripts_branch_for() {
     local branch="$1"
-    if [[ "${branch}" == "main" ]]; then
-        echo "rhdh-1-rhel-9"
-    elif [[ "${branch}" =~ ^release-(.+)$ ]]; then
+    if [[ "${branch}" =~ ^release-1.(.+)$ ]]; then
         echo "rhdh-${BASH_REMATCH[1]}-rhel-9"
     else
-        die "No GitLab scripts branch mapping for ${branch}"
+        echo "${branch}"
     fi
 }
 
@@ -99,7 +97,7 @@ is_git_checkout() {
 }
 
 # GitHub -b selector → plugin-catalog GitLab branch.
-# 1.Y still uses rhdh-1.Y-rhel-9; 2.Y+ uses the same release-X.Y name as GitHub.
+# 1.Y uses rhdh-1.Y-rhel-N; 2.Y+ uses the same release-X.Y name as GitHub.
 catalog_git_branch_for() {
     local branch="$1"
     if [[ "${branch}" == "main" ]]; then
@@ -678,7 +676,7 @@ PY
 
 operator_go_toolset_image() {
     local dockerfile="$1"
-    grep -E '^FROM registry\.access\.redhat\.com/ubi9/go-toolset:' "${dockerfile}" \
+    grep -E '^FROM registry\.access\.redhat\.com/ubi(9|10)/go-toolset:' "${dockerfile}" \
         | head -1 | awk '{print $2}'
 }
 
@@ -775,7 +773,7 @@ update_operator_go_mod() {
         sed -i -e "s/^toolchain .*/toolchain go${go_full}/" go.mod
     fi
 
-    commit_push_paths "${branch}" "chore: align go.mod with ubi9/go-toolset go${go_full} [skip-build]" go.mod
+    commit_push_paths "${branch}" "chore: align go.mod with ${image%%:*} go${go_full} [skip-build]" go.mod
     popd >/dev/null
 }
 
