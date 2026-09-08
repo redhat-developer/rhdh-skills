@@ -11,9 +11,12 @@ Run every command below from this skill's directory.
 
 ## Flow
 
-1. Fetch available jobs and let the user pick one
-2. Ask about image override and additional options (fork, alerts)
-3. Show the command, confirm, execute, report results
+1. Resolve the requested job; fetch available jobs when selection is needed
+2. Fill in any requested overrides that are missing values
+3. Preview, apply the write gate, execute, and report results
+
+For a supplied full job name and flags, go directly to the preview in Step 3.
+For an existing execution ID, use the status command under "Status and recovery".
 
 ## Step 1: Fetch Jobs and Select
 
@@ -125,9 +128,9 @@ Use `--image-repo <REPO>` to query a different image repository (default: `rhdh/
 
 ## Step 3: Plan, approve, and execute
 
-Show the full command, its parameters, the target job, what the run risks, how to
-abort it, and how you will verify it started. Ask for explicit approval before
-omitting `--dry-run`:
+Run this command with `--dry-run` first. Use the printed execution command and
+request details in the write gate described in `../SKILL.md`. Supplement the
+resource impact and abort guidance with any known platform-specific details.
 
 ```bash
 uv run scripts/trigger_nightly_job.py \
@@ -145,10 +148,38 @@ uv run scripts/trigger_nightly_job.py \
   [--dry-run]
 ```
 
-1. **Execute** — run the command as shown
-2. **Change something** — go back and modify parameters
+After approval, run the preview's `execution_command`. If parameters change,
+generate a new preview before submitting.
 
-After execution, show the API response. If a job URL or ID is returned, display it prominently. On error, help diagnose (common issues: expired token, invalid job name).
+After execution, show the API response and any returned URL or ID. If both are
+missing, report that verification is incomplete.
+
+### Status and recovery
+
+To refresh an existing execution, use the GET-only status command:
+
+```bash
+uv run scripts/trigger_nightly_job.py --status <EXECUTION_ID>
+```
+
+The CLI also prints this command after submission. Repeating a trigger creates
+another ProwJob; use `--status` for follow-up, including when URL polling fails.
+Status cannot be combined with `--job`, `--dry-run`, or trigger overrides.
+
+Preserve the adapter's error diagnosis. Authentication failures name the setup
+route; permission failures require access review. An invalid request, unknown
+execution, rate limit, service failure, or network failure has its own guidance.
+Do not reinterpret every API failure as an invalid job name.
+
+Creation is not idempotent. If a POST times out, receives a server error, or
+returns an unreadable response, the job may already exist. Inspect the named
+job's Prow history before another submission; if an execution ID is known, use
+`--status`. Report status lookup failures separately from submission failures.
+
+Use the preview's abort guidance when stopping a submitted run is requested.
+Stopping the client does not cancel the ProwJob, and this CLI has no cancel
+operation. An OpenShift CI administrator needs the execution ID or URL to abort
+the run and check resource cleanup.
 
 ### RC Verification Example
 
@@ -171,7 +202,8 @@ uv run scripts/trigger_nightly_job.py \
 
 ## Reference
 
-- Script flags: `-j/--job`, `-l/--list`, `-T/--list-tags`, `--tag-filter`, `-I/--image-registry`, `-q/--image-repo`, `-t/--tag`, `--catalog-index-image`, `--chart-version`, `--playwright-version`, `-o/--org`, `-r/--repo`, `-b/--branch`, `-S/--send-alerts`, `-n/--dry-run`, `--json`
+- Script flags: `-j/--job`, `-l/--list`, `-T/--list-tags`, `--status`, `--tag-filter`, `-I/--image-registry`, `-q/--image-repo`, `-t/--tag`, `--catalog-index-image`, `--chart-version`, `--playwright-version`, `-o/--org`, `-r/--repo`, `-b/--branch`, `-S/--send-alerts`, `-n/--dry-run`, `--json`
+- API behavior: <https://docs.ci.openshift.org/how-tos/triggering-prowjobs-via-rest/>
 - Authentication and the adapter boundary: see `../SKILL.md`
 - RHDH jobs list: <https://prow.ci.openshift.org/configured-jobs/redhat-developer/rhdh>
 - Overlay jobs list: <https://prow.ci.openshift.org/configured-jobs/redhat-developer/rhdh-plugin-export-overlays>
