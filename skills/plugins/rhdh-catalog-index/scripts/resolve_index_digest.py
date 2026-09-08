@@ -8,6 +8,7 @@ pin, alongside the per-architecture children so the two are never confused.
     resolve_index_digest.py --tag 1.10.4-1788447603
     resolve_index_digest.py --stream 1.10 --compare-to sha256:51d12fc0...
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,13 +51,20 @@ def digest_of(ref: str) -> tuple[str | None, str | None]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--stream", help='Release stream, e.g. "1.10". Resolves the floating tag.')
     src.add_argument("--tag", help='Exact tag, e.g. "1.10.4-1788447603".')
-    ap.add_argument("--repo", default=DEFAULT_REPO, help=f"Index repository (default: {DEFAULT_REPO})")
-    ap.add_argument("--compare-to", metavar="DIGEST",
-                    help="A digest already deployed. Exit 2 when it differs from the resolved one.")
+    ap.add_argument(
+        "--repo", default=DEFAULT_REPO, help=f"Index repository (default: {DEFAULT_REPO})"
+    )
+    ap.add_argument(
+        "--compare-to",
+        metavar="DIGEST",
+        help="A digest already deployed. Exit 2 when it differs from the resolved one.",
+    )
     ap.add_argument("--json", action="store_true", help="Machine-readable output")
     args = ap.parse_args()
 
@@ -73,9 +81,13 @@ def main() -> int:
     if manifest and "manifests" in manifest:
         for m in manifest["manifests"]:
             p = m.get("platform", {})
-            children.append({
-                "os": p.get("os"), "architecture": p.get("architecture"), "digest": m["digest"],
-            })
+            children.append(
+                {
+                    "os": p.get("os"),
+                    "architecture": p.get("architecture"),
+                    "digest": m["digest"],
+                }
+            )
 
     result = {
         "reference": ref,
@@ -86,7 +98,11 @@ def main() -> int:
 
     drift = None
     if args.compare_to:
-        normalized = args.compare_to if args.compare_to.startswith("sha256:") else f"sha256:{args.compare_to}"
+        normalized = (
+            args.compare_to
+            if args.compare_to.startswith("sha256:")
+            else f"sha256:{args.compare_to}"
+        )
         drift = normalized != listed
         result["deployed_digest"] = normalized
         result["drift"] = drift
@@ -101,7 +117,9 @@ def main() -> int:
             print(f"  child {c['os']}/{c['architecture']:<8} {c['digest']}   <- do NOT pin this")
         if drift is not None:
             print(f"deployed            {result['deployed_digest']}")
-            print(f"drift               {'YES - deployment is behind' if drift else 'no - already current'}")
+            print(
+                f"drift               {'YES - deployment is behind' if drift else 'no - already current'}"
+            )
 
     return 2 if drift else 0
 

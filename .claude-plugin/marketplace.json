@@ -96,7 +96,8 @@
         "./skills/plugins/rhdh-plugin-wiring",
         "./skills/plugins/rhdh-pr-create",
         "./skills/plugins/rhdh-pr-review",
-        "./skills/plugins/rhdh-test-placement"
+        "./skills/plugins/rhdh-test-placement",
+        "./skills/plugins/rhdh-catalog-index"
       ]
     },
     {

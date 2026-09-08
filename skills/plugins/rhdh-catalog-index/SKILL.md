@@ -137,3 +137,16 @@ Worth knowing when someone asks why a fresh install is already wrong:
 Both are pinned at build time, so both go stale the same way. RHDHBUGS-3720 is
 the worked example: 1.10.4 shipped with an index whose orchestrator and
 lightspeed digests were never published to the Red Hat registry.
+
+## Completion
+
+Complete when the resolved manifest-list digest is stated, the override is shown
+exactly as applied on the path it was applied to, and `verify_index.py` has been
+run against the deployment afterwards with its three numbers reported — index
+used, plugins installed, fallback count.
+
+A run that ends at "the pod is green" is not complete. So is one that reports a
+digest without saying whether it came from the list or from an architecture
+child. When the fallback count is above zero after an override, say so plainly:
+the deployment is still resolving plugins from quay, and the override did not
+take.

@@ -9,6 +9,7 @@ The fallback count is the only signal that this happened.
     verify_index.py --namespace rhdh-test
     verify_index.py --namespace rhdh-test --expect-digest sha256:65a60ffc...
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,8 +29,16 @@ def oc(*args: str) -> tuple[str, int]:
 
 
 def newest_pod(namespace: str, selector: str | None) -> str | None:
-    args = ["get", "pods", "-n", namespace, "--sort-by=.metadata.creationTimestamp",
-            "--no-headers", "-o", "custom-columns=:metadata.name"]
+    args = [
+        "get",
+        "pods",
+        "-n",
+        namespace,
+        "--sort-by=.metadata.creationTimestamp",
+        "--no-headers",
+        "-o",
+        "custom-columns=:metadata.name",
+    ]
     if selector:
         args += ["-l", selector]
     out, rc = oc(*args)
@@ -42,7 +51,9 @@ def newest_pod(namespace: str, selector: str | None) -> str | None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--namespace", required=True)
     ap.add_argument("--pod", help="Pod name; defaults to the newest RHDH pod in the namespace")
     ap.add_argument("--selector", help="Label selector to narrow the pod search")
@@ -57,8 +68,10 @@ def main() -> int:
 
     log, rc = oc("logs", "-n", args.namespace, pod, "-c", "install-dynamic-plugins")
     if rc != 0 or not log:
-        print(f"error: no install-dynamic-plugins log on {pod}; is the init container still running?",
-              file=sys.stderr)
+        print(
+            f"error: no install-dynamic-plugins log on {pod}; is the init container still running?",
+            file=sys.stderr,
+        )
         return 1
 
     index = INDEX_RE.search(log)
@@ -73,7 +86,11 @@ def main() -> int:
 
     mismatch = False
     if args.expect_digest:
-        want = args.expect_digest if args.expect_digest.startswith("sha256:") else f"sha256:{args.expect_digest}"
+        want = (
+            args.expect_digest
+            if args.expect_digest.startswith("sha256:")
+            else f"sha256:{args.expect_digest}"
+        )
         result["expected_digest"] = want
         mismatch = not (result["index_used"] or "").endswith(want)
         result["matches_expected"] = not mismatch
@@ -84,8 +101,10 @@ def main() -> int:
         print(f"pod                 {result['pod']}")
         print(f"index used          {result['index_used'] or '(not found in log)'}")
         print(f"plugins installed   {result['plugins_installed']}")
-        print(f"quay.io fallbacks   {result['quay_fallbacks']}"
-              f"{'   <- stale index: older builds were served' if result['quay_fallbacks'] else ''}")
+        print(
+            f"quay.io fallbacks   {result['quay_fallbacks']}"
+            f"{'   <- stale index: older builds were served' if result['quay_fallbacks'] else ''}"
+        )
         if args.expect_digest:
             print(f"matches expected    {'yes' if not mismatch else 'NO'}")
 
