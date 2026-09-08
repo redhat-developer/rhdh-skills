@@ -113,7 +113,8 @@
         "./skills/jira/rhdh-jira-refine",
         "./skills/jira/rhdh-jira-sprint-plan",
         "./skills/jira/rhdh-jira-sprint-report",
-        "./skills/jira/rhdh-jira-update"
+        "./skills/jira/rhdh-jira-update",
+        "./skills/jira/rhdh-feature-docs"
       ]
     }
   ]

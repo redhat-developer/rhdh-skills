@@ -97,6 +97,15 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-feature-docs",
+      "category": "jira",
+      "invocation": "model",
+      "requiresSkills": [
+        "prose-editing"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-backstage-upgrade",
       "category": "plugins",
       "invocation": "model",

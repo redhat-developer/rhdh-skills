@@ -55,7 +55,7 @@ Skills are grouped into seven folders:
 
 | Folder | Covers |
 | --- | --- |
-| `jira/` | Creating, refining, updating, and reporting on RHIDP, RHDHPLAN, RHDHBUGS, and RHDHSUPP work, plus sprint ceremonies and linking PRs to issues. |
+| `jira/` | Creating, refining, updating, and reporting on RHIDP, RHDHPLAN, RHDHBUGS, and RHDHSUPP work, plus sprint ceremonies, linking PRs to issues, and generating RHDH feature documentation from a Jira feature link. |
 | `plugins/` | Authoring, wiring, exporting, and fixing Backstage dynamic plugins; the overlays repository; local RHDH; opening and reviewing pull requests; testing rhdh-operator PRs on a cluster; midstream propagation. |
 | `ci/` | Prow job configuration and nightly triggers, Konflux and Tekton task updates, release-data admission tags, base images, and Yarn bumps. |
 | `release/` | Release status and readiness, milestone schedules, freeze announcements, teams, test-plan review, platform lifecycle, plugin CVE export, and RC/GA Helm+Operator smoke. |
