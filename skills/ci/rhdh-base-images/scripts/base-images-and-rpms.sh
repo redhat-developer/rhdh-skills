@@ -85,7 +85,7 @@ validate_branch() {
 
 scripts_branch_for() {
     local branch="$1"
-    if [[ "${branch}" =~ ^release-1.(.+)$ ]]; then
+    if [[ "${branch}" =~ ^release-(1\..+)$ ]]; then
         echo "rhdh-${BASH_REMATCH[1]}-rhel-9"
     else
         echo "${branch}"
