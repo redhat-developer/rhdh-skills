@@ -26,16 +26,18 @@ This is not full QE, Prow e2e, local compose, or an operator-PR catalog test.
 ## Route
 
 1. Collect tags. Stop if tags are missing — do not invent CI tags.
-2. Establish `oc` (login below). Derive `CLUSTER_ROUTER_BASE` before Helm.
-3. Default is an **RC** run. A **GA** run (published chart / OperatorHub `fast`,
+2. Check the catalog index **before installing** (below). A failure stops the
+   run: installing first tells you nothing, because the fallback hides it.
+3. Establish `oc` (login below). Derive `CLUSTER_ROUTER_BASE` before Helm.
+4. Default is an **RC** run. A **GA** run (published chart / OperatorHub `fast`,
    including `fast` ↔ `fast-1.y`) only when the user asked for GA.
-4. Follow `/mutation-gate` **once** for both full chains (login + Helm +
+5. Follow `/mutation-gate` **once** for both full chains (login + Helm +
    Operator). Then launch two agents in the **same turn** (Helm and Operator).
    Do not wait for Helm to finish before launching Operator. Do not run both
    chains in the parent.
-5. Load `workflows/helm.md` in the Helm agent, `workflows/operator.md` in the
+6. Load `workflows/helm.md` in the Helm agent, `workflows/operator.md` in the
    Operator agent.
-6. After every install or upgrade: Guest (below), then verify (below), then a
+7. After every install or upgrade: Guest (below), then verify (below), then a
    live line (below).
 
 | Load when | File |
@@ -45,6 +47,7 @@ This is not full QE, Prow e2e, local compose, or an operator-PR catalog test.
 | Guest fragment | `assets/app-config-guest.yaml` |
 | Helm Guest overlay | `assets/helm-values-guest.yaml` |
 | Console URL → router / API | `scripts/cluster_from_console.py` |
+| Catalog index preflight | `scripts/check_index_refs.py` |
 
 `SKILL_DIR` is the directory that contains this `SKILL.md`.
 
@@ -175,6 +178,30 @@ Failure: same sentence, then `FAILED` and the reason. Skip:
 - Catalog UI warning `spec.backstage` additionalProperty `author` is not
   `packages-low`.
 
+
+## Catalog index preflight
+
+Run before any install, against the index the release under test will use:
+
+```bash
+python3 "${SKILL_DIR}/scripts/check_index_refs.py" \
+  --index registry.access.redhat.com/rhdh/plugin-catalog-index:<stream-or-tag>
+```
+
+Exit 1 means the index names plugin images that do not resolve from
+registry.access.redhat.com. Stop and report; do not install.
+
+This has to happen here rather than after the install, because
+install-dynamic-plugins falls back from `registry.access.redhat.com/rhdh/` to
+`quay.io/rhdh/` when a manifest is missing. An index naming refs that were never
+promoted to RHEC therefore installs cleanly, the pods go green, and the release
+quietly serves images from the wrong registry — which is how RHDH 1.10.4
+shipped. No post-install check on a single cluster reveals that; the index
+itself is the only place it is visible.
+
+The script reports which refs are reachable only via quay. Those are the ones
+that would have been silently substituted.
+
 ## Completion
 
 After both agents finish, print this table (Status first, fixed-width column).
@@ -198,3 +225,8 @@ If Markdown collapses padding, use HTML `<colgroup><col style="width:11em"><col>
 Name the Guest method under the table (Helm `appConfig` vs Operator ConfigMap),
 not as a seventh row. A step that never ran because an earlier write was refused
 is skipped, not omitted.
+
+State the catalog index preflight above the table, on its own line: the index
+checked and how many of its refs resolve from RHEC. When it failed, that line
+and the unreachable refs are the whole report — nothing was installed, so the
+six rows do not exist yet.
