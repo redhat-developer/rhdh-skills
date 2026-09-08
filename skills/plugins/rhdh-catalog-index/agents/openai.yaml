@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Catalog Index"
+  short_description: "Resolve, override and verify the plugin catalog index"
