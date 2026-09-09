@@ -40,6 +40,8 @@ restating the setup.
 ## Boundary with the neighbouring skills
 
 - Milestone dates — Feature Freeze, Code Freeze, GA — are `/rhdh-release-schedule`.
+- Whether a named team can fit the `rhdh-X.Y-candidate` Features through Code
+  Freeze is `/rhdh-release-capacity-plan`. This skill reports status, not fit.
 - A Slack freeze announcement is `/rhdh-release-announce`.
 - The team roster, leads, and Cloud IDs are `/rhdh-release-teams`. This skill
   counts issues per team; it does not publish the roster.

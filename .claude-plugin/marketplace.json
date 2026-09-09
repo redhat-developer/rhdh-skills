@@ -50,6 +50,8 @@
         "./skills/release/rhdh-platform-lifecycle",
         "./skills/release/rhdh-release-announce",
         "./skills/reference/prose-editing",
+        "./skills/release/rhdh-release-capacity-plan",
+        "./skills/reference/rhdh-jira-api",
         "./skills/release/rhdh-release-schedule",
         "./skills/release/rhdh-release-status",
         "./skills/release/rhdh-release-teams",

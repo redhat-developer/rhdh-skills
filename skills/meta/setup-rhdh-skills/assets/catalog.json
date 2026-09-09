@@ -314,6 +314,17 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-release-capacity-plan",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api",
+        "rhdh-release-teams",
+        "rhdh-release-schedule"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-release-schedule",
       "category": "release",
       "invocation": "model",

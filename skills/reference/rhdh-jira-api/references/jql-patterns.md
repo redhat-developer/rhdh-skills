@@ -169,9 +169,20 @@ Sprints follow: `{Team Name} {Sprint Number}` (e.g., "RHDH COPE 3291", "RHDH Ins
 # List active sprints for a board
 acli jira board list-sprints --id 11374 --state active
 
+# Closed sprints (history for velocity). acli has no --recent; take the tail.
+acli jira board list-sprints --id 11374 --state closed --json
+
+# Sprint dates (startDate is the interrupt cutoff)
+acli jira sprint view --id 47486 --json
+
 # List work items in a sprint
 acli jira sprint list-workitems --sprint 65456 --board 11374 --limit 500
 ```
+
+Release-horizon velocity reconstructs completed story points and mid-sprint
+additions from those issues. The unofficial Greenhopper sprint-report path lives
+in [rest-api-fallback.md](rest-api-fallback.md); skip it when the host adapter
+cannot GET it.
 
 ### Saved Filters
 

@@ -33,6 +33,8 @@ call.
   for fill suggestions rather than scoring assignees itself.
 - Board IDs, sprint naming, JQL, and the Team field's JQL limitation are
   `/rhdh-jira-api`.
+- Whether a team can fit `rhdh-X.Y-candidate` Features through Code Freeze is
+  `/rhdh-release-capacity-plan`. This skill fills the next sprint only.
 - Release-level readiness is `/rhdh-release-status`.
 
 ## Completion

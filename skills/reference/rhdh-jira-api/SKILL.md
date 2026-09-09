@@ -34,6 +34,7 @@ here.
 | What must be true before this status transition? | [references/workflows.md](references/workflows.md) |
 | I need a relationship-heavy bulk read or a team roster | [references/graphql-queries.md](references/graphql-queries.md) |
 | `acli` cannot read or set this field | [references/rest-api-fallback.md](references/rest-api-fallback.md) |
+| Sprint report or burndown-chart numbers | [references/rest-api-fallback.md](references/rest-api-fallback.md), then `uv run scripts/greenhopper.py` |
 
 Load the one branch the question needs.
 
@@ -60,8 +61,9 @@ Run these from this skill's directory.
 
 | Script | Purpose |
 |---|---|
-| `scripts/setup.py` | Capability and auth detection; `--json` for structured output |
+| `scripts/setup.py` | Capability and auth detection; `--json` reports `token_file_found` / `token_file_status` without printing file contents |
 | `scripts/parse_issues.py` | Enrich, flatten, select, filter, or CSV-export `acli` JSON |
+| `scripts/greenhopper.py` | GET Greenhopper sprintreport / scopechange using the local token file in-process |
 | `scripts/validate_components.py` | Compare the documented component catalog against live Jira |
 | `scripts/jira-wiki-to-adf.py` | Convert a filled wiki-markup template to ADF JSON |
 
@@ -75,17 +77,19 @@ IDs do. It hands the caller a command or a payload, never an effect. Whichever
 skill owns the verb invokes `/mutation-gate` and runs it from there.
 
 Credentials never appear in an argument, a preview, a log, or the answer. A
-command built here takes its credential from `acli`'s own store or the
-authenticated host adapter at run time, so nothing this skill hands back carries
-one.
+command built here takes its credential from `acli`'s own store, the local
+token-file adapter (in-process, never printed), or the authenticated host
+adapter at run time, so nothing this skill hands back carries one.
 
 ## Boundary with the neighbouring skills
 
 - Opening new work is `/rhdh-jira-create`.
 - Judging whether existing work is ready is `/rhdh-jira-refine`.
 - Changing a field, status, assignee, comment, or link on a known key is `/rhdh-jira-update`.
-- Sprint carryover, velocity, and capacity are `/rhdh-jira-sprint-plan`; the end-of-sprint
-  summary is `/rhdh-jira-sprint-report`.
+- Sprint carryover, velocity, and next-sprint capacity are `/rhdh-jira-sprint-plan`; the
+  end-of-sprint summary is `/rhdh-jira-sprint-report`.
+- Whether a team can fit `rhdh-X.Y-candidate` Features through Code Freeze is
+  `/rhdh-release-capacity-plan`.
 - Issue templates, the grill matrix, sizing scales, and decomposition rules are
   `/rhdh-jira-authoring`.
 - What is still open against a release is `/rhdh-release-status`.

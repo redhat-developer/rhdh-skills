@@ -28,6 +28,8 @@ review and demo meeting.
   is `/rhdh-jira-sprint-plan`. This skill looks back; that one looks forward.
 - Judging whether individual issues are in good shape is `/rhdh-jira-refine`.
 - Board IDs, sprint naming, JQL, and custom field IDs are `/rhdh-jira-api`.
+- Whether a team can fit `rhdh-X.Y-candidate` Features through Code Freeze is
+  `/rhdh-release-capacity-plan`.
 - Release-level readiness across sprints is `/rhdh-release-status`.
 
 ## Completion

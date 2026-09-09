@@ -6,7 +6,7 @@ Cheat sheet for `acli jira` commands. For full flag details, run `acli jira <sub
 
 1. **`view` takes a positional arg.** Everything else uses `--key`.
 2. **Always pass `--yes`** on mutating commands (`edit`, `transition`, `assign`, `link create`) to skip interactive prompts.
-3. **Use `--json`** when you need fields beyond `key`, `summary`, `status`, `assignee`, `issuetype`, `priority`, `description`. The `--fields` flag rejects `components`, `sprint`, `labels`, `fixVersions`.
+3. **Use `--json`** when you need fields beyond `key`, `summary`, `status`, `assignee`, `issuetype`, `priority`, `description`. The `--fields` flag rejects `components`, `sprint`, `labels`, `fixVersions`, `storypoints`, and `parent`. Custom fields such as Story Points (`customfield_10028`) and Sprint (`customfield_10020`) are not on that allowlist — search with allowed fields, then enrich with `view --fields '*all'` or `parse_issues.py --enrich`.
 4. **Use `--csv`** for search results you want to pipe or parse.
 5. **Use `--paginate`** to fetch all results beyond the default page size.
 
