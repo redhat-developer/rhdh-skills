@@ -30,6 +30,8 @@ Which one answers a given version is a lookup, not a decision the user makes.
   release milestone.
 - Reading or editing the RHDHPLAN release Feature as a Jira issue is
   `/rhdh-jira-api`.
+- Ensuring the fix version for a release exists on RHIDP, RHDHPLAN, and
+  RHDHBUGS is `/rhdh-release-fixversions`.
 
 ## Completion
 

@@ -335,6 +335,15 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-release-fixversions",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-smoke-tests",
       "category": "release",
       "invocation": "model",
