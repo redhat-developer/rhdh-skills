@@ -13,9 +13,7 @@ from typing import Any
 from support import SUPPORT_LABELS, as_str, normalize_support
 
 DEFAULT_PACKAGES_REL = "default.packages.yaml"
-DEFAULT_PACKAGES_URL = (
-    "https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/default.packages.yaml"
-)
+DEFAULT_PACKAGES_URL = "https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/default.packages.yaml"
 
 OOTB_ENABLED = "enabled"
 OOTB_DISABLED = "disabled"
@@ -234,9 +232,7 @@ def apply_core_to_plugin(
     plugin["core_ootb_label"] = core_ootb_label(ootb) if is_core else ""
 
 
-def enrich_packages_with_core(
-    packages: list[dict[str, Any]], core: CoreIndex | None
-) -> None:
+def enrich_packages_with_core(packages: list[dict[str, Any]], core: CoreIndex | None) -> None:
     for pkg in packages:
         apply_core_to_package(pkg, core)
 

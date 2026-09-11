@@ -14,13 +14,13 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(LIB))
 sys.path.insert(0, str(SCRIPTS))
 
+import list_packages as lp  # noqa: E402
 from package_txt_compare import (  # noqa: E402
     compare_packages_to_txt,
     load_txt_files_from_root,
     packages_for_txt_path,
     parse_txt_paths,
 )
-import list_packages as lp  # noqa: E402
 
 
 class ParseTxtTests(unittest.TestCase):

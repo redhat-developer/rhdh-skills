@@ -29,7 +29,13 @@ from default_packages import (  # noqa: E402
     DEFAULT_PACKAGES_URL,
     CoreIndex,
     enrich_packages_with_core,
-    plugin_package_refs,
+)
+from diff import (  # noqa: E402
+    DiffReport,
+    arrow,
+    diff_items,
+    package_key,
+    restrict_to_matching_identities,
 )
 from overlay_repo import (  # noqa: E402
     collect_overlay,
@@ -48,13 +54,6 @@ from package_txt_compare import (  # noqa: E402
     compare_payload,
     load_txt_files_from_root,
     render_compare_markdown,
-)
-from diff import (  # noqa: E402
-    DiffReport,
-    arrow,
-    diff_items,
-    package_key,
-    restrict_to_matching_identities,
 )
 from support import (  # noqa: E402
     SUPPORT_LABELS,
@@ -110,11 +109,7 @@ def extract_package(doc: dict[str, Any], rel_path: str, workspace: str) -> dict[
     if not isinstance(backstage, dict):
         backstage = {}
     support_key = normalize_support(spec.get("support"))
-    title = (
-        as_str(meta.get("title"))
-        or as_str(meta.get("name"))
-        or as_str(spec.get("packageName"))
-    )
+    title = as_str(meta.get("title")) or as_str(meta.get("name")) or as_str(spec.get("packageName"))
     return {
         "workspace": workspace,
         "file": rel_path,
@@ -320,9 +315,7 @@ def render_markdown(
             continue
         lines.append(f"| {SUPPORT_LABELS[key]} | {count} |")
     if core_index:
-        core_counts = Counter(
-            p.get("core_ootb") for p in packages if p.get("core")
-        )
+        core_counts = Counter(p.get("core_ootb") for p in packages if p.get("core"))
         lines.extend(
             [
                 "",
@@ -414,15 +407,12 @@ def render_diff_markdown(
     lifecycle_rows = report.lifecycle_changes()
     noun = "package"
     lines: list[str] = [
-        f"# RHDH package diff: {version_from} → {version_to} "
-        f"(`{ref_from}` → `{ref_to}`)",
+        f"# RHDH package diff: {version_from} → {version_to} (`{ref_from}` → `{ref_to}`)",
         "",
         f"_Source: {source_caption_diff(source, ref_from, ref_to)}_",
         "",
         f"Scanned {scanned_from} Package YAML files on `{ref_from}` and "
-        f"{scanned_to} on `{ref_to}`"
-        + (" (filtered)" if filtered else "")
-        + ".",
+        f"{scanned_to} on `{ref_to}`" + (" (filtered)" if filtered else "") + ".",
         "",
         "| Change | Count |",
         "|---|---|",
@@ -748,7 +738,14 @@ def main(argv: list[str] | None = None) -> int:
     temp_dir = None
     try:
         if args.compare_txt:
-            if support_filters or args.workspace or args.package or args.core or args.enabled_ootb or args.disabled_ootb:
+            if (
+                support_filters
+                or args.workspace
+                or args.package
+                or args.core
+                or args.enabled_ootb
+                or args.disabled_ootb
+            ):
                 print(
                     "note: list filters are ignored with --compare-txt.",
                     file=sys.stderr,

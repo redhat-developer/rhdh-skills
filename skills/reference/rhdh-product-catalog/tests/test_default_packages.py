@@ -14,12 +14,11 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(LIB))
 sys.path.insert(0, str(SCRIPTS))
 
+import list_packages as lp  # noqa: E402
 from default_packages import (  # noqa: E402
     CoreIndex,
-    enrich_plugins_with_core,
     plugin_package_refs,
 )
-import list_packages as lp  # noqa: E402
 
 
 class DefaultPackagesParseTests(unittest.TestCase):

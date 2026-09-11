@@ -131,9 +131,7 @@ def parse_cat_file_batch(stdout: bytes, rel_paths: list[str]) -> dict[str, str]:
     return texts
 
 
-def read_files_via_git(
-    repo: Path, resolved_ref: str, rel_paths: list[str]
-) -> dict[str, str]:
+def read_files_via_git(repo: Path, resolved_ref: str, rel_paths: list[str]) -> dict[str, str]:
     """Read many blobs in one `git cat-file --batch` (one process, batched fetch)."""
     if not rel_paths:
         return {}
@@ -209,9 +207,7 @@ def discover_overlay_repo() -> Path | None:
             parent / OVERLAYS_DIRNAME,
             parent / "repo" / OVERLAYS_DIRNAME,
         ):
-            if (candidate / "workspaces").is_dir() or (
-                candidate / "catalog-entities"
-            ).is_dir():
+            if (candidate / "workspaces").is_dir() or (candidate / "catalog-entities").is_dir():
                 return candidate.resolve()
     return None
 
@@ -333,9 +329,7 @@ def collect_overlay_pair(
         from_rows = load_workdir(cloned)
         from_resolved = git_ref_exists(cloned, ref_from) or ref_from
         to_resolved = ensure_git_ref(cloned, ref_to)
-        switched = git(
-            cloned, "checkout", "--detach", "--force", to_resolved, check=False
-        )
+        switched = git(cloned, "checkout", "--detach", "--force", to_resolved, check=False)
         if switched.returncode == 0:
             return from_rows, from_resolved, load_workdir(cloned), to_resolved
         to_rows, to_resolved = load_git(cloned, ref_to)

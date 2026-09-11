@@ -10,7 +10,7 @@ from default_packages import (
     build_metadata_name_index,
     resolve_plugin_npm_packages,
 )
-from support import SUPPORT_LABELS, SUPPORT_ORDER, as_str, md_cell
+from support import SUPPORT_ORDER, as_str, md_cell
 
 
 def support_rank(support: str) -> int:
@@ -152,7 +152,9 @@ def analyze_support_alignment(
         report.workspace_package_spread.append(
             {
                 "workspace": workspace,
-                "packages": [_package_brief(p) for p in sorted(ws_packages, key=lambda x: x.get("title", ""))],
+                "packages": [
+                    _package_brief(p) for p in sorted(ws_packages, key=lambda x: x.get("title", ""))
+                ],
                 "support_levels": sorted(
                     {p.get("support_label", "") for p in ws_packages},
                     key=lambda label: support_rank(
@@ -170,7 +172,9 @@ def analyze_support_alignment(
         if npm and npm not in referenced_packages:
             report.packages_without_plugin.append(_package_brief(pkg))
 
-    report.packages_without_plugin.sort(key=lambda r: (r.get("workspace", ""), r.get("package_name", "")))
+    report.packages_without_plugin.sort(
+        key=lambda r: (r.get("workspace", ""), r.get("package_name", ""))
+    )
 
     report.plugin_package_mismatches.sort(
         key=lambda r: (

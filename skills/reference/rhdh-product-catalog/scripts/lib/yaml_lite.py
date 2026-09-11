@@ -190,9 +190,7 @@ def _parse_list(lines: list[str], idx: int, base_indent: int) -> tuple[list[Any]
                     else:
                         first_child = lines[peek].strip()
                         if ":" in first_child:
-                            item_dict[first_key], idx = _parse_mapping(
-                                lines, peek, child_indent
-                            )
+                            item_dict[first_key], idx = _parse_mapping(lines, peek, child_indent)
                         else:
                             item_dict[first_key] = _scalar(first_child)
                             idx = peek + 1

@@ -35,7 +35,8 @@ def init_overlay_git(repo: Path, branches: dict[str, dict[str, str]]) -> Path:
     )
     if init.returncode != 0:
         raise RuntimeError(
-            "git init failed: " + (init.stderr.strip() or init.stdout.strip() or str(init.returncode))
+            "git init failed: "
+            + (init.stderr.strip() or init.stdout.strip() or str(init.returncode))
         )
     first = True
     for branch, files in branches.items():

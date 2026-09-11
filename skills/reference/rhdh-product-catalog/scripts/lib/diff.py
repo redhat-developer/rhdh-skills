@@ -44,7 +44,9 @@ def plugin_key(plugin: dict[str, Any]) -> str:
     return Path(as_str(plugin.get("file"))).name.lower()
 
 
-def _index(items: list[dict[str, Any]], key_fn: KeyFn) -> tuple[dict[str, dict[str, Any]], list[str]]:
+def _index(
+    items: list[dict[str, Any]], key_fn: KeyFn
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
     index: dict[str, dict[str, Any]] = {}
     warnings: list[str] = []
     for item in items:

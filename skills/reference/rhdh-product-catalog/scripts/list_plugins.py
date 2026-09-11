@@ -25,12 +25,20 @@ if str(_LIB) not in sys.path:
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+import list_packages as lp_packages  # noqa: E402
 from default_packages import (  # noqa: E402
     DEFAULT_PACKAGES_REL,
     DEFAULT_PACKAGES_URL,
     CoreIndex,
     enrich_plugins_with_core,
     plugin_package_refs,
+)
+from diff import (  # noqa: E402
+    DiffReport,
+    arrow,
+    diff_items,
+    plugin_key,
+    restrict_to_matching_identities,
 )
 from overlay_repo import (  # noqa: E402
     collect_overlay,
@@ -40,13 +48,6 @@ from overlay_repo import (  # noqa: E402
     load_core_index,
     read_files_via_git,
     version_to_ref,
-)
-from diff import (  # noqa: E402
-    DiffReport,
-    arrow,
-    diff_items,
-    plugin_key,
-    restrict_to_matching_identities,
 )
 from support import (  # noqa: E402
     SUPPORT_LABELS,
@@ -64,8 +65,6 @@ from support_alignment import (  # noqa: E402
     render_alignment_markdown,
 )
 from yaml_lite import parse_yaml  # noqa: E402
-
-import list_packages as lp_packages  # noqa: E402
 
 PLUGIN_PATH = re.compile(r"^catalog-entities/extensions/plugins/([^/]+)\.ya?ml$")
 PREINSTALLED_ANN = "extensions.backstage.io/pre-installed"
@@ -127,17 +126,14 @@ def apply_catalog_membership(
         preview = ", ".join(missing[:8])
         extra = f" (+{len(missing) - 8} more)" if len(missing) > 8 else ""
         notes.append(
-            f"all.yaml lists {len(missing)} plugin file(s) with no Plugin YAML: "
-            f"{preview}{extra}."
+            f"all.yaml lists {len(missing)} plugin file(s) with no Plugin YAML: {preview}{extra}."
         )
     for plugin in plugins:
         name = Path(plugin["file"]).name
         in_catalog = name in targets
         plugin["in_catalog"] = in_catalog
         plugin["catalog_membership"] = IN_CATALOG if in_catalog else PACKAGED
-        plugin["catalog_membership_label"] = MEMBERSHIP_LABELS[
-            plugin["catalog_membership"]
-        ]
+        plugin["catalog_membership_label"] = MEMBERSHIP_LABELS[plugin["catalog_membership"]]
     return notes
 
 
@@ -230,9 +226,7 @@ def list_plugin_files_on_disk(root: Path) -> list[Path]:
     folder = root / "catalog-entities" / "extensions" / "plugins"
     if not folder.is_dir():
         return []
-    return sorted(
-        p for p in folder.iterdir() if p.is_file() and p.suffix in {".yaml", ".yml"}
-    )
+    return sorted(p for p in folder.iterdir() if p.is_file() and p.suffix in {".yaml", ".yml"})
 
 
 def load_from_workdir(root: Path) -> list[dict[str, Any]]:
@@ -308,7 +302,9 @@ def matches_filters(
     if membership and plugin["catalog_membership"] not in membership:
         return False
     if names:
-        hay = " ".join([plugin.get("title", ""), plugin.get("name", ""), plugin.get("file", "")]).lower()
+        hay = " ".join(
+            [plugin.get("title", ""), plugin.get("name", ""), plugin.get("file", "")]
+        ).lower()
         if not any(n.lower() in hay for n in names):
             return False
     if lifecycles:
@@ -392,9 +388,7 @@ def render_markdown(
             continue
         lines.append(f"| {SUPPORT_LABELS[key]} | {count} |")
     if core_index:
-        core_counts = Counter(
-            p.get("core_ootb") for p in plugins if p.get("core")
-        )
+        core_counts = Counter(p.get("core_ootb") for p in plugins if p.get("core"))
         lines.extend(
             [
                 "",
@@ -414,8 +408,7 @@ def render_markdown(
             f"| pre-installed | {yaml_counts.get('pre-installed', 0)} |",
             f"| custom | {yaml_counts.get('custom', 0)} |",
             "",
-            f"Scanned {scanned} Plugin YAML files on `{ref}` "
-            f"(skipped all.yaml and *.sample).",
+            f"Scanned {scanned} Plugin YAML files on `{ref}` (skipped all.yaml and *.sample).",
         ]
     )
     if warnings:
@@ -510,8 +503,7 @@ def render_diff_markdown(
     support_rows = report.support_changes()
     lifecycle_rows = report.lifecycle_changes()
     lines: list[str] = [
-        f"# RHDH plugin diff: {version_from} → {version_to} "
-        f"(`{ref_from}` → `{ref_to}`)",
+        f"# RHDH plugin diff: {version_from} → {version_to} (`{ref_from}` → `{ref_to}`)",
         "",
         f"_Source: {source_caption_diff(source, ref_from, ref_to)}_",
         "",
@@ -889,9 +881,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(err, file=sys.stderr)
                 return RESOLVE_EXIT
 
-            package_rows = load_package_rows(
-                source, args.repo, ref, workdir=args.workdir
-            )
+            package_rows = load_package_rows(source, args.repo, ref, workdir=args.workdir)
             warnings = list(_load_notes) + build_warnings(plugins, len(plugins))
             report = analyze_support_alignment(plugins, package_rows)
             payload = alignment_payload(
@@ -958,15 +948,13 @@ def main(argv: list[str] | None = None) -> int:
                 return rows
 
             try:
-                from_plugins, ref_from, to_plugins, ref_to, source, temp_dir = (
-                    collect_overlay_pair(
-                        version_from=version_from,
-                        version_to=version_to,
-                        repo_arg=args.repo,
-                        temp_prefix="rhdh-product-catalog-plugins-",
-                        load_git=load_git_pair,
-                        load_workdir=load_workdir_pair,
-                    )
+                from_plugins, ref_from, to_plugins, ref_to, source, temp_dir = collect_overlay_pair(
+                    version_from=version_from,
+                    version_to=version_to,
+                    repo_arg=args.repo,
+                    temp_prefix="rhdh-product-catalog-plugins-",
+                    load_git=load_git_pair,
+                    load_workdir=load_workdir_pair,
                 )
             except FileNotFoundError as exc:
                 print(str(exc), file=sys.stderr)

@@ -33,9 +33,7 @@ class FixtureListingTests(unittest.TestCase):
         self.assertTrue(all(".sample" not in f for f in files))
         self.assertTrue(lp.is_plugin_path("catalog-entities/extensions/plugins/scorecard.yaml"))
         self.assertFalse(
-            lp.is_plugin_path(
-                "catalog-entities/extensions/plugins/1-boilerplate.yaml.sample"
-            )
+            lp.is_plugin_path("catalog-entities/extensions/plugins/1-boilerplate.yaml.sample")
         )
         self.assertFalse(lp.is_plugin_path("catalog-entities/extensions/plugins/all.yaml"))
 
@@ -45,9 +43,7 @@ class FixtureListingTests(unittest.TestCase):
     def test_all_yaml_membership(self) -> None:
         in_cat = {p["name"] for p in self.plugins if p["in_catalog"]}
         packaged = {p["name"] for p in self.plugins if not p["in_catalog"]}
-        self.assertEqual(
-            in_cat, {"3scale", "scorecard", "bulk-import", "acr", "legacy-ga"}
-        )
+        self.assertEqual(in_cat, {"3scale", "scorecard", "bulk-import", "acr", "legacy-ga"})
         self.assertEqual(packaged, {"partner-plugin", "mystery"})
 
     def test_catalog_then_support_then_title_order(self) -> None:
@@ -187,9 +183,17 @@ class CliTests(unittest.TestCase):
         self.assertIn("### Generally Available", text)
         self.assertIn("### Community", text)
         self.assertIn("Partner Plugin", text)
-        self.assertIn("| Title | Support | Lifecycle | Author | Provider | Publisher | Core OOTB | Plugin YAML |", text)
-        self.assertIn("| APIs with 3scale | Community | active | Red Hat | Red Hat | Red Hat | — | pre-installed |", text)
-        self.assertIn("| Partner Plugin | Community | active | — | Example | — | — | custom |", text)
+        self.assertIn(
+            "| Title | Support | Lifecycle | Author | Provider | Publisher | Core OOTB | Plugin YAML |",
+            text,
+        )
+        self.assertIn(
+            "| APIs with 3scale | Community | active | Red Hat | Red Hat | Red Hat | — | pre-installed |",
+            text,
+        )
+        self.assertIn(
+            "| Partner Plugin | Community | active | — | Example | — | — | custom |", text
+        )
         in_cat = text.index("## Included in the Catalog")
         packaged = text.index("## Packaged, but Not in Catalog")
         self.assertLess(text.index("Bulk Import"), packaged)
@@ -297,11 +301,7 @@ class DiffCliTests(unittest.TestCase):
         def all_yaml(*names: str) -> str:
             targets = "\n".join(f"    - ./{n}.yaml" for n in names)
             return (
-                "apiVersion: backstage.io/v1alpha1\n"
-                "kind: Location\n"
-                "spec:\n"
-                "  targets:\n"
-                f"{targets}\n"
+                f"apiVersion: backstage.io/v1alpha1\nkind: Location\nspec:\n  targets:\n{targets}\n"
             )
 
         with tempfile.TemporaryDirectory(dir=str(SKILL_ROOT / "tests")) as tmp:

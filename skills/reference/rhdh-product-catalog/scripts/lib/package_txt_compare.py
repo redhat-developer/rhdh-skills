@@ -12,12 +12,10 @@ from support import as_str, md_cell
 COMMUNITY_TXT = "rhdh-community-packages.txt"
 SUPPORTED_TXT = "rhdh-supported-packages.txt"
 COMMUNITY_TXT_URL = (
-    "https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/"
-    + COMMUNITY_TXT
+    "https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/" + COMMUNITY_TXT
 )
 SUPPORTED_TXT_URL = (
-    "https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/"
-    + SUPPORTED_TXT
+    "https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/" + SUPPORTED_TXT
 )
 
 COMMUNITY_SUPPORT = frozenset({"community", "dev-preview"})
@@ -57,7 +55,9 @@ def _leaf_matches_package(leaf: str, meta: str, stem: str, npm: str) -> bool:
     return False
 
 
-def packages_for_txt_path(path: str, by_workspace: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+def packages_for_txt_path(
+    path: str, by_workspace: dict[str, list[dict[str, Any]]]
+) -> list[dict[str, Any]]:
     """Map a txt workspace path to Package metadata rows."""
     ws, *rest = path.split("/")
     leaf = Path(path).name

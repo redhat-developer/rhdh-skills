@@ -31,7 +31,9 @@ class VersionToRefTests(unittest.TestCase):
 
     def test_explicit_ref(self) -> None:
         self.assertEqual(lp.version_to_ref("release-1.10"), "release-1.10")
-        self.assertEqual(lp.version_to_ref("catalog-index-release-1.10"), "catalog-index-release-1.10")
+        self.assertEqual(
+            lp.version_to_ref("catalog-index-release-1.10"), "catalog-index-release-1.10"
+        )
 
 
 class SupportNormalizeTests(unittest.TestCase):
@@ -87,7 +89,9 @@ class FixtureListingTests(unittest.TestCase):
 
     def test_fields(self) -> None:
         fe = next(p for p in self.packages if p["title"] == "Adoption Insights Frontend")
-        self.assertEqual(fe["package_name"], "@red-hat-developer-hub/backstage-plugin-adoption-insights")
+        self.assertEqual(
+            fe["package_name"], "@red-hat-developer-hub/backstage-plugin-adoption-insights"
+        )
         self.assertEqual(fe["support_label"], "Generally Available")
         self.assertEqual(fe["backstage"], "1.52.0")
         self.assertEqual(fe["role"], "frontend-plugin")
@@ -114,44 +118,30 @@ class FixtureListingTests(unittest.TestCase):
         self.assertEqual(mystery["source"], "")
 
     def test_filters(self) -> None:
-        ga = [
-            p
-            for p in self.packages
-            if lp.matches_filters(p, {"generally-available"}, [], [])
-        ]
+        ga = [p for p in self.packages if lp.matches_filters(p, {"generally-available"}, [], [])]
         self.assertEqual(len(ga), 2)
-        score = [
-            p
-            for p in self.packages
-            if lp.matches_filters(p, set(), ["score"], [])
-        ]
+        score = [p for p in self.packages if lp.matches_filters(p, set(), ["score"], [])]
         self.assertEqual([p["workspace"] for p in score], ["scorecard"])
-        pkg = [
-            p
-            for p in self.packages
-            if lp.matches_filters(p, set(), [], ["plugin-todo"])
-        ]
+        pkg = [p for p in self.packages if lp.matches_filters(p, set(), [], ["plugin-todo"])]
         self.assertEqual(len(pkg), 1)
 
 
 class CliTests(unittest.TestCase):
     def test_markdown_and_json(self) -> None:
-        from io import StringIO
         from contextlib import redirect_stdout
+        from io import StringIO
 
         buf = StringIO()
         with redirect_stdout(buf):
-            code = lp.main(
-                ["1.10", "--repo", str(FIXTURES), "--workdir", "--json"]
-            )
+            code = lp.main(["1.10", "--repo", str(FIXTURES), "--workdir", "--json"])
         self.assertEqual(code, 0)
         payload = json.loads(buf.getvalue())
         self.assertEqual(payload["scanned"], 6)
         self.assertEqual(payload["total"], 6)
 
     def test_compare_txt_cli(self) -> None:
-        from io import StringIO
         from contextlib import redirect_stdout
+        from io import StringIO
 
         buf = StringIO()
         with redirect_stdout(buf):
@@ -173,8 +163,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["packages"], 6)
 
     def test_cli_markdown_grouping(self) -> None:
-        from io import StringIO
         from contextlib import redirect_stdout
+        from io import StringIO
 
         buf = StringIO()
         with redirect_stdout(buf):
@@ -190,8 +180,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("missing or unrecognized spec.support", text)
 
     def test_support_filter_cli(self) -> None:
-        from io import StringIO
         from contextlib import redirect_stdout
+        from io import StringIO
 
         buf = StringIO()
         with redirect_stdout(buf):
@@ -205,8 +195,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["generally-available"], 2)
 
     def test_bad_support(self) -> None:
-        from io import StringIO
         from contextlib import redirect_stderr
+        from io import StringIO
 
         buf = StringIO()
         with redirect_stderr(buf):
@@ -360,8 +350,8 @@ class DiffLogicTests(unittest.TestCase):
 
 class DiffCliTests(unittest.TestCase):
     def test_diff_rejects_workdir(self) -> None:
-        from io import StringIO
         from contextlib import redirect_stderr
+        from io import StringIO
 
         buf = StringIO()
         with redirect_stderr(buf):
