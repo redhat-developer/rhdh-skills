@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://example.invalid/plugins.json
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: 3scale
+  namespace: rhdh
+  title: APIs with 3scale
+  annotations:
+    extensions.backstage.io/pre-installed: 'true'
+spec:
+  author: Red Hat
+  support:
+    provider: Red Hat
+    level: community
+  lifecycle: active
+  publisher: Red Hat

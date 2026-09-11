@@ -392,6 +392,13 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-product-catalog",
+      "category": "reference",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-jira-api",
       "category": "reference",
       "invocation": "model",
