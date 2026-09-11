@@ -197,6 +197,9 @@ _MILESTONE_LABELS = {
 def _adf_text(node: dict) -> str:
     """Render the text and date values from an Atlassian Document Format node."""
     if node.get("type") == "text":
+        marks = node.get("marks", [])
+        if any(m.get("type") == "strike" for m in marks):
+            return ""
         return node.get("text", "")
     if node.get("type") == "date":
         try:
@@ -217,6 +220,27 @@ def _adf_table_rows(node: dict) -> list[str]:
     return rows
 
 
+def _parse_natural_date(text: str) -> str | None:
+    """Parse a natural-language date like 'August 24' or 'Sep 2 (done)'."""
+    cleaned = re.sub(r"\(.*?\)", "", text).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    if not cleaned:
+        return None
+    year = datetime.now().year
+    with_year = f"{cleaned}, {year}"
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(with_year, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(cleaned, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
 def _extract_milestone_dates(description: dict | str | None) -> dict[str, str]:
     """Extract release milestone dates from ADF table rows or legacy plain text."""
     dates = {key: "TBD" for key in _MILESTONE_LABELS}
@@ -228,12 +252,17 @@ def _extract_milestone_dates(description: dict | str | None) -> dict[str, str]:
         return dates
 
     for line in lines:
-        parsed_date = re.search(r"\b\d{4}-\d{2}-\d{2}\b", line)
-        if not parsed_date:
+        iso_match = re.search(r"\b\d{4}-\d{2}-\d{2}\b", line)
+        if iso_match:
+            date_str = iso_match.group(0)
+        else:
+            parts = line.split("|")
+            date_str = _parse_natural_date(parts[-1]) if len(parts) >= 2 else None
+        if not date_str:
             continue
         for key, label_pattern in _MILESTONE_LABELS.items():
             if re.search(label_pattern, line, re.IGNORECASE):
-                dates[key] = parsed_date.group(0)
+                dates[key] = date_str
                 break
     return dates
 
