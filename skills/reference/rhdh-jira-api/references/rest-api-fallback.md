@@ -1,14 +1,16 @@
 # Jira authenticated API fallback
 
-Use this seam only when `acli` cannot read or update a required Jira field. This reference defines
-payload semantics; it never owns credentials or raw HTTP authentication.
+Use this seam when `acli` cannot read or update a required Jira field **and** the host adapter does
+not expose a native tool for it. This reference defines payload semantics; it never owns credentials
+or raw HTTP authentication.
 
 ## Capability gate
 
-1. Try the supported `acli` operation first. For broad reads, use paginated search; for a single
-   issue, use `acli jira workitem view KEY --fields '*all' --json`.
-2. Use REST only through an already-authenticated host Atlassian adapter. The adapter owns the site,
-   credential store, request headers, retries, and secret redaction.
+1. Check the adapter decision table in [auth.md](auth.md). Many operations that formerly required
+   a REST fallback are now native host-adapter (MCP) tool calls — prefer those first.
+2. If the host adapter exposes no matching tool, use REST through the already-authenticated host
+   Atlassian adapter. The adapter owns the site, credential store, request headers, retries, and
+   secret redaction.
 3. If that adapter is unavailable, say which field could not be set and tell the human to run
    `/setup-rhdh-skills atlassian-mcp`.
 
@@ -49,7 +51,9 @@ covers the set. `/rhdh-jira-update` owns that flow.
 
 ## Custom-field payloads
 
-These are payload fragments for an authenticated adapter. They are not standalone HTTP commands.
+> **Prefer the host adapter's native edit tool.** When a `editJiraIssue`-equivalent tool is
+> available, pass custom fields directly in its `fields` dict — no REST call needed. The payloads
+> below are the raw REST form; use them only when no native tool covers the operation.
 
 ```json
 {"fields": {"customfield_10028": 5}}

@@ -10,7 +10,7 @@ description: >-
   does Release Pending require". Reading and query mechanics only — deciding
   what to file, judging readiness, or changing an issue belongs to the Jira
   skill that owns that verb.
-compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts; an authenticated host Atlassian adapter for GraphQL and REST fallbacks. Windows, macOS, Linux."
+compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts; an authenticated host Atlassian adapter for GraphQL, REST fallbacks, and MCP tool calls. Windows, macOS, Linux."
 ---
 
 # RHDH Jira API
@@ -27,7 +27,7 @@ here.
 
 | Question | Load |
 |---|---|
-| Is Jira reachable? Is `acli` authenticated? | [references/auth.md](references/auth.md), then `uv run scripts/setup.py --json` |
+| Which adapter for this operation? | [references/auth.md](references/auth.md) |
 | Which `acli` flag does this, and what breaks? | [references/acli-commands.md](references/acli-commands.md) |
 | What JQL answers this? Which board or sprint? | [references/jql-patterns.md](references/jql-patterns.md) |
 | Which custom field, label, link type, component, or priority? | [references/fields.md](references/fields.md) |
@@ -37,20 +37,46 @@ here.
 
 Load the one branch the question needs.
 
-## The two traps that produce wrong answers
+## Adapter choice
 
-Both fail silently, and both have burned this pack before.
+Two adapters cover the full Jira surface. Use the one that fits the operation;
+do not default to `acli` for every call.
+
+**Prefer the authenticated host Atlassian adapter (MCP tools) for:**
+- All single-issue reads — no silent empty-field trap; `fields: ["*all"]` works cleanly.
+- All custom-field writes — Story Points, Size, Team, Release Note Type — native in the `fields` dict, no REST fallback step.
+- Issue create — priority, components, and parent link in one call; `acli create` rejects those flags.
+- Remote links (PR/web-link attachment) — `acli` has no equivalent.
+- Comment visibility restrictions (role/group-scoped comments).
+- Worklog authoring.
+- Confluence and Compass operations.
+- Cross-product Teamwork Graph relationships (Atlas projects, goals).
+
+**Prefer `acli` for:**
+- Batch transitions by JQL (`--jql "..." --yes`).
+- Batch edits by JQL.
+- Board and sprint reads (no MCP equivalent).
+- All-pages auto-walk (`--paginate`), where explicit `nextPageToken` looping is inconvenient.
+- Saved filter lookup.
+- Attachment list and delete.
+
+See [references/auth.md](references/auth.md) for the full decision table and capability check.
+
+## The two `acli` traps that produce wrong answers
+
+Both fail silently. They do not apply when using the host adapter.
 
 **Default page size is 30.** Rows past the thirtieth are dropped with no
 warning, so a query that should return 140 issues quietly returns 30 and every
 count built on it is wrong. Pass `--limit 500` or `--paginate` on every bulk
-search, and use `--count` first when the total matters.
+`acli` search, and use `--count` first when the total matters.
 
-**Custom fields are absent unless you ask for them.** `search --json` and
-`view KEY --json` return only assignee, issuetype, priority, status, and
+**Custom fields are absent unless you ask for them.** `acli search --json` and
+`acli view KEY --json` return only assignee, issuetype, priority, status, and
 summary. Story Points, Team, Size, and Sprint come back empty — which looks
 exactly like a field nobody set. Enrich with `scripts/parse_issues.py --enrich`
 or `view KEY --fields '*all' --json` before claiming any of them is missing.
+When using the host adapter, pass `fields: ["*all"]`; neither trap applies.
 
 A field you could not retrieve is reported as unretrieved, never as empty.
 
