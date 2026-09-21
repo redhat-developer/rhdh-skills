@@ -72,11 +72,28 @@ first) so the order matches the GitHub UI:
 | ... | ... | ... | ... | ... | ... | ... | ... |
 ```
 
+### Triage report
+
+After the plan table, always produce a reviewer-friendly triage report. This
+report is shown in both dry-run and normal mode. It contains one row per PR with
+only the columns the reviewer needs to scan:
+
+```
+| Repo | PR | Title | Branch | Decision | Reason |
+|------|-----|-------|--------|----------|--------|
+| rhdh-operator | #42 | update go toolchain to 1.23.5 | main | approve+merge | CI green, patch bump |
+| rhdh-chart | #18 | update chart dep X to 2.1.0 | release-1.10 | hold | CF — hold until 1.10.5 |
+| ... | ... | ... | ... | ... | ... |
+```
+
+PR numbers link to the GitHub PR URL. The report is sorted by PR number
+descending (newest first).
+
 ## Step 4 — Dry-run check
 
 If `dry_run` is true in the script output, or the user requested a dry run:
 
-1. Show the plan table from Step 3.
+1. Show the triage report from Step 3.
 2. Show a summary of planned actions:
 
 ```
@@ -134,7 +151,8 @@ operations that were skipped or denied in the gate.
 
 ## Step 7 — Summary
 
-Print a summary table:
+Print the triage report from Step 3 (with outcomes updated to reflect what
+actually happened), followed by a summary table:
 
 ```
 | Action | Count |
