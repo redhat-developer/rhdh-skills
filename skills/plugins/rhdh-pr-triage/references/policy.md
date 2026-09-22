@@ -54,9 +54,12 @@ To confirm a z-stream has GA'd, check all of:
    expected tag (e.g. `1.10.5`). Tags in these repos do not carry a `v` prefix.
    A tag present in one repo but absent in another means the release is not
    fully rolled out — hold PRs in repos where the tag is missing.
-2. Release notes at
-   `https://docs.redhat.com/en/documentation/red_hat_developer_hub/{major.minor}/html/red_hat_developer_hub_release_notes/fixed-issues`
-   for a section covering that z-stream.
+2. Release notes: check **both** pages for a section covering that z-stream —
+   a security-only patch may appear only on the second page:
+   - `https://docs.redhat.com/en/documentation/red_hat_developer_hub/{major.minor}/html/red_hat_developer_hub_release_notes/fixed-issues`
+   - `https://docs.redhat.com/en/documentation/red_hat_developer_hub/{major.minor}/html/red_hat_developer_hub_release_notes/fixed-security-issues`
+
+   A match on either page confirms the z-stream is published.
 3. **Go repos (rhdh-operator, rhdh-must-gather on release-2.y+):** the
    `VERSION` variable in the `Makefile` on the release branch must show the
    **next** z-stream (e.g. `0.10.5` after tagging `1.10.4`). This bump happens
