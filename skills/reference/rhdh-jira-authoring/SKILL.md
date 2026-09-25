@@ -53,9 +53,10 @@ project's own template in the Jira UI.
 
 Sub-tasks are children of an existing issue, never standalone.
 
-A filled template is wiki markup, and Jira Cloud will render it as literal
-`h1.` and `*text*` unless it is converted to ADF first. `/rhdh-jira-api` owns
-that conversion.
+A filled template is wiki markup, and Jira Cloud will render wiki markup or
+Markdown as literal characters (`h1.`, `*text*`, `# Heading`) when those bytes
+are stuffed into ADF text nodes instead of converted. `/rhdh-jira-api` owns
+wiki→ADF conversion; do not hand-build ADF from Markdown paragraphs.
 
 ## Boundary with the neighbouring skills
 

@@ -156,7 +156,8 @@ By type, the fields that matter most:
 |---|---|
 | Feature | Priority, Team, Size (T-shirt), Assignee as Feature Owner, Components, Labels |
 | Epic | Team, Priority, Size (T-shirt), Component, Assignee as Epic Owner |
-| Story / Task / Bug / Spike | Priority, Component, Assignee, Story Points (required for Spikes) |
+| Story / Task / Spike | Priority, Component, Assignee, Story Points (required for Spikes) |
+| Bug (RHDHBUGS) | Priority, Component, Assignee, **Affects Version** (required at create — see `/rhdh-jira-api`) |
 
 When chained, inherit Priority, Team, and Component from the parent unless the
 conversation contradicts them.
@@ -165,6 +166,11 @@ conversation contradicts them.
 and Code Freeze queries, so they are not a detail to skip. Infer them, validate
 them against the component catalog in `/rhdh-jira-api`, and confirm with the user
 — never auto-set a component.
+
+**Affects Version** (RHDHBUGS Bugs): required at create. Infer from Build Details /
+prerequisites, confirm with the user, and put it on the create payload (Step 8).
+Authoritative constraint and payload field name: `/rhdh-jira-api` (`fields.md`,
+Bug workflow).
 
 **Labels — ask about each during the interview:**
 
@@ -213,6 +219,7 @@ cat > "$REVIEW" << 'EOF'
 - **Component**: {value}
 - **Assignee**: {value}
 - **Labels**: {values}
+- **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-api`)
 EOF
 ```
 
@@ -241,12 +248,23 @@ Re-check the customer-identity and label rules from Validate before creating in
 description if any survived; confirm at most one `RHDH-Customer` label.
 
 Write the filled template to a temp file, then invoke `/rhdh-jira-api` to convert
-it to ADF and hand back the JSON file path. Jira Cloud renders raw wiki markup as
-literal `h1.` and `*text*`, so an unconverted description ships broken. Let that
-skill run its own converter; do not reach into its directory for the script.
+it to ADF and hand back the JSON file path (`jira-wiki-to-adf.py`). Jira Cloud
+renders raw wiki markup and Markdown as literal characters when stuffed into ADF
+text nodes, so an unconverted description ships broken. Always use that helper —
+do not hand-split Markdown or wiki into ADF paragraphs, and do not reach into
+`/rhdh-jira-api`'s directory for the script; invoke the skill so it runs the
+converter. When creating through the Atlassian MCP instead of `acli`, pass
+`contentFormat: markdown` and skip the wiki→ADF step.
 
-`create` does **not** accept `--priority`, `--component`, or `--yes`; passing
-them fails with "unknown flag". Create first, then set the rest.
+`create` does **not** accept `--priority`, `--component`, `--yes`, or
+`--version` / Affects Version flags; passing unknown flags fails. For most
+types, create with `--description-file` (ADF from `/rhdh-jira-api`), then set
+the rest. **Exception — RHDHBUGS Bug:** Affects Version must be on the create
+call. Use a single `--from-json` file that embeds both `versions` and the ADF
+`description` — do **not** also pass `--description-file` on that create.
+Scaffold with `acli jira workitem create --generate-json`, or create through
+the Atlassian MCP with Affects Version / `versions` set. Details:
+`/rhdh-jira-api` (`fields.md`, `acli-commands.md`).
 
 ```bash
 # Feature
@@ -262,14 +280,29 @@ acli jira workitem create --project RHIDP --type Epic \
 acli jira workitem create --project RHIDP --type Story \
   --summary "Story summary" --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
 
-# Bug
-acli jira workitem create --project RHDHBUGS --type Bug \
-  --summary "Bug summary" --description-file "$ISSUE_ADF"
+# Bug — Affects Version + ADF description inside one JSON file
+acli jira workitem create --from-json "$BUG_CREATE_JSON"
 
 # Spike
 acli jira workitem create --project RHIDP --type Task \
   --summary "SPIKE: Research multi-source catalog merging" \
   --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
+```
+
+Minimal RHDHBUGS Bug `--from-json` shape (ADF `description` from
+`/rhdh-jira-api` wiki→ADF conversion; start from `--generate-json` if unsure):
+
+```json
+{
+  "projectKey": "RHDHBUGS",
+  "type": "Bug",
+  "summary": "Bug summary",
+  "description": { "type": "doc", "version": 1, "content": [] },
+  "additionalAttributes": {
+    "versions": [{ "name": "1.10.0" }],
+    "components": [{ "name": "Actions" }]
+  }
+}
 ```
 
 Then set the fields `create` could not, in one update through the authenticated
