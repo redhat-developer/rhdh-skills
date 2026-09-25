@@ -346,6 +346,17 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-release-date-update",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-release-schedule",
+        "rhdh-forge",
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-release-sos",
       "category": "release",
       "invocation": "model",
