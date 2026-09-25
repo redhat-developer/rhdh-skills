@@ -100,11 +100,129 @@ def test_compute_plan_updates_drift(core):
     assert updates[0]["project"] == "RHDHPLAN"
 
 
+def test_compute_plan_defaults_to_unreleased_only(core):
+    by_project = {
+        "RHIDP": {
+            "1.11.0": _version("1.11.0"),
+            "1.10.4": _version(
+                "1.10.4",
+                released=True,
+                releaseDate="2026-09-03",
+                description="ga",
+            ),
+        },
+        "RHDHPLAN": {
+            "1.10.4": _version(
+                "1.10.4",
+                released=True,
+                releaseDate="2026-09-04",
+                description="ga-drift",
+            ),
+        },
+        "RHDHBUGS": {
+            "1.10.4": _version(
+                "1.10.4",
+                released=True,
+                releaseDate="2026-09-04",
+                description="ga-drift",
+            ),
+        },
+    }
+    ops = core.compute_plan(by_project)
+    assert {op["name"] for op in ops} == {"1.11.0"}
+    assert all(op["action"] == "create" for op in ops)
+
+    historical = core.compute_plan(by_project, include_released=True)
+    assert any(op["name"] == "1.10.4" for op in historical)
+
+
+def test_filter_names_unreleased(core):
+    by_project = {
+        "RHIDP": {
+            "1.11.0": _version("1.11.0"),
+            "1.10.0": _version("1.10.0", released=True, releaseDate="2026-06-12"),
+        },
+        "RHDHPLAN": {},
+        "RHDHBUGS": {"1.9.10": _version("1.9.10")},
+    }
+    names = core.filter_names_unreleased(by_project, {"1.11.0", "1.10.0", "1.9.10"})
+    assert names == {"1.11.0", "1.9.10"}
+
+
+def test_orphan_create_peers_is_tagged(core):
+    by_project = {
+        "RHIDP": {},
+        "RHDHPLAN": {},
+        "RHDHBUGS": {"1.9.10": _version("1.9.10")},
+    }
+    ops = core.compute_plan(by_project)
+    creates = [op for op in ops if op["action"] == "create"]
+    assert len(creates) == 2
+    assert all(op.get("orphan") is True for op in creates)
+    assert all(op.get("decision") == "create_peers" for op in creates)
+    decisions = core.collect_orphan_decisions(ops)
+    assert len(decisions) == 1
+    assert decisions[0]["decision"] == "create_peers"
+    assert decisions[0]["name"] == "1.9.10"
+
+
+def test_orphan_prune_deletes(core):
+    by_project = {
+        "RHIDP": {},
+        "RHDHPLAN": {},
+        "RHDHBUGS": {"1.9.10": _version("1.9.10")},
+    }
+    ops = core.compute_plan(by_project, prune=True)
+    assert len(ops) == 1
+    assert ops[0]["action"] == "delete"
+    assert ops[0]["decision"] == "delete_orphan"
+    assert ops[0]["orphan"] is True
+
+
+def test_only_names_and_summary(core):
+    by_project = {
+        "RHIDP": {
+            "1.10.6": _version("1.10.6"),
+            "2.2.0": _version("2.2.0", releaseDate="2027-02-17"),
+            "1.11.0": _version("1.11.0"),
+        },
+        "RHDHPLAN": {"2.2.0": _version("2.2.0")},
+        "RHDHBUGS": {"2.2.0": _version("2.2.0")},
+    }
+    ops = core.compute_plan(
+        by_project,
+        only_names={"1.10.6", "2.2.0"},
+        override_meta={"releaseDate": "2027-03-10"},
+    )
+    assert {op["name"] for op in ops} == {"1.10.6", "2.2.0"}
+    summary = core.summarize_operations(ops)
+    assert summary["create"] == 2  # 1.10.6 on PLAN + BUGS
+    assert summary["update"] >= 1
+    assert "1.11.0" not in summary["versions"]
+
+
+def test_versions_needing_release_docs(core):
+    by_project = {
+        "RHIDP": {
+            "1.11.0": _version("1.11.0"),
+            "2.2.0": _version(
+                "2.2.0",
+                startDate="2026-09-22",
+                releaseDate="2027-03-10",
+            ),
+        },
+        "RHDHPLAN": {},
+        "RHDHBUGS": {},
+    }
+    needing = core.versions_needing_release_docs(by_project, {"1.11.0", "2.2.0", "9.9.9"})
+    assert needing == {"1.11.0", "9.9.9"}
+
+
 def test_ensure_creates_everywhere_when_absent(core):
     by_project = {"RHIDP": {}, "RHDHPLAN": {}, "RHDHBUGS": {}}
     ops = core.compute_plan(
         by_project,
-        only_name="2.0.0",
+        only_names={"2.0.0"},
         override_meta={"releaseDate": "2026-06-01"},
     )
     assert len(ops) == 3
@@ -125,8 +243,29 @@ def test_diff_report_flags_missing_and_drift(core):
     assert row["projects"]["RHDHBUGS"]["lifecycle"] is None
     assert row["projects"]["RHDHPLAN"]["lifecycle"] == "archived"
     assert row["projects"]["RHDHPLAN"]["sync"] == "drift"
+    assert row["projects"]["RHDHPLAN"]["changed_fields"] == ["archived"]
+    assert row["projects"]["RHDHPLAN"]["from"]["archived"] is True
+    assert row["projects"]["RHDHPLAN"]["to"]["archived"] is False
+    assert row["projects"]["RHDHPLAN"]["startDate"] is None
+    assert row["projects"]["RHDHPLAN"]["description"] is None
     assert row["in_sync"] is False
     assert row["lifecycle_aligned"] is False
+
+
+def test_project_version_view_reports_date_and_description_drift(core):
+    target = core.version_meta(
+        _version("2.2.0", startDate="2026-09-22", releaseDate="2027-03-10", description="2027Q1")
+    )
+    current = _version("2.2.0", releaseDate="2027-02-17", description="old")
+    view = core.project_version_view(current, target)
+    assert view["sync"] == "drift"
+    assert view["startDate"] is None
+    assert view["releaseDate"] == "2027-02-17"
+    assert view["description"] == "old"
+    assert view["changed_fields"] == ["description", "startDate", "releaseDate"]
+    assert view["from"]["releaseDate"] == "2027-02-17"
+    assert view["to"]["releaseDate"] == "2027-03-10"
+    assert view["to"]["startDate"] == "2026-09-22"
 
 
 def test_version_lifecycle_precedence(core):
@@ -266,7 +405,7 @@ def test_compute_plan_uses_release_doc_for_new_version(core):
     }
     ops = core.compute_plan(
         by_project,
-        only_name="2.2.0",
+        only_names={"2.2.0"},
         release_docs=release_docs,
     )
     assert len(ops) == 3
@@ -401,3 +540,67 @@ def test_recency_includes_recently_released(core):
         today=today,
     )
     assert names == {"1.10.3"}
+
+
+CLI_PATH = SKILL_SCRIPTS / "fixversions.py"
+
+
+def load_cli():
+    scripts = str(SKILL_SCRIPTS)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    spec = importlib.util.spec_from_file_location("fixversions_cli", CLI_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules["fixversions_cli"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def cli():
+    return load_cli()
+
+
+def test_check_project_row_read_only_vs_pass(cli):
+    read_only = cli._build_check_project_row(
+        "RHIDP",
+        version_count=10,
+        lifecycle_counts={"archived": 0, "released": 5, "unreleased": 5},
+        browse_projects=True,
+        administer_projects=False,
+    )
+    assert read_only["status"] == "read_only"
+    assert "warning" in read_only
+    assert read_only["administer_projects"] is False
+
+    write_ok = cli._build_check_project_row(
+        "RHIDP",
+        version_count=10,
+        lifecycle_counts={"archived": 0, "released": 5, "unreleased": 5},
+        browse_projects=True,
+        administer_projects=True,
+    )
+    assert write_ok["status"] == "pass"
+    assert "warning" not in write_ok
+
+
+def test_refuse_apply_outcomes_skips_all(cli):
+    ops = [
+        {"action": "create", "project": "RHIDP", "name": "1.10.6"},
+        {"action": "update", "project": "RHDHPLAN", "name": "2.2.0"},
+    ]
+    outcomes = cli._refuse_apply_outcomes(ops)
+    assert len(outcomes) == 2
+    assert all(o["status"] == "skipped" for o in outcomes)
+    assert "Administer Projects" in outcomes[0]["reason"]
+
+
+def test_is_permission_error_detects_admin_messages(cli):
+    assert cli._is_permission_error(
+        "You must have global or project administrator rights in order to modify versions."
+    )
+    assert cli._is_permission_error(
+        "Project with key 'RHIDP' either does not exist or you do not have permission to create versions in it."
+    )
+    assert not cli._is_permission_error("Jira HTTP 500 internal error")

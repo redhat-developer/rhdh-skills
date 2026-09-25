@@ -27,21 +27,29 @@ Stop when `ok` is false. Report `error` and point to `/setup-rhdh-skills jira`.
 
 ```bash
 uv run scripts/fixversions.py list --json
-uv run scripts/fixversions.py list --json --lifecycle unreleased
+uv run scripts/fixversions.py list --json --include-released
 uv run scripts/fixversions.py status 1.11.0 --json
 uv run scripts/fixversions.py close-check 1.11.0 --json
 uv run scripts/fixversions.py diff --json
 uv run scripts/fixversions.py diff --json --prune
 ```
 
-`list`, `diff`, and bulk `plan` default to the **last 365 days** plus every
-**unreleased** version. Older GA streams with dates before that cutoff are
-omitted — expected historical variance, not actionable drift. Pass
-`--all-versions` when the user explicitly wants the full inventory.
+`list`, `diff`, and bulk `plan` default to **unreleased** versions only — create
+missing peers, fix metadata drift, and mark released. Pass `--include-released`
+for the recent GA window (365 days), or `--all-versions` for the full inventory.
+`--lifecycle released` / `archived` on `list` also widens past unreleased-only.
 
 Present a table: version name, each project's lifecycle (`unreleased`,
 `released`, `archived`), sync state (`ok`, `drift`, `missing`), and canonical
-source. Use `status VERSION` when the user names one release (no date window).
+source. On `drift`, read `changed_fields` plus `from` / `to` (includes
+`startDate`, `releaseDate`, and `description`). Use `status VERSION` when the
+user names one release (no date window).
+Prefer discovery as `list` → `diff` → focused `plan --names …` rather than a
+wide historical `plan --include-released`.
+
+Run `check` before planning writes. When `can_write` is false, projects show
+`status: read_only` (list still works) — stop until Administer Projects is
+available. `status: fail` means the project list itself failed.
 
 When the user is **closing out** a release Feature, run `close-check VERSION`
 first. It looks up the RHDHPLAN release Feature and confirms RHIDP, RHDHPLAN,
@@ -75,17 +83,27 @@ released-state gate.
 ```bash
 uv run scripts/fixversions.py plan --json
 uv run scripts/fixversions.py plan --json --prune
+uv run scripts/fixversions.py plan --json --names 1.10.6,2.2.0 --release-date 2027-03-10
 uv run scripts/fixversions.py ensure 1.11.0 --json
 uv run scripts/fixversions.py ensure 1.11.0 --json --release-date 2026-03-15
 ```
 
 Optional flags on `plan` and `ensure`: `--description`, `--start-date`,
 `--release-date`, `--released`, `--archived`, `--no-release-doc`.
+`plan --names a,b,c` limits the plan to those versions and applies any
+override flags to all of them. `ensure` is the same as `plan --name` for one
+version — both are read-only.
+
+Plan JSON includes `summary` (create/update/delete counts) and `decisions`
+(orphan create-peers vs delete). Confirm orphan decisions before apply.
+Default orphan handling creates missing peers; `--prune` deletes the lone copy
+instead.
 
 `plan` and `ensure` automatically read milestone dates from the RHDHPLAN release
 Feature description (GA Announce → `releaseDate`, Feature Freeze → `startDate`
-when still empty). The plan JSON lists `release_docs` under `filter` and
-`date_sources` on each operation when dates were filled from that issue.
+when still empty) **only for versions whose canonical dates are still empty**.
+The plan JSON lists `release_docs` under `filter` and `date_sources` on each
+operation when dates were filled from that issue.
 
 Pass the plan through `/mutation-gate`. Scan the plan JSON with the gate's
 credential scanner before showing it.
@@ -100,6 +118,10 @@ uv run scripts/fixversions.py apply --plan /tmp/fixversions-plan.json --json \
   --move-issues-to 1.10.0
 ```
 
+`apply` re-checks Administer Projects before the first mutation. When `can_write`
+is false, every operation is reported `skipped` and nothing is written. After a
+permission failure mid-batch, remaining operations are skipped.
+
 ## 5. Verify
 
 ```bash
@@ -112,6 +134,6 @@ Report each apply outcome. Remaining drift is incomplete work.
 
 | Request | Invoke by name |
 |---|---|
-| When is Code Freeze? | Release schedule skill |
-| How many open issues on fix version 1.11? | Release status skill |
-| Set fix version on an issue key | Jira update skill |
+| When is Code Freeze? | `/rhdh-release-schedule` |
+| How many open issues on fix version 1.11? | `/rhdh-release-status` |
+| Set fix version on an issue key | `/rhdh-jira-update` |

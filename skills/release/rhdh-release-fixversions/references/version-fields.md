@@ -47,25 +47,29 @@ Each fix version in a project is reported as exactly one lifecycle value:
 also report `canonical_lifecycle` from the canonical project and whether each copy
 `lifecycle_matches` it.
 
-## Recent window (default for list, diff, and plan)
+## Version scope (default for list, diff, and plan)
 
-Bulk read commands default to a **recent window** so historical GA streams do not
-drown out current release work. The default is **365 days** from today.
+Bulk commands default to **unreleased** versions only — the set release managers
+maintain day to day (create missing peers, fix drift, mark released).
 
-A version is **recent** when any in-scope project copy is:
+Widen scope when the human asks for historical GA work:
 
-- `unreleased` — always included (in-flight release work), or
-- `released` or `archived` with a `releaseDate` or `startDate` on or after the
-  cutoff.
+| Flag | Scope |
+|---|---|
+| *(default)* | Any version with at least one unreleased copy |
+| `--include-released` | Unreleased plus released/archived dated within **365 days** |
+| `--all-versions` | Full inventory |
+| `--within-days N` | Changes the date cutoff used with `--include-released` |
 
-Undated released/archived versions are treated as old and omitted unless
-`--all-versions` is passed. `status VERSION` is never windowed — it always answers
-for the name you gave.
-
-Override the window:
+A version is in the `--include-released` window when any in-scope copy is
+unreleased, or released/archived with a `releaseDate` or `startDate` on or after
+the cutoff. Undated released/archived versions stay omitted unless
+`--all-versions` is passed. `status VERSION`, `ensure VERSION`, and
+`plan --name` are never scoped — they always answer for the name you gave.
 
 ```bash
-uv run scripts/fixversions.py diff --json --within-days 180
+uv run scripts/fixversions.py list --json
+uv run scripts/fixversions.py diff --json --include-released --within-days 180
 uv run scripts/fixversions.py list --json --all-versions
 ```
 
@@ -73,8 +77,11 @@ uv run scripts/fixversions.py list --json --all-versions
 
 Before `plan` or `ensure` builds create/update operations, the CLI looks up the
 matching **RHDHPLAN release Feature** (`component = Release`, summary contains
-the version, for example `RHDH 1.9.8 Release`). It parses the milestone table
-in that issue's description — the same source `/rhdh-release-schedule` uses.
+the version, for example `RHDH 1.9.8 Release`) **only when the canonical
+startDate or releaseDate is still empty** (or the version is being created from
+scratch). It parses the milestone table in that issue's description — the same
+source `/rhdh-release-schedule` uses. Versions that already have both dates skip
+the lookup. Pass `--no-release-doc` to skip all lookups.
 
 When `startDate` or `releaseDate` on the target metadata is still empty:
 
@@ -126,8 +133,13 @@ Pass `--skip-next-stream` on `close-check` to omit this follow-up.
 project but is missing from another. The new version copies canonical metadata,
 then applies release-doc dates for any empty date fields.
 
-`ensure NAME` creates the version in every project when it is missing everywhere,
-or fills in missing projects when it exists in at least one.
+When the version exists in only one project (orphan), create ops are tagged
+`orphan: true` with `decision: create_peers`, and the plan top-level `decisions`
+array explains the choice. Default is create missing peers.
+
+`ensure NAME` / `plan --names a,b` create the version in every project when it is
+missing everywhere, or fill in missing projects when it exists in at least one.
+Override flags (`--release-date`, `--start-date`, …) apply to every named version.
 
 ## Update
 
@@ -137,7 +149,8 @@ differs from canonical.
 ## Delete and prune
 
 Deletes are never implied by a plain `plan`. Pass `--prune` to include `delete`
-operations for versions that exist in only one project (orphans).
+operations for orphan versions (`decision: delete_orphan`). Confirm the plan
+`decisions` list before apply.
 
 Before delete, the CLI counts issues with that fix version. When the count is
 non-zero, pass `--move-issues-to OTHER_VERSION` on `apply`, or archive instead.

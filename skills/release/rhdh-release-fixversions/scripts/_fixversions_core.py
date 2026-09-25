@@ -70,7 +70,7 @@ def project_version_view(
     current_meta = version_meta(current)
     lifecycle = lifecycle_from_meta(current_meta)
     sync = "ok" if current_meta == target_meta else "drift"
-    return {
+    view: dict[str, Any] = {
         "present": True,
         "id": current.get("id"),
         "lifecycle": lifecycle,
@@ -79,8 +79,25 @@ def project_version_view(
         "sync": sync,
         "released": current_meta["released"],
         "archived": current_meta["archived"],
+        "startDate": current_meta["startDate"] or None,
         "releaseDate": current_meta["releaseDate"] or None,
+        "description": current_meta["description"] or None,
     }
+    if sync == "drift":
+        changed: list[str] = []
+        from_fields: dict[str, Any] = {}
+        to_fields: dict[str, Any] = {}
+        for key in SYNC_FIELDS:
+            left = current_meta.get(key)
+            right = target_meta.get(key)
+            if left != right:
+                changed.append(key)
+                from_fields[key] = left if left != "" else None
+                to_fields[key] = right if right != "" else None
+        view["changed_fields"] = changed
+        view["from"] = from_fields
+        view["to"] = to_fields
+    return view
 
 
 def index_by_name(versions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -162,6 +179,99 @@ def filter_names_by_recency(
     return {name for name in names if is_version_recent(by_project, name, cutoff=cutoff)}
 
 
+def filter_names_unreleased(
+    by_project: dict[str, dict[str, dict[str, Any]]],
+    names: set[str],
+) -> set[str]:
+    """Names with at least one in-scope copy still unreleased.
+
+    Primary operating set for day-to-day sync: create missing peers, fix drift,
+    and mark released. Fully released or archived streams are omitted unless the
+    caller widens scope.
+    """
+    selected: set[str] = set()
+    for name in names:
+        for project in PROJECTS:
+            version = by_project.get(project, {}).get(name)
+            if version is not None and version_lifecycle(version) == LIFECYCLE_UNRELEASED:
+                selected.add(name)
+                break
+    return selected
+
+
+def versions_needing_release_docs(
+    by_project: dict[str, dict[str, dict[str, Any]]],
+    names: set[str],
+) -> set[str]:
+    """Versions whose canonical (or create-from-scratch) dates still need filling."""
+    needing: set[str] = set()
+    for name in names:
+        ref, _ = find_canonical(by_project, name)
+        if ref is None:
+            needing.add(name)
+            continue
+        meta = version_meta(ref)
+        if not meta.get("startDate") or not meta.get("releaseDate"):
+            needing.add(name)
+    return needing
+
+
+def summarize_operations(operations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Machine-readable plan counts for mutation-gate tables."""
+    counts = {"create": 0, "update": 0, "delete": 0}
+    versions: set[str] = set()
+    orphans = 0
+    for op in operations:
+        action = op.get("action")
+        if action in counts:
+            counts[action] += 1
+        if op.get("name"):
+            versions.add(str(op["name"]))
+        if op.get("orphan"):
+            orphans += 1
+    return {
+        "create": counts["create"],
+        "update": counts["update"],
+        "delete": counts["delete"],
+        "total": len(operations),
+        "versions": sorted(versions),
+        "orphan_operations": orphans,
+    }
+
+
+def collect_orphan_decisions(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduped orphan decisions for the human to confirm before apply."""
+    decisions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for op in operations:
+        if not op.get("orphan"):
+            continue
+        name = str(op.get("name") or "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        decision = op.get("decision") or "create_peers"
+        if decision == "delete_orphan":
+            message = (
+                f"{name} exists only on {op.get('project')}; plan deletes that orphan "
+                "(--prune). Prefer create_peers if the version should exist everywhere."
+            )
+        else:
+            message = (
+                f"{name} exists only on {op.get('canonical_project')}; plan creates "
+                "missing peers. Pass --prune to delete the orphan instead."
+            )
+        decisions.append(
+            {
+                "name": name,
+                "decision": decision,
+                "canonical_project": op.get("canonical_project") or op.get("project"),
+                "message": message,
+            }
+        )
+    return decisions
+
+
 def apply_release_doc_dates(
     meta: dict[str, Any],
     release_doc: dict[str, Any] | None,
@@ -215,18 +325,29 @@ def compute_plan(
     by_project: dict[str, dict[str, dict[str, Any]]],
     *,
     prune: bool = False,
-    only_name: str | None = None,
+    only_names: set[str] | None = None,
     override_meta: dict[str, Any] | None = None,
     within_days: int = DEFAULT_RECENT_DAYS,
     all_versions: bool = False,
+    include_released: bool = False,
     release_docs: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return ordered create/update/delete operations to align projects."""
+    """Return ordered create/update/delete operations to align projects.
+
+    Default scope is unreleased versions only. Pass include_released for the
+    recent window (unreleased plus recently dated GA), or all_versions for the
+    full inventory. only_names always plans those versions.
+    """
     names = collect_names(by_project)
-    if only_name is not None:
-        names = {only_name}
-    elif not all_versions:
+    named = set(only_names or ())
+    if named:
+        names = named
+    elif all_versions:
+        pass
+    elif include_released:
         names = filter_names_by_recency(by_project, names, within_days=within_days)
+    else:
+        names = filter_names_unreleased(by_project, names)
 
     operations: list[dict[str, Any]] = []
     docs = release_docs or {}
@@ -246,7 +367,7 @@ def compute_plan(
     for name in sorted(names):
         ref, ref_project = find_canonical(by_project, name)
         if ref is None:
-            if only_name is None:
+            if not named:
                 continue
             target_meta = {
                 "name": name,
@@ -281,7 +402,8 @@ def compute_plan(
         target_meta, date_sources = _finalize_target(target_meta, name)
 
         present_projects = [p for p in PROJECTS if name in by_project.get(p, {})]
-        if len(present_projects) == 1 and prune:
+        is_orphan = len(present_projects) == 1
+        if is_orphan and prune:
             lone = present_projects[0]
             operations.append(
                 {
@@ -289,6 +411,9 @@ def compute_plan(
                     "project": lone,
                     "name": name,
                     "version_id": by_project[lone][name]["id"],
+                    "canonical_project": ref_project,
+                    "orphan": True,
+                    "decision": "delete_orphan",
                     "reason": "orphan (only one project holds this version)",
                 }
             )
@@ -297,18 +422,18 @@ def compute_plan(
         for project in PROJECTS:
             current = by_project.get(project, {}).get(name)
             if current is None:
-                operations.append(
-                    _append_fields(
-                        {
-                            "action": "create",
-                            "project": project,
-                            "name": name,
-                            "canonical_project": ref_project,
-                            "fields": target_meta,
-                        },
-                        date_sources,
-                    )
-                )
+                create_op: dict[str, Any] = {
+                    "action": "create",
+                    "project": project,
+                    "name": name,
+                    "canonical_project": ref_project,
+                    "fields": target_meta,
+                }
+                if is_orphan:
+                    create_op["orphan"] = True
+                    create_op["decision"] = "create_peers"
+                    create_op["reason"] = "orphan (only one project holds this version)"
+                operations.append(_append_fields(create_op, date_sources))
                 continue
             current_meta = version_meta(current)
             if current_meta != target_meta:

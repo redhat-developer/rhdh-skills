@@ -28,19 +28,25 @@ from _auth import (  # noqa: E402
 )
 from _fixversions_core import (  # noqa: E402
     DEFAULT_RECENT_DAYS,
+    LIFECYCLE_ARCHIVED,
+    LIFECYCLE_RELEASED,
     LIFECYCLE_VALUES,
     PROJECTS,
     close_out_report,
     collect_names,
+    collect_orphan_decisions,
     compute_plan,
     count_by_lifecycle,
     diff_report,
     filter_names_by_recency,
+    filter_names_unreleased,
     index_by_name,
     next_z_stream_follow_up,
     recent_filter_meta,
     status_report,
+    summarize_operations,
     version_summary,
+    versions_needing_release_docs,
 )
 from _release_dates import lookup_release_doc, lookup_release_feature  # noqa: E402
 from _stream_lifecycle import lookup_rhdh_stream_support  # noqa: E402
@@ -167,6 +173,24 @@ class JiraVersionClient:
         )
         return result if isinstance(result, dict) else {}
 
+    def my_permissions(
+        self,
+        project_key: str,
+        *,
+        permissions: str = "ADMINISTER_PROJECTS,BROWSE_PROJECTS",
+    ) -> dict[str, bool]:
+        result = self._request(
+            "GET",
+            f"{API_BASE}/mypermissions",
+            query={"projectKey": project_key, "permissions": permissions},
+        )
+        flags: dict[str, bool] = {}
+        if not isinstance(result, dict):
+            return flags
+        for name, body in (result.get("permissions") or {}).items():
+            flags[name] = bool(body.get("havePermission"))
+        return flags
+
 
 def load_by_project(client: JiraVersionClient) -> dict[str, dict[str, dict[str, Any]]]:
     by_project: dict[str, dict[str, dict[str, Any]]] = {}
@@ -180,31 +204,115 @@ def _client(args: argparse.Namespace) -> JiraVersionClient:
     return JiraVersionClient(resolve_jira_auth(staging=args.staging))
 
 
+def _write_access_report(client: JiraVersionClient) -> dict[str, Any]:
+    """Per-project browse + Administer Projects flags for check/apply preflight."""
+    projects: dict[str, Any] = {}
+    can_write = True
+    for project in PROJECTS:
+        try:
+            flags = client.my_permissions(project)
+            browse = flags.get("BROWSE_PROJECTS", False)
+            administer = flags.get("ADMINISTER_PROJECTS", False)
+            projects[project] = {
+                "browse_projects": browse,
+                "administer_projects": administer,
+            }
+            if not administer:
+                can_write = False
+        except RuntimeError as exc:
+            can_write = False
+            projects[project] = {
+                "browse_projects": False,
+                "administer_projects": False,
+                "error": str(exc),
+            }
+    return {"can_write": can_write, "projects": projects}
+
+
+def _is_permission_error(message: str) -> bool:
+    lower = message.lower()
+    return (
+        "permission to create versions" in lower
+        or "administrator rights" in lower
+        or "administer projects" in lower
+        or "do not have permission" in lower
+    )
+
+
+def _build_check_project_row(
+    project: str,
+    *,
+    version_count: int,
+    lifecycle_counts: dict[str, int],
+    browse_projects: bool,
+    administer_projects: bool,
+) -> dict[str, Any]:
+    """Build one check JSON row after a successful version list."""
+    row: dict[str, Any] = {
+        "project": project,
+        "status": "pass" if administer_projects else "read_only",
+        "count": version_count,
+        "lifecycle_counts": lifecycle_counts,
+        "browse_projects": browse_projects,
+        "administer_projects": administer_projects,
+    }
+    if not administer_projects:
+        row["warning"] = (
+            "Missing Administer Projects — can list versions but cannot "
+            "create or update fix versions"
+        )
+    return row
+
+
+def _refuse_apply_outcomes(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Skip every plan op when Administer Projects is missing."""
+    return [
+        {
+            "action": op.get("action"),
+            "project": op.get("project"),
+            "name": op.get("name"),
+            "status": "skipped",
+            "reason": (
+                "Missing Administer Projects on one or more in-scope projects; refusing to apply"
+            ),
+        }
+        for op in operations
+    ]
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     auth = resolve_jira_auth(staging=args.staging)
     client = JiraVersionClient(auth)
     projects: list[dict[str, Any]] = []
     ok = True
+    write_access = _write_access_report(client)
     for project in PROJECTS:
         try:
             versions = client.list_versions(project)
             indexed = index_by_name(versions)
-            projects.append(
-                {
-                    "project": project,
-                    "status": "pass",
-                    "count": len(versions),
-                    "lifecycle_counts": count_by_lifecycle(indexed),
-                }
+            administer = bool(write_access["projects"].get(project, {}).get("administer_projects"))
+            browse = bool(write_access["projects"].get(project, {}).get("browse_projects"))
+            entry = _build_check_project_row(
+                project,
+                version_count=len(versions),
+                lifecycle_counts=count_by_lifecycle(indexed),
+                browse_projects=browse,
+                administer_projects=administer,
             )
+            if not administer:
+                ok = False
+            projects.append(entry)
         except RuntimeError as exc:
             ok = False
             projects.append({"project": project, "status": "fail", "error": str(exc)})
+    if not write_access["can_write"]:
+        ok = False
     payload = {
         "ok": ok,
         "server": auth.server,
         "deployment": auth.deployment,
         "auth_source": auth.auth_source,
+        "can_write": write_access["can_write"],
         "projects": projects,
     }
     print(json.dumps(payload, indent=2))
@@ -222,41 +330,68 @@ def _filter_by_lifecycle(
 
 def _recency_names(
     args: argparse.Namespace, by_project: dict[str, dict[str, dict[str, Any]]]
-) -> tuple[set[str] | None, dict[str, str]]:
+) -> tuple[set[str], dict[str, str]]:
+    """Resolve version name scope for list/diff/plan.
+
+    Default: unreleased only. --include-released: recent GA window.
+    --all-versions: full inventory. Named ensure/plan --name bypasses this.
+    """
     if getattr(args, "all_versions", False):
-        return None, {"scope": "all"}
-    within_days = getattr(args, "within_days", DEFAULT_RECENT_DAYS)
-    names = filter_names_by_recency(by_project, collect_names(by_project), within_days=within_days)
-    meta = recent_filter_meta(within_days=within_days)
-    meta["scope"] = "recent"
-    meta["matching_versions"] = str(len(names))
-    return names, meta
+        names = collect_names(by_project)
+        return names, {"scope": "all", "matching_versions": str(len(names))}
+
+    lifecycle = getattr(args, "lifecycle", None)
+    include_released = bool(getattr(args, "include_released", False))
+    # Asking for released/archived inventory implies widening past unreleased-only.
+    if lifecycle in (LIFECYCLE_RELEASED, LIFECYCLE_ARCHIVED):
+        include_released = True
+
+    if include_released:
+        within_days = getattr(args, "within_days", DEFAULT_RECENT_DAYS)
+        names = filter_names_by_recency(
+            by_project, collect_names(by_project), within_days=within_days
+        )
+        meta = recent_filter_meta(within_days=within_days)
+        meta["scope"] = "recent"
+        meta["matching_versions"] = str(len(names))
+        return names, meta
+
+    names = filter_names_unreleased(by_project, collect_names(by_project))
+    return names, {"scope": "unreleased", "matching_versions": str(len(names))}
 
 
 def _add_recency_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
+        "--include-released",
+        action="store_true",
+        help=(
+            "Include recently released/archived versions in the 365-day window "
+            "(default: unreleased only)"
+        ),
+    )
+    parser.add_argument(
         "--all-versions",
         action="store_true",
-        help="Include every fix version (default: recent window only)",
+        help="Include every fix version (default: unreleased only)",
     )
     parser.add_argument(
         "--within-days",
         type=int,
         default=DEFAULT_RECENT_DAYS,
         metavar="N",
-        help=f"Recent window in days when not using --all-versions (default: {DEFAULT_RECENT_DAYS})",
+        help=(
+            f"Recent window in days when using --include-released (default: {DEFAULT_RECENT_DAYS})"
+        ),
     )
 
 
 def cmd_list(args: argparse.Namespace) -> int:
     client = _client(args)
     by_project = load_by_project(client)
-    recent_names, filter_meta = _recency_names(args, by_project)
+    scoped_names, filter_meta = _recency_names(args, by_project)
     out: dict[str, Any] = {"filter": filter_meta, "projects": {}}
     for project in PROJECTS:
-        versions = by_project[project].values()
-        if recent_names is not None:
-            versions = [v for v in versions if v["name"] in recent_names]
+        versions = [v for v in by_project[project].values() if v["name"] in scoped_names]
         summaries = [version_summary(v) for v in sorted(versions, key=lambda item: item["name"])]
         out["projects"][project] = {
             "lifecycle_counts": count_by_lifecycle(
@@ -317,8 +452,8 @@ def cmd_close_check(args: argparse.Namespace) -> int:
 def cmd_diff(args: argparse.Namespace) -> int:
     client = _client(args)
     by_project = load_by_project(client)
-    recent_names, filter_meta = _recency_names(args, by_project)
-    report = diff_report(by_project, names=recent_names)
+    scoped_names, filter_meta = _recency_names(args, by_project)
+    report = diff_report(by_project, names=scoped_names)
     payload: dict[str, Any] = {"filter": filter_meta, "drift": report}
     if args.prune:
         payload["orphans"] = [
@@ -345,18 +480,30 @@ def _override_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
     return override or None
 
 
+def _parse_named_versions(args: argparse.Namespace) -> set[str] | None:
+    """Collect explicit version names from --name, --names, or ensure VERSION."""
+    names: set[str] = set()
+    single = getattr(args, "name", None)
+    if isinstance(single, str) and single.strip():
+        names.add(single.strip())
+    multi = getattr(args, "names", None)
+    if isinstance(multi, str) and multi.strip():
+        for part in multi.split(","):
+            part = part.strip()
+            if part:
+                names.add(part)
+    return names or None
+
+
 def _plan_version_names(
-    args: argparse.Namespace, by_project: dict[str, dict[str, dict[str, Any]]]
+    args: argparse.Namespace,
+    by_project: dict[str, dict[str, dict[str, Any]]],
+    named: set[str] | None = None,
 ) -> set[str]:
-    if args.name:
-        return {args.name}
-    if args.all_versions:
-        return collect_names(by_project)
-    return filter_names_by_recency(
-        by_project,
-        collect_names(by_project),
-        within_days=args.within_days,
-    )
+    if named:
+        return named
+    names, _ = _recency_names(args, by_project)
+    return names
 
 
 def _lookup_release_docs(
@@ -375,14 +522,22 @@ def cmd_plan(args: argparse.Namespace) -> int:
     auth = resolve_jira_auth(staging=args.staging)
     client = JiraVersionClient(auth)
     by_project = load_by_project(client)
-    if args.name:
-        filter_meta = {"scope": "single", "version": args.name}
+    named = _parse_named_versions(args)
+    if named:
+        filter_meta: dict[str, Any] = {
+            "scope": "named",
+            "versions": sorted(named),
+            "matching_versions": str(len(named)),
+        }
     else:
         _, filter_meta = _recency_names(args, by_project)
 
+    plan_names = _plan_version_names(args, by_project, named)
     release_docs: dict[str, dict[str, Any]] = {}
     if not args.no_release_doc:
-        release_docs = _lookup_release_docs(client, _plan_version_names(args, by_project))
+        needing_docs = versions_needing_release_docs(by_project, plan_names)
+        release_docs = _lookup_release_docs(client, needing_docs)
+        filter_meta["release_doc_lookups"] = str(len(needing_docs))
         if release_docs:
             filter_meta["release_docs"] = {
                 version: {
@@ -397,18 +552,23 @@ def cmd_plan(args: argparse.Namespace) -> int:
     operations = compute_plan(
         by_project,
         prune=args.prune,
-        only_name=args.name,
+        only_names=named,
         override_meta=_override_from_args(args),
         within_days=getattr(args, "within_days", DEFAULT_RECENT_DAYS),
-        all_versions=getattr(args, "all_versions", False) or args.name is not None,
+        all_versions=getattr(args, "all_versions", False) or bool(named),
+        include_released=bool(getattr(args, "include_released", False)),
         release_docs=release_docs,
     )
+    summary = summarize_operations(operations)
+    decisions = collect_orphan_decisions(operations)
     print(
         json.dumps(
             {
                 "deployment": auth.deployment,
                 "server": auth.server,
                 "filter": filter_meta,
+                "summary": summary,
+                "decisions": decisions,
                 "operations": operations,
             },
             indent=2,
@@ -419,6 +579,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 def cmd_ensure(args: argparse.Namespace) -> int:
     args.name = args.version
+    args.names = None
     return cmd_plan(args)
 
 
@@ -443,11 +604,43 @@ def cmd_apply(args: argparse.Namespace) -> int:
     plan_path = Path(args.plan)
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     operations = plan.get("operations", plan)
-    client = _client(args)
+    if not isinstance(operations, list):
+        raise SystemExit("Plan JSON must contain an operations list")
+    auth = resolve_jira_auth(staging=args.staging)
+    client = JiraVersionClient(auth)
+    write_access = _write_access_report(client)
+    if not write_access["can_write"]:
+        outcomes = _refuse_apply_outcomes(operations)
+        print(
+            json.dumps(
+                {
+                    "deployment": auth.deployment,
+                    "server": auth.server,
+                    "can_write": False,
+                    "write_access": write_access["projects"],
+                    "outcomes": outcomes,
+                },
+                indent=2,
+            )
+        )
+        return 1
+
     by_project = load_by_project(client)
     outcomes: list[dict[str, Any]] = []
+    skip_remaining: str | None = None
 
     for op in operations:
+        if skip_remaining:
+            outcomes.append(
+                {
+                    "action": op.get("action"),
+                    "project": op.get("project"),
+                    "name": op.get("name"),
+                    "status": "skipped",
+                    "reason": skip_remaining,
+                }
+            )
+            continue
         action = op["action"]
         try:
             if action == "create":
@@ -482,7 +675,10 @@ def cmd_apply(args: argparse.Namespace) -> int:
                             "project": op["project"],
                             "name": op["name"],
                             "status": "skipped",
-                            "reason": f"{count} issues still reference this version; pass --move-issues-to",
+                            "reason": (
+                                f"{count} issues still reference this version; "
+                                "pass --move-issues-to"
+                            ),
                         }
                     )
                     continue
@@ -505,22 +701,25 @@ def cmd_apply(args: argparse.Namespace) -> int:
             else:
                 outcomes.append({"action": action, "status": "skipped", "reason": "unknown action"})
         except RuntimeError as exc:
+            message = str(exc)
             outcomes.append(
                 {
                     "action": action,
                     "project": op.get("project"),
                     "name": op.get("name"),
                     "status": "failed",
-                    "error": str(exc),
+                    "error": message,
                 }
             )
+            if _is_permission_error(message):
+                skip_remaining = "Skipped after permission failure on an earlier operation"
 
-    auth = resolve_jira_auth(staging=args.staging)
     print(
         json.dumps(
             {
                 "deployment": auth.deployment,
                 "server": auth.server,
+                "can_write": True,
                 "outcomes": outcomes,
             },
             indent=2,
@@ -594,6 +793,10 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("version", help="Fix version name (e.g. 1.11.0)")
         else:
             p.add_argument("--name", help="Limit plan to one version name")
+            p.add_argument(
+                "--names",
+                help="Comma-separated version names to plan (overrides unreleased scope)",
+            )
         p.add_argument("--prune", action="store_true", help="Include delete for orphan versions")
         p.add_argument("--description")
         p.add_argument("--start-date")

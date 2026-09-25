@@ -45,20 +45,35 @@ Load `references/staging-jira.md` when the human wants staging credentials or
 |---|---|
 | Verify auth and project access | `uv run scripts/fixversions.py check --json` |
 | Try staging before production | add `--staging` to any command (including `apply`) |
-| List recent versions with lifecycle (default 365d) | `uv run scripts/fixversions.py list --json` |
+| List unreleased versions (default) | `uv run scripts/fixversions.py list --json` |
 | Lifecycle for one version across projects | `uv run scripts/fixversions.py status VERSION --json` |
 | Before closing the release Feature | `uv run scripts/fixversions.py close-check VERSION --json` |
-| Drift in the recent window | `uv run scripts/fixversions.py diff --json` |
-| Full historical inventory | add `--all-versions` to `list` or `diff` |
-| Plan creates and updates | `uv run scripts/fixversions.py plan --json` |
+| Drift among unreleased versions (default) | `uv run scripts/fixversions.py diff --json` |
+| Include recently released GA (365d window) | add `--include-released` to `list`, `diff`, or `plan` |
+| Full historical inventory | add `--all-versions` to `list`, `diff`, or `plan` |
+| Plan creates and updates for unreleased | `uv run scripts/fixversions.py plan --json` |
+| Plan specific versions (with optional date overrides) | `uv run scripts/fixversions.py plan --names 1.10.6,2.2.0 --release-date 2027-03-10 --json` |
 | Ensure one version everywhere | `uv run scripts/fixversions.py ensure VERSION --json` |
 | Apply an approved plan | `uv run scripts/fixversions.py apply --plan FILE --json` |
+
+`list`, `diff`, and bulk `plan` default to **unreleased** versions — the set the
+team maintains day to day (create missing peers, fix drift, mark released). Pass
+`--include-released` for the recent GA window, or `--all-versions` for history.
+Named commands (`status`, `ensure`, `close-check`, `plan --name` / `--names`)
+always target the version(s) you name.
+
+`check` verifies **Administer Projects** on RHIDP, RHDHPLAN, and RHDHBUGS (not
+only browse). Projects that can be listed but not written report
+`status: read_only` with `can_write: false` on the payload — stop and fix
+credentials before `apply`. `ensure` is a read-only plan alias for one version;
+only `apply` mutates Jira.
 
 ## Prerequisites
 
 Run `check` before any write. It never prints credentials. When auth is missing,
-stop and tell the human to run `/setup-rhdh-skills jira`. When a project returns
-forbidden, stop — the invoker lacks Administer Projects.
+stop and tell the human to run `/setup-rhdh-skills jira`. When `can_write` is
+false or a project reports missing Administer Projects, stop — browse-only
+access is not enough for create/update.
 
 Pass **`--staging`** on any subcommand to target staging Jira instead of
 production (`deployment` in `check` JSON is `staging`). Set **`JIRA_STAGING_URL`**
@@ -102,8 +117,9 @@ with `/rhdh-platform-lifecycle` when the API lookup fails or is ambiguous.
 - ADF milestone date extraction uses the shared `adf_milestones` module from
   `rhdh-jira-api` (requiresSkills dependency). The release Feature lookup and
   status helpers are local to this skill because they use the REST client, not
-  `acli`.
-- Open-issue counts per fix version are read through the release status skill.
+  `acli`. Milestone dates for a version also come from `/rhdh-release-schedule`
+  when the human asks for the calendar rather than fix-version CRUD.
+- Open-issue counts per fix version are read through `/rhdh-release-status`.
 - Setting fix version on issues is issue update work; automation rules are in the
   Jira API reference skill.
 - Version CRUD uses the Jira REST API directly because `acli` has no version
