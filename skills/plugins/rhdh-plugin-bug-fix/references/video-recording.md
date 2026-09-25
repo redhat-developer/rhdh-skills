@@ -27,7 +27,7 @@ All rhdh-plugins workspaces use `@playwright/test` >= 1.60.0, which supports thi
 
 ### Why not `test.use({ video: ... })`?
 
-`test.use()` only applies to Playwright's auto-created contexts. Many rhdh-plugins workspaces (e.g., `lightspeed`) manually create contexts in `beforeAll` helpers, which bypasses `test.use()` entirely. By always creating our own context with `recordVideo`, we avoid this pitfall.
+`test.use()` only applies to Playwright's auto-created contexts. Many rhdh-plugins workspaces (e.g., `intelligent-assistant`) manually create contexts in `beforeAll` helpers, which bypasses `test.use()` entirely. By always creating our own context with `recordVideo`, we avoid this pitfall.
 
 ## Where Videos Land
 

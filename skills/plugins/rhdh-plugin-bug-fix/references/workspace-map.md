@@ -12,7 +12,7 @@ Maps issue metadata (Jira Components, GitHub labels, issue body fields) to works
 | Bulk Import | `bulk-import` | Yes | legacy + nfs |
 | Extensions | `extensions` | Yes | legacy + nfs |
 | Homepage | `homepage` | Yes | legacy + nfs |
-| Lightspeed | `lightspeed` | Yes | legacy + nfs |
+| Intelligent-Assistant | `intelligent-assistant` | Yes | legacy + nfs |
 | Global Header | `global-header` | Yes | legacy only |
 | Quickstart | `quickstart` | Yes | legacy + nfs |
 | Scorecard | `scorecard` | Yes | legacy + nfs |
@@ -27,8 +27,8 @@ Some Jira Components do not map 1:1 to a workspace. **Localization** is the prim
 
 When the issue has a cross-cutting component, disambiguate the actual workspace:
 
-1. **Second Component** — if the issue has another Component alongside Localization (e.g., `Localization` + `Lightspeed`), use the second component to resolve the workspace via the table above.
-2. **Issue description** — scan for plugin or workspace references (e.g., `@red-hat-developer-hub/backstage-plugin-lightspeed`, `lightspeed workspace`, `plugins/lightspeed/src/translations/ref.ts`).
+1. **Second Component** — if the issue has another Component alongside Localization (e.g., `Localization` + `Intelligent-Assistant`), use the second component to resolve the workspace via the table above.
+2. **Issue description** — scan for plugin or workspace references (e.g., `@red-hat-developer-hub/backstage-plugin-intelligent-assistant`, `intelligent-assistant` workspace, `workspaces/intelligent-assistant/plugins/`).
 3. **Only target `translations`** if the issue is about the shared i18n framework itself (e.g., `getTranslations()` utility, locale configuration, shared tooling) and no specific plugin is mentioned.
 4. **Fallback** — ask the user: "The Localization component is cross-cutting. Which workspace contains the affected plugin?"
 

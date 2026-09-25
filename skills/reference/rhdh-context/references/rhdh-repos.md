@@ -182,7 +182,7 @@ Reference of all RHDH-related repositories, what each one is used for, and how t
   - **Workspace independence:** Each `workspaces/<name>/` has its own `package.json` (named `@internal/<name>`, `private: true`), `yarn.lock`, `.changeset/`, and `backstage.json`. Run `yarn install` from within the workspace, not the root.
   - **Workspace structure:** `workspaces/<name>/packages/app/` (dev frontend), `packages/backend/` (dev backend), `plugins/<plugin-name>/` (publishable plugins). Plugin packages follow `-backend`, `-common`, `-node` suffix conventions.
   - **Changesets:** `yarn changeset` from workspace root. On merge to `main`, automation creates a "Version Packages" PR on `changesets-release/<workspace>/main` branch.
-  - **Notable workspaces:** `bulk-import`, `lightspeed` (AI assistant), `orchestrator` (SonataFlow), `homepage`, `theme`, `extensions`, `global-header`, `adoption-insights`, `scorecard`, `ai-integrations`, `translations`, `konflux`, `mcp-integrations`.
+  - **Notable workspaces:** `bulk-import`, `intelligent-assistant` (AI assistant), `orchestrator` (SonataFlow), `homepage`, `theme`, `extensions`, `global-header`, `adoption-insights`, `scorecard`, `ai-integrations`, `translations`, `konflux`, `mcp-integrations`.
   - **Creating new workspace:** `yarn create-workspace` from repo root. Creating a plugin within a workspace: `cd workspaces/<name> && yarn new`.
   - **Branching:** `main` for active development; `1.2` for release maintenance; `changesets-release/<workspace>/main` for automated version PRs.
 - **Key paths:** `workspaces/` (all plugin workspaces), `scripts/ci/` (CI helper scripts), `.github/CODEOWNERS` (per-workspace ownership)

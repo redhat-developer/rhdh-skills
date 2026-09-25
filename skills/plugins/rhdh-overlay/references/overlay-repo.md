@@ -33,7 +33,7 @@ When in doubt, find a similar workspace and copy its structure.
 | Is from `backstage/community-plugins` | `backstage/` | Multiple plugins, patches |
 | Needs Backstage version override | `aws-codebuild/` | `backstage.json` + matching `source.json` |
 | Has unpublished shared dependencies | `aws-ecs/` | `--embed-package` in `plugins-list.yaml` |
-| Is a Red Hat plugin | `lightspeed/` | Standard structure |
+| Is a Red Hat plugin | `intelligent-assistant/` | Standard structure |
 | Needs metadata files | `aws-codebuild/metadata/`, `todo/metadata/` | YAML structure, `appConfigExamples` patterns |
 
 **View similar PRs:**

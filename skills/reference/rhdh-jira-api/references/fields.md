@@ -131,8 +131,8 @@ Full list of RHDH project components with descriptions, grouped by category. Fre
 | Helm Chart | Helm chart for RHDH deployment on OpenShift/Kubernetes | | | | |
 | High Availability | Multi-replica and HA deployment configurations | | | | |
 | Homepage | Dynamic homepage plugin and backend | | | | |
+| Intelligent-Assistant | AI-powered developer assistant plugin | | | | |
 | LDAP | LDAP auth provider and entity ingestion | | | | |
-| Lightspeed | AI-powered developer assistant plugin | | | | |
 | Localization | i18n and RTL language support | | | | |
 | LTS | Long Term Support release stream and lifecycle management | | | | |
 | MCP | Model Context Protocol server and AI permissions | | | | |
