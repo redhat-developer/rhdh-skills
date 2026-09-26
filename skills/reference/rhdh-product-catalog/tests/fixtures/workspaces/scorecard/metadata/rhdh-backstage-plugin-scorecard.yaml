@@ -1,0 +1,18 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Package
+metadata:
+  name: rhdh-backstage-plugin-scorecard
+  namespace: rhdh
+  title: "Scorecard"
+  links:
+    - title: Source Code
+      url: https://github.com/redhat-developer/rhdh-plugins/tree/main/workspaces/scorecard/plugins/scorecard
+spec:
+  packageName: "@red-hat-developer-hub/backstage-plugin-scorecard"
+  version: 4.1.0
+  backstage:
+    role: frontend-plugin
+    supportedVersions: 1.52.0
+  author: Red Hat
+  support: dev-preview
+  lifecycle: active

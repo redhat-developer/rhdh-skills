@@ -33,7 +33,10 @@ rhdh = "rhdh.cli:main"
 rhdh-local = "rhdh_local.cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests",
+    "skills/reference/rhdh-product-catalog/tests",
+]
 # The rhdh and rhdh_local packages are put on sys.path by tests/conftest.py.
 python_files = ["test_*.py"]
 python_classes = ["Test*"]

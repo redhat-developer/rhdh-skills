@@ -1,0 +1,7 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: not-a-package
+  title: Should Be Skipped
+spec:
+  supportLevel: community

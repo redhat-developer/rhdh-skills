@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  namespace: rhdh
+  name: plugins
+spec:
+  targets:
+    - ./3scale.yaml
+    - ./scorecard.yaml
+    - ./bulk-import.yaml
+    - ./acr.yaml
+    - ./legacy-ga.yaml

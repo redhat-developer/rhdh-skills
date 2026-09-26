@@ -7,6 +7,8 @@ description: >-
   and merge readiness, and trigger /publish. Use for source.json,
   plugins-list.yaml, backstage.json, catalog metadata, overlay CI, plugin
   import, overlay PRs, or testing exact PR artifacts before merge. For
+  read-only package or catalog plugin inventory, support levels, release diffs,
+  or plugin vs package support alignment, use /rhdh-product-catalog. For
   code-level review of a pull request, use /rhdh-pr-review. To promote an
   rhdh-plugins release through overlays into rhdh-plugin-catalog, use
   /rhdh-plugin-midstream-propagate.
