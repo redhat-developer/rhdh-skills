@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Feature Docs"
+  short_description: "Generate RHDH AsciiDoc/TechDocs content from a Jira feature link"
