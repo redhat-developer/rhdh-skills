@@ -365,6 +365,24 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-translation-upload",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-translation-deploy",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-test-plan-review",
       "category": "release",
       "invocation": "model",

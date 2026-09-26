@@ -58,6 +58,8 @@
         "./skills/reference/mutation-gate",
         "./skills/release/rhdh-release-sos",
         "./skills/release/rhdh-smoke-tests",
+        "./skills/release/rhdh-translation-upload",
+        "./skills/release/rhdh-translation-deploy",
         "./skills/release/rhdh-test-plan-review"
       ]
     },

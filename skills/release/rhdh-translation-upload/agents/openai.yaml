@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Translation Upload"
+  short_description: "Extract translation strings and upload delta to TMS"
