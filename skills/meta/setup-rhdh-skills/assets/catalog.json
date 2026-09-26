@@ -231,6 +231,13 @@
       ]
     },
     {
+      "name": "rhdh-backport",
+      "category": "plugins",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-base-images",
       "category": "ci",
       "invocation": "model",
