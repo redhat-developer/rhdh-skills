@@ -103,6 +103,12 @@ These apply in addition to the main/release branch rules above.
 The bump level matches the semver level of the dependency version change:
 minor dep bump gets `/bump <chart> minor`, patch gets `/bump <chart> patch`.
 
+## rhdh-local branch model
+
+rhdh-local uses `dev` as its development branch. The `main` branch is kept
+stable per a PM requirement and does not receive bot PRs. Treat PRs targeting
+`dev` in rhdh-local the same as PRs targeting `main` in other repositories.
+
 ## CI status rules
 
 All required checks must be green. Skip `tide` when evaluating CI status on

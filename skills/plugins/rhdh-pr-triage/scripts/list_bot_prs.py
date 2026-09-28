@@ -72,8 +72,15 @@ def run_gh_json(args):
         error_exit("gh_json_parse", f"Failed to parse JSON from: {' '.join(['gh'] + args)}")
 
 
-def classify_branch(base_ref):
+DEV_BRANCH_REPOS = {
+    "redhat-developer/rhdh-local": "dev",
+}
+
+
+def classify_branch(base_ref, repo=""):
     if base_ref == "main" or base_ref == "master":
+        return "main"
+    if base_ref == DEV_BRANCH_REPOS.get(repo):
         return "main"
     if re.match(r"release-\d+\.\d+", base_ref):
         return "release"
@@ -291,7 +298,7 @@ def fetch_prs_for_repo(repo):
                     "url": pr_data.get("url", ""),
                     "title": title,
                     "base_branch": base_ref,
-                    "branch_type": classify_branch(base_ref),
+                    "branch_type": classify_branch(base_ref, repo),
                     "author": author_login,
                     "labels": labels,
                     "ci_status": ci_status,
