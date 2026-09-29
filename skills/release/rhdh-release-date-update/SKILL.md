@@ -10,9 +10,9 @@ description: >-
   release_calendar.yaml", "the RHDH schedule changed, propagate it", "check
   release-schedule.yaml is current", "keep plugin-owner release dates in
   sync", or a downstream reminder or announcement that landed with the wrong
-  freeze date. Never edits chat announcements or issue pinning/content
-  directly — those stay on their owning workflow until /rhdh-forge covers
-  issue writes.
+  freeze date. Never edits chat announcements or the pinned release-information
+  issue — it reports drift in those and leaves the fix to their owning
+  workflow.
 ---
 
 # RHDH release date update
@@ -34,9 +34,9 @@ stale entries and adding entries for newly-scheduled releases.
 Out of scope, reported as a checklist item instead of fixed:
 
 - The pinned "RHDH x.y Release Information" GitHub issue in
-  `rhdh-plugin-export-overlays`. `/rhdh-forge` does not yet build payloads for
-  issue edit, pin, unpin, or close, so this skill only reports drift there —
-  it does not fix it. Revisit once `/rhdh-forge` covers those operations.
+  `rhdh-plugin-export-overlays`. Its body carries hand-written sections this
+  skill has no source for, so it reports the issue's drift as a checklist item
+  and leaves the edit to a human.
 - Slack messages in `#forum-rhdh-releases` / `#rhdh-plugins-ecosystem`. The
   `rhdh-jira-lint` bot posts these automatically, driven entirely by
   `release_calendar.yaml`'s contents on its own weekly schedule — once that
@@ -75,10 +75,18 @@ target file and the source-JSON shape `scripts/release_dates.py` expects.
 ## Completion
 
 Complete when `scripts/release_dates.py diff` has run against both target
-files, every non-`match`, non-`skipped-tbd` entry has a proposed fix in the
-approved plan, the plan was approved before any push happened, and every
-operation in the plan — branch push, and PR/MR creation once `/rhdh-forge`'s
-command was executed — has a reported outcome. A version skipped as `TBD` is
-named as skipped, never silently omitted from the report. The pinned-issue
+files, every `stale` or `missing` entry has a proposed fix in the approved
+plan, the plan was approved before any push happened, and every operation in
+the plan — branch push, and PR/MR creation once `/rhdh-forge`'s command was
+executed — has a reported outcome. A version skipped as `TBD` or as a z-stream
+is named as skipped, never silently omitted from the report. The pinned-issue
 gap is always named in the report, even on a run where both YAML files
 already matched.
+
+No value is ever invented. A field `/rhdh-release-schedule` does not report —
+`backstage_version` above all, which it never reports — is omitted from the
+source JSON rather than guessed. The script then keeps whatever the target
+file already holds and names the omission, and it withholds a new entry
+entirely rather than creating it with a placeholder. A run that reported an
+`incomplete` entry is still complete, provided the report names the version
+and the fields a human has to supply.

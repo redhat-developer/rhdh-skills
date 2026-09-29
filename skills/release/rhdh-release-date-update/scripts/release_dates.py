@@ -27,6 +27,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -52,6 +53,34 @@ GITLAB_BASE_BRANCH = os.environ.get("RELEASE_DATE_UPDATE_GITLAB_BASE", "main")
 BRANCH_NAME = os.environ.get("RELEASE_DATE_UPDATE_BRANCH", "rhdh-release-date-update")
 
 TBD_VALUES = {None, "", "TBD", "tbd"}
+
+# Fields that must be present in the source JSON before a version absent from a
+# target file can be created there. Every existing entry in both live files
+# carries all of these, so a partial entry would be malformed. A field missing
+# here is never invented: on an existing entry the current value stands, and on
+# a new entry the whole entry is withheld and reported.
+REQUIRED_FIELDS = {
+    "github": ("backstage_version", "feature_freeze"),
+    "gitlab": ("feature_freeze", "code_freeze", "ga_push", "backstage_version"),
+}
+
+# Both target files track minor releases only — every entry in each is x.y.0.
+# The active-release JQL also returns z-streams, so they are filtered here
+# rather than relying on the caller to leave them out of the source JSON.
+MINOR_RELEASE_RE = re.compile(r"^\d+\.\d+\.0$")
+
+
+def _supplied(value: Any) -> bool:
+    """True when the source actually carries a value for a field."""
+    return value not in TBD_VALUES
+
+
+def _is_minor_release(version: str) -> bool:
+    return bool(MINOR_RELEASE_RE.match(str(version)))
+
+
+def _missing_fields(info: dict[str, Any], target: str) -> list[str]:
+    return [field for field in REQUIRED_FIELDS[target] if not _supplied(info.get(field))]
 
 
 def _run_json(cmd: list[str]) -> Any:
@@ -156,27 +185,47 @@ def diff_github(source: dict[str, dict[str, Any]], doc: CommentedMap) -> list[di
     existing = _github_releases(doc)
     report = []
     for version, info in source.items():
+        if not _is_minor_release(version):
+            report.append({"version": version, "state": "skipped-zstream"})
+            continue
         ff = info.get("feature_freeze")
-        if ff in TBD_VALUES:
+        if not _supplied(ff):
             report.append({"version": version, "state": "skipped-tbd"})
             continue
         current = existing.get(version)
-        desired = {
-            "rhdh-version": version,
-            "backstage-version": info.get("backstage_version"),
-            "feature-freeze": ff,
-        }
         if current is None:
-            report.append({"version": version, "state": "missing", "desired": desired})
-        elif str(current.get("backstage-version")) != str(desired["backstage-version"]) or str(
-            current.get("feature-freeze")
-        ) != str(desired["feature-freeze"]):
+            absent = _missing_fields(info, "github")
+            if absent:
+                report.append({"version": version, "state": "incomplete", "missing_fields": absent})
+                continue
+            report.append(
+                {
+                    "version": version,
+                    "state": "missing",
+                    "desired": {
+                        "rhdh-version": version,
+                        "backstage-version": info.get("backstage_version"),
+                        "feature-freeze": ff,
+                    },
+                }
+            )
+            continue
+
+        # Only a supplied field can be stale. An absent one leaves the current
+        # value alone rather than overwriting it with a placeholder.
+        desired = {"feature-freeze": ff}
+        if _supplied(info.get("backstage_version")):
+            desired["backstage-version"] = info.get("backstage_version")
+        drifted = {
+            key: value for key, value in desired.items() if str(current.get(key)) != str(value)
+        }
+        if drifted:
             report.append(
                 {
                     "version": version,
                     "state": "stale",
                     "current": dict(current),
-                    "desired": desired,
+                    "desired": {"rhdh-version": version, **desired},
                 }
             )
         else:
@@ -188,20 +237,34 @@ def diff_gitlab(source: dict[str, dict[str, Any]], doc: CommentedMap) -> list[di
     existing = doc.get("releases", CommentedMap()) or {}
     report = []
     for version, info in source.items():
+        if not _is_minor_release(version):
+            report.append({"version": version, "state": "skipped-zstream"})
+            continue
         ff = info.get("feature_freeze")
-        if ff in TBD_VALUES:
+        if not _supplied(ff):
             report.append({"version": version, "state": "skipped-tbd"})
             continue
-        desired = {
-            "feature_freeze": ff,
-            "code_freeze": info.get("code_freeze"),
-            "ga_push": info.get("ga_push"),
-            "backstage_version": info.get("backstage_version"),
-        }
         current = existing.get(version)
         if current is None:
-            report.append({"version": version, "state": "missing", "desired": desired})
-        elif any(str(current.get(k)) != str(v) for k, v in desired.items()):
+            absent = _missing_fields(info, "gitlab")
+            if absent:
+                report.append({"version": version, "state": "incomplete", "missing_fields": absent})
+                continue
+            report.append(
+                {
+                    "version": version,
+                    "state": "missing",
+                    "desired": {key: info.get(key) for key in REQUIRED_FIELDS["gitlab"]},
+                }
+            )
+            continue
+
+        # Only a supplied field can be stale. An absent one leaves the current
+        # value alone rather than overwriting it with a placeholder.
+        desired = {
+            key: info.get(key) for key in REQUIRED_FIELDS["gitlab"] if _supplied(info.get(key))
+        }
+        if any(str(current.get(key)) != str(value) for key, value in desired.items()):
             report.append(
                 {
                     "version": version,
@@ -247,58 +310,97 @@ def cmd_diff(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def render_github(source: dict[str, dict[str, Any]], doc: CommentedMap) -> bool:
+def render_github(
+    source: dict[str, dict[str, Any]], doc: CommentedMap
+) -> tuple[bool, list[dict[str, Any]]]:
     existing = _github_releases(doc)
     changed = False
+    skipped: list[dict[str, Any]] = []
     releases = doc.setdefault("releases", [])
     for version, info in source.items():
+        if not _is_minor_release(version):
+            skipped.append({"version": version, "reason": "zstream"})
+            continue
         ff = info.get("feature_freeze")
-        if ff in TBD_VALUES:
+        if not _supplied(ff):
+            skipped.append({"version": version, "reason": "tbd"})
             continue
         entry = existing.get(version)
         if entry is None:
+            absent = _missing_fields(info, "github")
+            if absent:
+                skipped.append(
+                    {"version": version, "reason": "incomplete", "missing_fields": absent}
+                )
+                continue
             new_entry = CommentedMap()
             new_entry["rhdh-version"] = DQ(version)
             new_entry["backstage-version"] = DQ(info.get("backstage_version"))
             new_entry["feature-freeze"] = DQ(ff)
             releases.append(new_entry)
             changed = True
-        else:
-            if str(entry.get("backstage-version")) != str(info.get("backstage_version")):
-                entry["backstage-version"] = DQ(info.get("backstage_version"))
-                changed = True
-            if str(entry.get("feature-freeze")) != str(ff):
-                entry["feature-freeze"] = DQ(ff)
-                changed = True
-    return changed
+            continue
+
+        # Write only what the source supplied; an absent field keeps the value
+        # already in the file rather than being overwritten with a placeholder.
+        if str(entry.get("feature-freeze")) != str(ff):
+            entry["feature-freeze"] = DQ(ff)
+            changed = True
+        backstage = info.get("backstage_version")
+        if not _supplied(backstage):
+            skipped.append(
+                {"version": version, "reason": "field-not-supplied", "field": "backstage_version"}
+            )
+        elif str(entry.get("backstage-version")) != str(backstage):
+            entry["backstage-version"] = DQ(backstage)
+            changed = True
+    return changed, skipped
 
 
-def render_gitlab(source: dict[str, dict[str, Any]], doc: CommentedMap) -> bool:
+def render_gitlab(
+    source: dict[str, dict[str, Any]], doc: CommentedMap
+) -> tuple[bool, list[dict[str, Any]]]:
     releases = doc.setdefault("releases", CommentedMap())
     changed = False
+    skipped: list[dict[str, Any]] = []
     for version, info in source.items():
-        ff = info.get("feature_freeze")
-        if ff in TBD_VALUES:
+        if not _is_minor_release(version):
+            skipped.append({"version": version, "reason": "zstream"})
             continue
-        desired = {
-            "feature_freeze": ff,
-            "code_freeze": info.get("code_freeze"),
-            "ga_push": info.get("ga_push"),
-            "backstage_version": info.get("backstage_version"),
-        }
+        ff = info.get("feature_freeze")
+        if not _supplied(ff):
+            skipped.append({"version": version, "reason": "tbd"})
+            continue
         entry = releases.get(version)
         if entry is None:
+            absent = _missing_fields(info, "gitlab")
+            if absent:
+                skipped.append(
+                    {"version": version, "reason": "incomplete", "missing_fields": absent}
+                )
+                continue
             new_entry = CommentedMap()
-            for key, value in desired.items():
-                new_entry[key] = DQ(value)
+            for key in REQUIRED_FIELDS["gitlab"]:
+                new_entry[key] = DQ(info.get(key))
             releases[DQ(version)] = new_entry
             changed = True
-        else:
-            for key, value in desired.items():
-                if str(entry.get(key)) != str(value):
-                    entry[key] = DQ(value)
-                    changed = True
-    return changed
+            continue
+
+        # Write only what the source supplied; an absent field keeps the value
+        # already in the file rather than being overwritten with a placeholder.
+        unsupplied = _missing_fields(info, "gitlab")
+        if unsupplied:
+            skipped.append(
+                {"version": version, "reason": "fields-not-supplied", "fields": unsupplied}
+            )
+        for key in REQUIRED_FIELDS["gitlab"]:
+            value = info.get(key)
+            if not _supplied(value):
+                continue
+            if str(entry.get(key)) != str(value):
+                entry[key] = DQ(value)
+                changed = True
+    return changed, skipped
 
 
 def cmd_render(args: argparse.Namespace) -> int:
@@ -310,17 +412,26 @@ def cmd_render(args: argparse.Namespace) -> int:
     if args.target == "github":
         content, _ = fetch_github_file()
         doc = yaml.load(content)
-        changed = render_github(source, doc)
+        changed, skipped = render_github(source, doc)
     else:
         content = fetch_gitlab_file()
         doc = yaml.load(content)
-        changed = render_gitlab(source, doc)
+        changed, skipped = render_gitlab(source, doc)
 
     out_path = Path(args.output)
     with out_path.open("w") as fh:
         yaml.dump(doc, fh)
 
-    print(json.dumps({"target": args.target, "changed": changed, "output": str(out_path)}))
+    print(
+        json.dumps(
+            {
+                "target": args.target,
+                "changed": changed,
+                "output": str(out_path),
+                "skipped": skipped,
+            }
+        )
+    )
     return 0
 
 

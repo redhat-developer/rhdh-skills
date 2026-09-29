@@ -26,6 +26,17 @@ This step is not scriptable: `/rhdh-release-schedule` itself reads Jira and a
 spreadsheet through an agent, not a fixed API call. Everything after this
 step is deterministic.
 
+Three things go wrong here if you transcribe on autopilot. The field mapping is
+in `references/target-schemas.md` — read it before building the JSON:
+
+- `ga_push` is the **GA announce** date, not Go/No Go & Push.
+- `backstage_version` is **not** something `/rhdh-release-schedule` reports.
+  Read it from the target file's existing entry, or ask the human for a release
+  being added. Omit the field rather than guessing — the script preserves what
+  is already in the file and reports the omission, but a guessed value reaches
+  third-party plugin owners as the Backstage version to target.
+- Leave z-stream versions such as `1.10.5` out. Both files track `x.y.0` only.
+
 ## 3. Diff
 
 ```bash
@@ -33,12 +44,22 @@ uv run scripts/release_dates.py diff --source-json /tmp/rhdh-release-dates.json
 ```
 
 Read the JSON report. Each target (`github`, `gitlab`) lists one entry per
-version with `state`: `match` (nothing to do), `stale` (fields differ),
-`missing` (version absent from the file), or `skipped-tbd` (Feature Freeze
-undecided upstream — leave alone, but still name it in the final report).
+version with `state`:
 
-If every entry across both targets is `match` or `skipped-tbd`, skip to step
-7 and report a clean run — still naming the pinned-issue gap.
+| State | What to do |
+|---|---|
+| `match` | Nothing |
+| `stale` | Fix it — `desired` holds the corrected fields |
+| `missing` | Add it — absent from the file and fully specified |
+| `incomplete` | Absent, but the source lacks `missing_fields`. Do not write a partial entry: ask the human for those values and re-run, or report it as needing a human |
+| `skipped-tbd` | Feature Freeze undecided upstream — leave alone |
+| `skipped-zstream` | Not an `x.y.0` release; neither file tracks it |
+
+Every state is named in the final report, including the skipped ones.
+
+If no entry across both targets is `stale` or `missing`, skip to step 7 and
+report a clean run — still naming any `incomplete` entries and the
+pinned-issue gap.
 
 ## 4. Render
 
@@ -93,8 +114,8 @@ nothing lands on `main` without a separate human-reviewed merge.
 Always add one more row to the table that is a **report-only note, not an
 operation requiring approval**: the pinned "RHDH x.y Release Information"
 GitHub issue's current drift state (compare its table manually against the
-source JSON) — flagged because `/rhdh-forge` cannot yet build an issue-edit
-payload.
+source JSON). This skill does not edit that issue; it reports the drift so a
+human can.
 
 ## 7. Execute and report
 
@@ -102,7 +123,13 @@ After approval, run the approved `apply` command(s), then the approved
 `gh pr create` / MR-creation command(s) for any target that did not already
 have one open. Report one outcome per operation, including:
 
-- Every version's final `diff` state (even `match`/`skipped-tbd` ones)
+- Every version's final `diff` state, skipped ones included: `match`,
+  `skipped-tbd`, and `skipped-zstream`
+- Every `incomplete` entry by version, naming its `missing_fields` and what
+  the human has to supply for it to be written on a later run
+- Any field `render` reported as skipped because the source did not supply it —
+  the file kept its current value, which is correct, but say so rather than
+  letting it look like a full rewrite
 - The branch and, if opened or already open, the PR/MR URL for each forge
 - The pinned-issue checklist note, always, regardless of whether the YAML
   files needed changes this run

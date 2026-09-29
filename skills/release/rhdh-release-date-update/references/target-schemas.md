@@ -30,6 +30,57 @@ as not-yet-decided — the script skips every field for that version rather
 than writing a partial or placeholder entry. `source` is carried through for
 the plan's preview text; it is never written into either target file.
 
+### Where each field comes from
+
+`/rhdh-release-schedule` does not use these key names, and it does not carry
+the Backstage version at all. Map its answer deliberately:
+
+| `/rhdh-release-schedule` reports | Source-JSON key |
+|---|---|
+| Feature Freeze | `feature_freeze` |
+| Code Freeze | `code_freeze` |
+| GA announce | `ga_push` |
+| Go/No Go & Push | *nothing — do not use it* |
+| Docs Freeze, Docs Input Freeze | *nothing — neither file has a column* |
+
+`ga_push` is the **GA announce** date, not Go/No Go. `release_calendar.yaml`
+says so in its own header comment: `ga_push = GA announce date (public GA)`.
+Picking Go/No Go here puts a wrong date into the file that drives the Slack
+posts.
+
+`backstage_version` has no source in `/rhdh-release-schedule`. Get it from the
+target file's existing entry for a release already listed, or ask the human for
+a release being added. Never infer it from the version number and never guess:
+the value reaches third-party plugin owners as the version they are told to
+target.
+
+### Never invent a value
+
+A field the source does not supply is not written. On a release already in the
+file the current value stands; the script reports the field as unsupplied
+rather than overwriting it. A release *absent* from the file is only created
+when every field that file requires is supplied — `backstage_version` and
+`feature_freeze` for GitHub, all four for GitLab. Otherwise `diff` reports it
+as `incomplete` with the missing field names and writes nothing.
+
+### Versions the target files do not track
+
+Both files track minor releases only — every entry is `x.y.0`. The active
+release query also returns z-streams such as `1.10.5`; the script reports those
+as `skipped-zstream` and never writes them. Do not add z-stream versions to the
+source JSON.
+
+### `diff` states
+
+| State | Meaning |
+|---|---|
+| `match` | Every supplied field already agrees with the file |
+| `stale` | A supplied field differs; the fix is in `desired` |
+| `missing` | Absent from the file and fully specified, so it can be added |
+| `incomplete` | Absent from the file but the source lacks `missing_fields` |
+| `skipped-tbd` | Feature Freeze is not yet decided upstream |
+| `skipped-zstream` | Not an `x.y.0` release, so neither file tracks it |
+
 ## `release-schedule.yaml` (GitHub — `redhat-developer/rhdh-plugin-export-overlays`)
 
 A YAML list under `releases:`, one dict per version:
