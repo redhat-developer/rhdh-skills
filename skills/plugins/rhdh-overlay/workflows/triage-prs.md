@@ -84,7 +84,7 @@ Generated: {date}
 | PR | Plugin | Days Stale | Assignee | Checks | Action |
 |----|--------|------------|----------|--------|--------|
 | #1234 | aws-ecs | 3 | @user | ✅ Publish ✅ Smoke | Ready to merge |
-| #1235 | lightspeed | 7 | (none) | ⏳ Publish | Assign + /publish |
+| #1235 | intelligent-assistant | 7 | (none) | ⏳ Publish | Assign + /publish |
 
 ### 🟡 Medium — Mandatory Workspace Additions
 
@@ -104,7 +104,7 @@ Generated: {date}
 
 ## Suggested Actions
 
-1. [ ] **Assign** @someone to PR #1235 (lightspeed, 7 days stale)
+1. [ ] **Assign** @someone to PR #1235 (intelligent-assistant, 7 days stale)
 2. [ ] **Trigger** `/publish` on PR #1236
 3. [ ] **Ping** @owner for PR #1237 (blocking release)
 4. [ ] **Request** CODEOWNERS from contributor on PR #1240
