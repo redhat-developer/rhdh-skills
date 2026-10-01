@@ -1,0 +1,14 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Package
+metadata:
+  name: mystery-plugin
+  namespace: rhdh
+  title: Mystery Plugin
+spec:
+  packageName: "@example/mystery"
+  version: 0.1.0
+  backstage:
+    role: backend-plugin
+    supportedVersions: 1.52.0
+  author: Unknown Corp
+  lifecycle: experimental

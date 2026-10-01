@@ -1,0 +1,3 @@
+# fixture community export list
+todo/plugins/todo
+scorecard/plugins/scorecard
