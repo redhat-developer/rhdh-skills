@@ -442,6 +442,8 @@ def cmd_render(args: argparse.Namespace) -> int:
 
 def apply_github(rendered_path: Path) -> dict[str, Any]:
     ref_resp = _run(["gh", "api", f"repos/{GITHUB_REPO}/git/ref/heads/{GITHUB_BASE_BRANCH}"])
+    if ref_resp.returncode != 0:
+        return {"target": "github", "ok": False, "error": ref_resp.stderr.strip()}
     base_sha = json.loads(ref_resp.stdout)["object"]["sha"]
 
     create_branch = _run(
@@ -475,7 +477,10 @@ def apply_github(rendered_path: Path) -> dict[str, Any]:
     }
     if file_sha:
         fields["sha"] = file_sha
-    put_result = gh_api(f"repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}", "PUT", fields)
+    try:
+        put_result = gh_api(f"repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}", "PUT", fields)
+    except RuntimeError as exc:
+        return {"target": "github", "ok": False, "error": str(exc)}
 
     existing_pr = _run_json(
         [
@@ -528,7 +533,8 @@ def apply_gitlab(rendered_path: Path) -> dict[str, Any]:
     encoded_path = GITLAB_FILE_PATH.replace("/", "%2F")
     content = rendered_path.read_text()
 
-    # Try update first; fall back to create for a brand-new file.
+    # GITLAB_FILE_PATH is release_calendar.yaml, which already exists on every
+    # branch — this is always an update (PUT), never a create (POST).
     update = _run(
         [
             "glab",
@@ -575,9 +581,19 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
     results = []
     if args.target in ("github", "all"):
-        results.append(apply_github(Path(args.github_rendered)))
+        if not args.github_rendered:
+            results.append(
+                {"target": "github", "ok": False, "error": "--github-rendered is required"}
+            )
+        else:
+            results.append(apply_github(Path(args.github_rendered)))
     if args.target in ("gitlab", "all"):
-        results.append(apply_gitlab(Path(args.gitlab_rendered)))
+        if not args.gitlab_rendered:
+            results.append(
+                {"target": "gitlab", "ok": False, "error": "--gitlab-rendered is required"}
+            )
+        else:
+            results.append(apply_gitlab(Path(args.gitlab_rendered)))
 
     ok = all(r.get("ok") for r in results)
     print(json.dumps({"ok": ok, "results": results}, indent=2))
@@ -589,7 +605,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 

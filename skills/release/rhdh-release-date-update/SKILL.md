@@ -49,7 +49,7 @@ Out of scope, reported as a checklist item instead of fixed:
   `/rhdh-release-schedule` currently reports as active or planned; never
   prune old entries.
 
-## Workflow
+## Route
 
 Load `workflows/sync-release-dates.md` — it covers the full run: the
 capability gate, composing with `/rhdh-release-schedule` for source-of-truth
