@@ -222,6 +222,20 @@
       ]
     },
     {
+      "name": "rhdh-pr-triage",
+      "category": "plugins",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "rhdh-release-schedule"
+      ],
+      "optionalSkills": [
+        "rhdh-forge",
+        "rhdh-platform-lifecycle"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-test-placement",
       "category": "plugins",
       "invocation": "model",
