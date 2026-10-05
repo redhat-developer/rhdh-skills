@@ -3,10 +3,18 @@
 Ceremony-specific, signal-driven briefing for the Install team. **Two steps:**
 one script run, then required **✨ Noticed** interpretation.
 
-## 1. One command (repo root)
+## 1. One command
+
+Repo root:
 
 ```bash
 ./scripts/prepare-install-refinement
+```
+
+This skill directory:
+
+```bash
+./prepare-refinement
 ```
 
 Fixture / CI (no Jira):
