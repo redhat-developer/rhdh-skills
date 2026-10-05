@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# One-liner entry from repo root: ./scripts/prepare-install-refinement [args]
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec uv run python "$ROOT/skills/jira/rhdh-install-prepare-refinement/scripts/prepare_refinement.py" "$@"

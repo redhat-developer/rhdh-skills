@@ -5,11 +5,8 @@ The script is zero-token; this is the only model reasoning in the skill.
 
 ## Input
 
-Read the compact `facts` object written by:
-
-```bash
-uv run python scripts/prepare_refinement.py --facts-out /tmp/refinement-facts.json
-```
+Read `facts/refinement-latest.json` produced by `./scripts/prepare-install-refinement`
+(repo root).
 
 Do **not** re-fetch Jira issues or re-run hygiene rules. Field-level gaps are
 owned by `rhdh-jira-lint` long term; this step only interprets **relationships**

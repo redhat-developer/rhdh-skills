@@ -26,7 +26,7 @@ def run_fixture(*extra: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_fixture_briefing_omits_zero_signals_and_lists_attention():
-    result = run_fixture()
+    result = run_fixture("--no-facts")
     assert result.returncode == 0, result.stderr
     out = result.stdout
     assert "# 🎯 RHDH Install · Refinement" in out

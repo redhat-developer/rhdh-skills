@@ -61,8 +61,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="RHDH Install refinement briefing")
     parser.add_argument("--config", type=Path, help="Path to config.yaml")
     parser.add_argument("--fixture", type=Path, help="JSON issues for offline run (no Jira)")
-    parser.add_argument("--facts", choices=["-", "stdout", "path"], help="Emit facts JSON (- or stdout)")
-    parser.add_argument("--facts-out", type=Path, help="Write facts JSON to file")
+    parser.add_argument("--facts", choices=["-", "stdout"], help="Also print facts JSON to stderr (-) or stdout")
+    parser.add_argument(
+        "--facts-out",
+        type=Path,
+        default=None,
+        help="Facts JSON path (default: skill facts/refinement-latest.json)",
+    )
+    parser.add_argument("--no-facts", action="store_true", help="Skip writing facts JSON")
     parser.add_argument("--today", type=str, help="Override date YYYY-MM-DD for tests")
     args = parser.parse_args(argv)
 
@@ -105,12 +111,17 @@ def main(argv: list[str] | None = None) -> int:
 
     print(markdown, end="")
 
-    if args.facts in ("-", "stdout") or args.facts_out:
+    facts_path = None
+    if not args.no_facts:
+        facts_path = args.facts_out or (SKILL_ROOT / "facts" / "refinement-latest.json")
+    if facts_path:
+        facts_path.parent.mkdir(parents=True, exist_ok=True)
+        facts_path.write_text(json.dumps(facts, indent=2) + "\n", encoding="utf-8")
+        print(f"prepare_refinement: facts → {facts_path}", file=sys.stderr)
+
+    if args.facts in ("-", "stdout"):
         payload = json.dumps(facts, indent=2) + "\n"
-        if args.facts_out:
-            args.facts_out.write_text(payload, encoding="utf-8")
-        if args.facts in ("-", "stdout"):
-            print(payload, file=sys.stderr if args.facts == "-" else sys.stdout)
+        print(payload, file=sys.stderr if args.facts == "-" else sys.stdout)
 
     return 0
 

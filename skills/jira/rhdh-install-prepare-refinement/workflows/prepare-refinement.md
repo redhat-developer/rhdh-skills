@@ -1,55 +1,52 @@
 # Prepare RHDH Install refinement briefing
 
 Ceremony-specific, signal-driven briefing for the Install team. **Two steps:**
-deterministic script, then required **✨ Noticed** interpretation.
+one script run, then required **✨ Noticed** interpretation.
 
-## 1. Run the script (zero-token)
-
-From this skill directory:
+## 1. One command (repo root)
 
 ```bash
-cd skills/jira/rhdh-install-prepare-refinement
-uv run python scripts/prepare_refinement.py --facts-out /tmp/refinement-facts.json
+./scripts/prepare-install-refinement
 ```
 
-Offline / CI:
+Fixture / CI (no Jira):
 
 ```bash
-uv run python scripts/prepare_refinement.py \
-  --fixture fixtures/refinement-queue.sample.json \
-  --today 2026-10-05 \
-  --facts-out /tmp/refinement-facts.json
+./scripts/prepare-install-refinement \
+  --fixture skills/jira/rhdh-install-prepare-refinement/fixtures/refinement-queue.sample.json \
+  --today 2026-10-05
 ```
 
-Auth: `JIRA_EMAIL` + `JIRA_API_TOKEN`, or `.jira-token` next to `acli` (same as
-other RHDH skills).
+Stdout is the briefing markdown. Facts for Noticed are written automatically to
+`skills/jira/rhdh-install-prepare-refinement/facts/refinement-latest.json`
+(stderr logs the path).
 
-The script prints the signal markdown to stdout. Do not deliver that output alone.
+Auth for live Jira: `JIRA_EMAIL` + `JIRA_API_TOKEN`, or `.jira-token` next to `acli`.
+
+Unit tests (repo root):
+
+```bash
+uv run pytest tests/unit/test_install_prepare_refinement.py -q
+```
+
+Do not deliver script stdout alone — continue to step 2.
 
 ## 2. ✨ Noticed (required)
 
-Load `references/noticed.md`. Read `/tmp/refinement-facts.json` (or `--facts-out`
-path). Produce `## ✨ Noticed` and **insert it into the briefing** after the
-header block (through 🔥 if present) and **before** the first signal section
-(`## 🚀`, `## 🎫`, etc.).
+Load `references/noticed.md`. Read `facts/refinement-latest.json`. Produce
+`## ✨ Noticed` and insert it after the header block (through 🔥 if present),
+before the first signal section.
 
-Omit the `## ✨ Noticed` heading only when `noticed.md` rules say there is no
-non-obvious cross-signal insight — never skip this step; only skip empty output.
-
-The skill is **not complete** until this step runs.
+Omit the `## ✨ Noticed` heading only when no non-obvious cross-signal insight
+exists. The skill is **not complete** until this step runs.
 
 ## Boundaries
 
-- **Does not** reimplement `rhdh-jira-lint` field enforcement — extend via shared
-  violation codes later.
+- **Does not** reimplement `rhdh-jira-lint` field enforcement.
 - **Does not** replace `/rhdh-jira-refine` per-issue exit-criteria audits.
 - **Does not** write Jira — read-only briefing.
 
 ## Configuration
 
 - `references/config.json` — team id, queue scope, dashboard URLs.
-- `assets/release_calendar.json` — code freeze dates for urgency (keep aligned with
-  jira-lint calendar).
-
-Dashboard gadget JQL should be copied into config as the spike matures; headings
-link to those filters, not dashboard homepages.
+- `assets/release_calendar.json` — code freeze dates (align with jira-lint).

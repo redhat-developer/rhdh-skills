@@ -21,8 +21,9 @@ not a hygiene report and not a duplicate of `/rhdh-jira-refine`.
 
 ## Route
 
-Load `workflows/prepare-refinement.md`. Run `scripts/prepare_refinement.py` with
-`--facts-out`, then **always** run the ✨ Noticed step in `references/noticed.md`.
+Load `workflows/prepare-refinement.md`. From repo root run
+`./scripts/prepare-install-refinement`, then **always** run the ✨ Noticed step in
+`references/noticed.md` using `facts/refinement-latest.json`.
 
 ## UX contract
 
