@@ -1,0 +1,18 @@
+{
+  "issues": [
+    {"key": "RHIDP-17196", "summary": "rhdh-local 2.1 standards", "status": "To Do", "issuetype": "Epic", "priority": "Normal", "assigned": false, "story_points": 1, "no_children": true},
+    {"key": "RHIDP-14400", "summary": "must-gather codecov", "status": "To Do", "issuetype": "Task", "priority": "Normal", "assigned": false, "story_points": 2},
+    {"key": "RHIDP-14413", "summary": "must-gather e2e", "status": "To Do", "issuetype": "Task", "priority": "Normal", "assigned": false, "story_points": 2},
+    {"key": "RHIDP-15231", "summary": "airgapped spike", "status": "To Do", "issuetype": "Task", "priority": "Normal", "assigned": false, "story_points": 2},
+    {"key": "RHIDP-15433", "summary": "GSM local secrets design", "status": "New", "issuetype": "Task", "priority": "Undefined", "assigned": true, "story_points": null},
+    {"key": "RHIDP-13963", "summary": "remove pg14", "status": "To Do", "issuetype": "Task", "priority": "Undefined", "assigned": true, "story_points": 2},
+    {"key": "RHIDP-13964", "summary": "test plan pg14", "status": "To Do", "issuetype": "Task", "priority": "Undefined", "assigned": true, "story_points": 1},
+    {"key": "RHIDP-13969", "summary": "airgap e2e", "status": "To Do", "issuetype": "Task", "priority": "Undefined", "assigned": true, "story_points": 3},
+    {"key": "RHIDP-15434", "summary": "vault to gsm rhdh", "status": "New", "issuetype": "Task", "priority": "Undefined", "assigned": true, "story_points": 2},
+    {"key": "RHIDP-15436", "summary": "verify gsm migration", "status": "New", "issuetype": "Task", "priority": "Undefined", "assigned": true, "story_points": 1},
+    {"key": "RHIDP-9776", "summary": "operator EOL workflow", "status": "To Do", "issuetype": "Task", "priority": "Minor", "assigned": true, "story_points": 2},
+    {"key": "RHIDP-15965", "summary": "cluster pools vpc", "status": "To Do", "issuetype": "Task", "priority": "Normal", "assigned": true, "story_points": 3},
+    {"key": "RHIDP-16423", "summary": "pr cluster claims", "status": "To Do", "issuetype": "Task", "priority": "Normal", "assigned": true, "story_points": 2},
+    {"key": "RHIDP-16478", "summary": "must-gather netpol", "status": "To Do", "issuetype": "Task", "priority": "Major", "assigned": true, "story_points": 2}
+  ]
+}

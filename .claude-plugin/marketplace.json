@@ -121,6 +121,7 @@
         "./skills/reference/mutation-gate",
         "./skills/jira/rhdh-jira-link",
         "./skills/jira/rhdh-jira-refine",
+        "./skills/jira/rhdh-install-prepare-refinement",
         "./skills/jira/rhdh-jira-sprint-plan",
         "./skills/jira/rhdh-jira-sprint-report",
         "./skills/jira/rhdh-jira-update",
