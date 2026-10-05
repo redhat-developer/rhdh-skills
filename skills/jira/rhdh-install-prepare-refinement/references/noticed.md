@@ -1,19 +1,19 @@
-# ✨ Noticed (optional LLM layer)
+# ✨ Noticed (required)
 
-Run **after** `prepare_refinement.py` emits markdown and `--facts` JSON. The script
-is zero-token; this step is the only place an model may run.
+**Every** refinement prep run includes this step after `prepare_refinement.py`.
+The script is zero-token; this is the only model reasoning in the skill.
 
 ## Input
 
-Pipe or read the compact `facts` object from:
+Read the compact `facts` object written by:
 
 ```bash
-uv run python scripts/prepare_refinement.py --facts -
+uv run python scripts/prepare_refinement.py --facts-out /tmp/refinement-facts.json
 ```
 
 Do **not** re-fetch Jira issues or re-run hygiene rules. Field-level gaps are
-owned by `rhdh-jira-lint` long term; this skill only interprets **relationships**
-between signals already in `facts`.
+owned by `rhdh-jira-lint` long term; this step only interprets **relationships**
+between signals already in `facts` (including `overlaps`).
 
 ## Task
 
@@ -30,8 +30,9 @@ Examples of valid observations:
 
 - **No decisions** — never say defer, drop, or prioritize; only "stands out because …"
 - **No restatement** — do not repeat counts the deterministic section already shows.
-- **Omit the section entirely** if nothing non-obvious applies (no "all good" filler).
-- Output only:
+- **No filler** — if nothing non-obvious applies, do not emit `## ✨ Noticed` at all
+  (you still must run this step and conclude there is nothing to add).
+- When insight exists, output only:
 
 ```markdown
 ## ✨ Noticed
@@ -39,4 +40,5 @@ Examples of valid observations:
 **…** (1–3 short paragraphs or bullets, issue keys as links when helpful)
 ```
 
-Place `## ✨ Noticed` **after** the header block and **before** signal sections.
+Insert that block **after** the header (through 🔥 if present) and **before** the
+first signal section from the script.
