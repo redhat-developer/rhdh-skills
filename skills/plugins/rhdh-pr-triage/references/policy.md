@@ -109,6 +109,10 @@ rhdh-local uses `dev` as its development branch. The `main` branch is kept
 stable per a PM requirement and does not receive bot PRs. Treat PRs targeting
 `dev` in rhdh-local the same as PRs targeting `main` in other repositories.
 
+## Merge strategy
+
+All PR merges use the **squash** strategy (`gh pr merge --squash`).
+
 ## CI status rules
 
 All required checks must be green. Skip `tide` when evaluating CI status on
