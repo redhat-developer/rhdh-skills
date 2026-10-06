@@ -131,12 +131,12 @@ Release: {version}
 
 1. **[RHIDP-XXXX](https://redhat.atlassian.net/browse/RHIDP-XXXX)** — {Why it matters}: {Specific observation}. → **Do this**: {Action with links if mentioning other issues}
 
-2. **Must-gather cluster** — [RHIDP-A](link), [RHIDP-B](link), [RHIDP-C](link): {Age, assignment, why clustered}. → **Do this**: Descope [RHIDP-A](link), [RHIDP-B](link) to 2.2.0; keep [RHIDP-C](link)
+2. **Must-gather cluster** — [RHIDP-A](https://redhat.atlassian.net/browse/RHIDP-A), [RHIDP-B](https://redhat.atlassian.net/browse/RHIDP-B), [RHIDP-C](https://redhat.atlassian.net/browse/RHIDP-C): {Age, assignment, why clustered}. → **Do this**: Descope [RHIDP-A](https://redhat.atlassian.net/browse/RHIDP-A), [RHIDP-B](https://redhat.atlassian.net/browse/RHIDP-B) to 2.2.0; keep [RHIDP-C](https://redhat.atlassian.net/browse/RHIDP-C)
 
-3. **Timeline reality** — [RHIDP-X](link), [RHIDP-Y](link), [RHIDP-Z](link) all 90+ days old, 7 days to freeze. → **Do this**: Move [RHIDP-X](link), [RHIDP-Y](link) to 2.2.0; focus on [RHIDP-Z](link)
+3. **Timeline reality** — [RHIDP-X](https://redhat.atlassian.net/browse/RHIDP-X), [RHIDP-Y](https://redhat.atlassian.net/browse/RHIDP-Y), [RHIDP-Z](https://redhat.atlassian.net/browse/RHIDP-Z) all 90+ days old, 7 days to freeze. → **Do this**: Move [RHIDP-X](https://redhat.atlassian.net/browse/RHIDP-X), [RHIDP-Y](https://redhat.atlassian.net/browse/RHIDP-Y) to 2.2.0; focus on [RHIDP-Z](https://redhat.atlassian.net/browse/RHIDP-Z)
 
 {If blockers exist:}
-4. **[RHIDP-YYYY](link)** blocked by [RHIDP-ZZZZ](link) — {Impact}. → **Do this**: Escalate or descope
+4. **[RHIDP-YYYY](https://redhat.atlassian.net/browse/RHIDP-YYYY)** blocked by [RHIDP-ZZZZ](https://redhat.atlassian.net/browse/RHIDP-ZZZZ) — {Impact}. → **Do this**: Escalate or descope
 
 ---
 

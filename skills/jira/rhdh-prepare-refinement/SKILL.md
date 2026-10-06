@@ -30,3 +30,8 @@ If either is missing, ask.
 - Sprint planning from refined work → `/rhdh-jira-sprint-plan`.
 - Opening new issues → `/rhdh-jira-create`.
 - Release-wide status across all teams → `/rhdh-release-status`.
+
+## Completion
+
+Outputs a refinement brief to the conversation. No files written, no state
+changed—just analysis and recommendations for the team to discuss.
