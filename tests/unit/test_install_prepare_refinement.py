@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / "skills" / "jira" / "rhdh-install-prepare-refinement"
 SCRIPT = SKILL / "scripts" / "prepare_refinement.py"
 SCRIPT_DIR = SCRIPT.parent
-FIXTURE = SKILL / "fixtures" / "refinement-queue.sample.json"
+FIXTURE = ROOT / "tests" / "fixtures" / "install_refinement_queue.json"
 
 
 def run_fixture(*extra: str) -> subprocess.CompletedProcess[str]:
@@ -36,6 +36,7 @@ def test_fixture_briefing_omits_zero_signals_and_lists_attention():
     assert "6 issues have no Priority" in out
     assert "4 issues have no detected gaps" in out
     assert "0 blocked" not in out.lower()
+    assert "## ✨ Noticed" in out
 
 
 def test_facts_json_includes_overlaps(tmp_path: Path):

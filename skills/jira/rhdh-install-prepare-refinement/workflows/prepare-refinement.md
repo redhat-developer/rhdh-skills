@@ -1,7 +1,7 @@
 # Prepare RHDH Install refinement briefing
 
-Ceremony-specific, signal-driven briefing for the Install team. **Two steps:**
-one script run, then required **✨ Noticed** interpretation.
+Ceremony-specific, signal-driven briefing for the Install team. One script run
+produces the full markdown (including deterministic **✨ Noticed**).
 
 ## 1. One command
 
@@ -21,11 +21,12 @@ Fixture / CI (no Jira):
 
 ```bash
 ./scripts/prepare-install-refinement \
-  --fixture skills/jira/rhdh-install-prepare-refinement/fixtures/refinement-queue.sample.json \
+  --fixture tests/fixtures/install_refinement_queue.json \
   --today 2026-10-05
 ```
 
-Stdout is the briefing markdown. Facts for Noticed are written automatically to
+Stdout is the full briefing: header, **✨ Noticed** (deterministic cross-signal
+rules), then signal sections. Facts JSON is also written to
 `skills/jira/rhdh-install-prepare-refinement/facts/refinement-latest.json`
 (stderr logs the path).
 
@@ -37,16 +38,11 @@ Unit tests (repo root):
 uv run pytest tests/unit/test_install_prepare_refinement.py -q
 ```
 
-Do not deliver script stdout alone — continue to step 2.
+## 2. ✨ Noticed (agent, when richer insight is needed)
 
-## 2. ✨ Noticed (required)
-
-Load `references/noticed.md`. Read `facts/refinement-latest.json`. Produce
-`## ✨ Noticed` and insert it after the header block (through 🔥 if present),
-before the first signal section.
-
-Omit the `## ✨ Noticed` heading only when no non-obvious cross-signal insight
-exists. The skill is **not complete** until this step runs.
+The script already emits Noticed from `overlaps` and release urgency. When
+invoking the **skill** in an agent, load `references/noticed.md` and optionally
+replace or extend that block using the facts JSON — never re-fetch Jira.
 
 ## Boundaries
 
@@ -56,5 +52,5 @@ exists. The skill is **not complete** until this step runs.
 
 ## Configuration
 
-- `references/config.json` — team id, queue scope, dashboard URLs.
-- `assets/release_calendar.json` — code freeze dates (align with jira-lint).
+Install team scope and release freeze dates live in `scripts/_config.py` (align
+calendar with rhdh-jira-lint when dates change).

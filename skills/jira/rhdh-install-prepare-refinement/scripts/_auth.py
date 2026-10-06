@@ -105,7 +105,7 @@ def resolve_jira_auth(env: os._Environ[str] | None = None) -> JiraAuth:
             "  • or ~/.jira-token or ~/.config/acli/.jira-token as email:token\n"
             "  • or ~/.config/acli/jira_config.yaml (email + token)\n"
             "  • or install acli and configure API token auth\n"
-            "Offline: use --fixture fixtures/refinement-queue.sample.json"
+            "Offline: use --fixture with a JSON issue list (see unit tests)"
         )
 
     server = (env.get("JIRA_BASE_URL") or DEFAULT_JIRA_SERVER).rstrip("/")

@@ -26,6 +26,7 @@ def render_briefing(
     queue_total: int,
     queue_jql: str,
     signals: list[SignalResult],
+    facts: dict | None = None,
 ) -> str:
     base = config.get("jira_base", "https://redhat.atlassian.net").rstrip("/")
     team = config.get("team", {}).get("short_name", "Install")
@@ -55,6 +56,13 @@ def render_briefing(
     if release.freeze_warning:
         lines.append("🔥 **Freeze approaching**")
         lines.append("")
+
+    if facts:
+        from _noticed import render_noticed
+
+        noticed = render_noticed(facts, base)
+        if noticed:
+            lines.extend(noticed)
 
     by_section: dict[str, list[SignalResult]] = {}
     for sig in signals:
