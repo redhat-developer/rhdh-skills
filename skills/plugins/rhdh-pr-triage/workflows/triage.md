@@ -61,40 +61,30 @@ Record the release state per branch and per repo for use in Step 3.
 Apply the rules from `references/policy.md` to each PR. For each PR, determine
 the decision and reason.
 
-Produce a plan table in the conversation, sorted by PR number descending (newest
-first) so the order matches the GitHub UI:
+Produce exactly one triage report table in the conversation, sorted by PR number
+descending (newest first) so the order matches the GitHub UI. The table has six
+columns — keep cell content concise so the table is scannable at a glance:
 
-```
-| Repo | PR | Title | Branch | Type | CI | Decision | Reason |
-|------|-----|-------|--------|------|----|----------|--------|
-| rhdh-operator | #42 | update go toolchain to 1.23.5 | main | go-toolchain | pass | approve+merge | CI green, patch bump |
-| rhdh-chart | #18 | update chart dep X to 2.1.0 | release-1.10 | chart-dep | pass | hold | CF — hold until 1.10.5 |
-| ... | ... | ... | ... | ... | ... | ... | ... |
-```
-
-### Triage report
-
-After the plan table, always produce a reviewer-friendly triage report. This
-report is shown in both dry-run and normal mode. It contains one row per PR with
-only the columns the reviewer needs to scan:
+- **Title**: truncate to the dependency name (e.g. "update golang.org/x/exp
+  digest", not the full Renovate title with version tags).
+- **Reason**: under ~30 characters (e.g. "CI green", "Go directive frozen").
 
 ```
 | Repo | PR | Title | Branch | Decision | Reason |
 |------|-----|-------|--------|----------|--------|
-| rhdh-operator | #42 | update go toolchain to 1.23.5 | main | approve+merge | CI green, patch bump |
-| rhdh-chart | #18 | update chart dep X to 2.1.0 | release-1.10 | hold | CF — hold until 1.10.5 |
+| rhdh-operator | #42 | update go toolchain | main | approve+merge | CI green, patch bump |
+| rhdh-chart | #18 | update chart dep X | release-1.10 | hold | CF — hold until 1.10.5 |
 | ... | ... | ... | ... | ... | ... |
 ```
 
-PR numbers link to the GitHub PR URL. The report is sorted by PR number
-descending (newest first).
+PR numbers link to the GitHub PR URL.
 
 ## Step 4 — Dry-run check
 
 If `dry_run` is true in the script output, or the user requested a dry run:
 
-1. Show the triage report from Step 3.
-2. Show a summary of planned actions:
+1. Show the triage report table from Step 3.
+2. Show the action-count summary:
 
 ```
 | Action | Count |
@@ -151,8 +141,8 @@ operations that were skipped or denied in the gate.
 
 ## Step 7 — Summary
 
-Print the triage report from Step 3 (with outcomes updated to reflect what
-actually happened), followed by a summary table:
+Print the triage report table from Step 3 (with outcomes updated to reflect what
+actually happened), followed by the action-count summary table:
 
 ```
 | Action | Count |
