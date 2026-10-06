@@ -1,14 +1,16 @@
 # Prepare refinement
 
 Produce a facilitator brief before a team's refinement ceremony. Fetch the
-team's queue, resolve release milestones, then analyze every issue and present
-what matters for the session.
+team's queue, resolve release milestones, analyze every issue, present what
+matters for the session.
 
-Use `acli` for Jira reads. `/rhdh-jira-api` owns auth and field references.
+Use `acli` for all Jira reads. `/rhdh-jira-api` owns auth, field references,
+JQL patterns, and the board/team table.
 
 ## Input
 
-1. **Team name** — ask if not provided. Look up the board ID:
+1. **Team name** — ask if not provided. Look up the board ID from
+   `/rhdh-jira-api` references/jql-patterns.md:
 
    | Board | ID | Team |
    |-------|----|------|
@@ -21,7 +23,7 @@ Use `acli` for Jira reads. `/rhdh-jira-api` owns auth and field references.
 
 2. **Fix version** — e.g. `2.1.0`. Required.
 
-## Step 1 — Resolve the team
+## Step 1 — Resolve the team ID
 
 Get the team UUID from one issue in the active sprint:
 
@@ -31,7 +33,7 @@ acli jira sprint list-workitems --sprint SPRINT_ID --board BOARD_ID --limit 1 --
 acli jira workitem view ISSUE_KEY --fields "*all" --json
 ```
 
-Read `customfield_10001.id` from the issue — that is the team UUID.
+Read `customfield_10001.id` — that is the team UUID for JQL.
 
 ## Step 2 — Fetch the queue
 
@@ -41,81 +43,82 @@ acli jira workitem search \
   --fields "*all" --paginate --json
 ```
 
-This gives you every issue the team needs to discuss for this version.
-
 ## Step 3 — Resolve release milestones
 
-Fetch the RHDHPLAN release Feature for this version:
+Find the RHDHPLAN release Feature for this version line:
 
 ```bash
 acli jira workitem search \
-  --jql 'project = RHDHPLAN AND issuetype = Feature AND component = release AND status != Closed AND summary ~ "VERSION_LINE"' \
+  --jql 'project = RHDHPLAN AND issuetype = Feature AND component = release AND status != Closed' \
   --fields "summary,description" --json
 ```
 
-Then `acli jira workitem view RHDHPLAN_KEY --fields description --json` and
-parse the ADF milestone table for **feature freeze**, **code freeze**, and
-**GA date**. `/rhdh-jira-api` has `adf_milestones.py` for this.
+Match the version line (e.g. "2.1") in the summary. Then fetch the full
+description to parse the ADF milestone table:
 
-Determine which milestone window is active today:
-- Before feature freeze → **Feature Freeze** window
-- Between feature freeze and code freeze → **Code Freeze** window
+```bash
+acli jira workitem view RHDHPLAN_KEY --fields description --json
+```
+
+Extract **feature freeze**, **code freeze**, **GA date** from the ADF table
+rows. `/rhdh-jira-api` has `adf_milestones.py` for parsing — or read the
+date nodes directly from the JSON (type `date`, timestamp in
+`attrs.timestamp`).
+
+Determine the active milestone window:
+- Today ≤ feature freeze → **Feature Freeze** window
+- Feature freeze < today ≤ code freeze → **Code Freeze** window
 - After code freeze → **GA** window
 
 ## Step 4 — Analyze each issue
 
-For every issue in the queue, check:
+For every issue in the queue:
 
 | Check | How | Flag when |
 |-------|-----|-----------|
-| **Assignee** | `assignee` field | Missing — "unowned" |
-| **Story Points** | `storyPoints` or `customfield_10028` | Missing — "unsized" |
-| **Priority** | `priority.name` | "Undefined" — "no priority set" |
-| **Epic children** | `acli jira workitem search --jql 'parent = KEY AND status != Closed' --count` | Epic with 0 children — "no breakdown" |
-| **Status vs freeze** | issue status + days to freeze | New/Refinement close to freeze — "still in early state" |
+| Assignee | `assignee` field | Missing |
+| Story Points | `storyPoints` or `customfield_10028` | Missing |
+| Priority | `priority.name` | "Undefined" |
+| Epic children | `acli jira workitem search --jql 'parent = KEY AND status != Closed' --count` | 0 children |
+| Status vs freeze | status + days to freeze | New/Refinement with ≤ 14 days to freeze |
 
-For each issue, note what stands out. Do not just count — name the issue and
-say what about it matters for this session.
+Name each issue by key. Say what specifically stands out. Connect the dots —
+an unsized Epic with no children 7 days from code freeze is a bigger deal than
+a Task missing priority.
 
 ## Step 5 — Present the brief
-
-Structure the output as:
 
 ```
 🎯 RHDH {Team} · Refinement
 
 Release: {version}
-{Milestone}: {date} · {days} days [🔥 if ≤ 14 days]
+{Milestone label}: {date} · {days} days [🔥 if ≤ 14 days]
 
 ✨ Summary
-{2-3 sentences: what the team should focus on, naming specific issues and
-why they stand out. Mention the milestone window. Connect dots — e.g. an
-unsized Epic with no children near code freeze is a bigger deal than a
-Task missing priority.}
+{2-3 sentences naming specific issues: why they matter, what the team
+should discuss. Mention the milestone window. Be opinionated.}
 
 🚀 Feature Tracking
    {version} · {team}
-   (Link: {dashboard URL or JQL link})
+   (Link: {dashboard or JQL URL})
 
-   ✨ {Per-issue observations for Epics/Features — name the key, say what's
-      wrong, say why it matters for this session}
+   ✨ {Per-issue: RHIDP-XXXX — what's wrong, why it matters now}
 
 🎫 Team Queue
    {version} · {team}
-   (Link: {dashboard URL or JQL link})
+   (Link: {dashboard or JQL URL})
 
-   ✨ {Per-issue observations for unowned, unsized, or noteworthy items —
-      name the key, connect to other signals}
+   ✨ {Per-issue: unowned, unsized, or noteworthy — name the key}
 
 🧹 Hygiene
    {version} · {team}
-   (Link: {dashboard URL or JQL link})
+   (Link: {dashboard or JQL URL})
 
-   ✨ {Items with missing fields. Name which fields, which issues.
-      Call out any issue that appears in multiple sections above.}
+   ✨ {Items with missing fields. Name which issues, which fields.
+      Call out any issue that also appeared above.}
 ```
 
-### Dashboard links (Install team)
+### Install team dashboards
 
 | Dashboard | URL |
 |-----------|-----|
@@ -123,21 +126,10 @@ Task missing priority.}
 | Team Refinement | https://redhat.atlassian.net/jira/dashboards/22332 |
 | Hygiene | https://redhat.atlassian.net/jira/dashboards/23962 |
 
-For other teams, link to the JQL query instead.
+For other teams, use a Jira JQL search URL instead.
 
 ## Tone
 
 Write like a facilitator prepping for the call — brief, specific, opinionated.
 Name issues by key. Say what the team should discuss, not just what fields are
 empty. If everything looks good, say so and keep it short.
-
-## Helper script
-
-`scripts/prepare_refinement.py` can fetch the queue and milestones in one call:
-
-```bash
-./scripts/prepare-refinement --team Install --fix-version 2.1.0 --facts-out /tmp/facts.json
-```
-
-It outputs structured facts JSON. You can use it to bootstrap the data, then
-analyze and present the brief yourself. Or run the steps above manually.

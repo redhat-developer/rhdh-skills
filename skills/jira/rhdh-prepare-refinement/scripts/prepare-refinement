@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-SKILL="$(cd "$(dirname "$0")/.." && pwd)"
-exec uv run python "$SKILL/scripts/prepare_refinement.py" "$@"
