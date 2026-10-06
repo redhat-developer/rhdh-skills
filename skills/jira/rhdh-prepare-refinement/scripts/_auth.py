@@ -1,10 +1,11 @@
-"""Resolve Jira Basic auth from the invoker environment (stdlib only)."""
+"""Resolve Jira auth: API token env/files, or authenticated acli session."""
 
 from __future__ import annotations
 
 import os
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,7 @@ class JiraAuth:
     login: str
     token: str
     server: str
+    via_acli: bool = False
 
 
 def _parse_email_token(text: str) -> tuple[str, str] | None:
@@ -37,8 +39,8 @@ def _read_go_jira_config(path: Path) -> str | None:
     return login.group(1).strip() if login else None
 
 
-def _read_acli_jira_config(path: Path) -> tuple[str, str]:
-    """Return (email, token) from ~/.config/acli/jira_config.yaml if present."""
+def _read_acli_flat_config(path: Path) -> tuple[str, str]:
+    """Legacy top-level email/token in jira_config.yaml."""
     if not path.is_file():
         return "", ""
     text = path.read_text(encoding="utf-8")
@@ -51,6 +53,15 @@ def _read_acli_jira_config(path: Path) -> tuple[str, str]:
         elif stripped.startswith("token:"):
             token = stripped.split(":", 1)[1].strip().strip("'\"")
     return email, token
+
+
+def _read_acli_profile_email(path: Path) -> str:
+    """Email from first profile entry (acli 1.x stores token in OS keyring)."""
+    if not path.is_file():
+        return ""
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"^\s+email:\s*(.+)$", text, re.MULTILINE)
+    return match.group(1).strip().strip("'\"") if match else ""
 
 
 def _find_jira_token_file() -> Path | None:
@@ -71,6 +82,18 @@ def _find_jira_token_file() -> Path | None:
     return None
 
 
+def _acli_session_ok() -> bool:
+    if not shutil.which("acli"):
+        return False
+    result = subprocess.run(
+        ["acli", "jira", "project", "list", "--recent", "1"],
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    return result.returncode == 0
+
+
 def resolve_jira_auth(env: os._Environ[str] | None = None) -> JiraAuth:
     env = env or os.environ
     login = (env.get("JIRA_EMAIL") or "").strip()
@@ -83,10 +106,9 @@ def resolve_jira_auth(env: os._Environ[str] | None = None) -> JiraAuth:
     if not login:
         login = _read_go_jira_config(Path.home() / ".config" / ".jira" / ".config.yml") or ""
 
+    acli_cfg = Path.home() / ".config" / "acli" / "jira_config.yaml"
     if not token or not login:
-        acli_email, acli_token = _read_acli_jira_config(
-            Path.home() / ".config" / "acli" / "jira_config.yaml"
-        )
+        acli_email, acli_token = _read_acli_flat_config(acli_cfg)
         login = login or acli_email
         token = token or acli_token
 
@@ -98,15 +120,24 @@ def resolve_jira_auth(env: os._Environ[str] | None = None) -> JiraAuth:
                 login = login or parsed[0]
                 token = token or parsed[1]
 
-    if not login or not token:
-        raise SystemExit(
-            "Jira auth missing for live Jira.\n"
-            "  • export JIRA_EMAIL and JIRA_API_TOKEN (Atlassian API token)\n"
-            "  • or ~/.jira-token or ~/.config/acli/.jira-token as email:token\n"
-            "  • or ~/.config/acli/jira_config.yaml (email + token)\n"
-            "  • or install acli and configure API token auth\n"
-            "Offline: use --fixture with a JSON issue list (see unit tests)"
-        )
-
     server = (env.get("JIRA_BASE_URL") or DEFAULT_JIRA_SERVER).rstrip("/")
-    return JiraAuth(login=login, token=token, server=server)
+
+    if login and token:
+        return JiraAuth(login=login, token=token, server=server, via_acli=False)
+
+    if _acli_session_ok():
+        login = login or _read_acli_profile_email(acli_cfg)
+        return JiraAuth(login=login, token="", server=server, via_acli=True)
+
+    lines = ["Jira auth missing for live Jira."]
+    if shutil.which("acli"):
+        lines.append(
+            "  acli is on PATH but not authenticated. Run:\n"
+            "    acli jira auth login --site redhat.atlassian.net "
+            "--email <you@redhat.com> --token"
+        )
+        lines.append("  Or: acli jira auth login   (interactive)")
+    else:
+        lines.append("  • install acli, or export JIRA_EMAIL + JIRA_API_TOKEN")
+    lines.append("  Offline: --fixture tests/fixtures/install_refinement_queue.json")
+    raise SystemExit("\n".join(lines))

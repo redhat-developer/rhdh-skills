@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Run from this skill directory: ./prepare-refinement [args]
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 exec uv run python "$DIR/scripts/prepare_refinement.py" "$@"

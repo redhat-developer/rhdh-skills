@@ -1,8 +1,9 @@
-"""Minimal Jira REST client for JQL search (stdlib only)."""
+"""Jira JQL search via REST (API token) or acli (OAuth / keyring token)."""
 
 from __future__ import annotations
 
 import json
+import subprocess
 import urllib.error
 import urllib.request
 from typing import Any
@@ -20,6 +21,9 @@ SEARCH_FIELDS = [
 ]
 
 SEARCH_JQL_PATH = "/rest/api/3/search/jql"
+
+# acli rejects customfield_* in --fields
+ACLI_SEARCH_FIELDS = "key,summary,status,issuetype,assignee,priority"
 
 
 def _request(auth: JiraAuth, method: str, path: str, body: dict | None = None) -> Any:
@@ -41,8 +45,31 @@ def _request(auth: JiraAuth, method: str, path: str, body: dict | None = None) -
         raise SystemExit(f"Jira API {exc.code} for {path}: {detail[:500]}") from exc
 
 
-def search_jql(auth: JiraAuth, jql: str, *, max_results: int = 100) -> list[dict]:
-    """Paginated issue search via /rest/api/3/search/jql (CHANGE-2046)."""
+def _acli_run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["acli", "jira", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "acli failed").strip()
+        raise SystemExit(f"acli jira failed: {detail[:500]}")
+    return result
+
+
+def search_jql(
+    auth: JiraAuth,
+    jql: str,
+    *,
+    max_results: int = 100,
+    fields: list[str] | None = None,
+) -> list[dict]:
+    if auth.via_acli:
+        return _acli_search(jql, max_results=max_results, fields=fields)
+
     issues: list[dict] = []
     next_token: str | None = None
     page_size = min(50, max_results)
@@ -51,7 +78,7 @@ def search_jql(auth: JiraAuth, jql: str, *, max_results: int = 100) -> list[dict
         payload: dict[str, Any] = {
             "jql": jql,
             "maxResults": page_size,
-            "fields": SEARCH_FIELDS,
+            "fields": fields or SEARCH_FIELDS,
             "fieldsByKeys": True,
         }
         if next_token:
@@ -70,8 +97,33 @@ def search_jql(auth: JiraAuth, jql: str, *, max_results: int = 100) -> list[dict
     return issues[:max_results]
 
 
+def _acli_search(jql: str, *, max_results: int, fields: list[str] | None) -> list[dict]:
+    args = [
+        "workitem",
+        "search",
+        "--jql",
+        jql,
+        "--json",
+        "--limit",
+        str(max_results),
+        "--fields",
+        ACLI_SEARCH_FIELDS,
+    ]
+    raw = json.loads(_acli_run(args).stdout)
+    if isinstance(raw, dict):
+        return raw.get("issues", raw.get("values", []))
+    return raw
+
+
 def child_count(auth: JiraAuth, parent_key: str) -> int:
     jql = f'parent = {parent_key} AND status != Closed'
+    if auth.via_acli:
+        out = _acli_run(["workitem", "search", "--jql", jql, "--count"]).stdout
+        for line in reversed(out.strip().splitlines()):
+            digits = "".join(c for c in line if c.isdigit())
+            if digits:
+                return int(digits)
+        return 0
     data = _request(
         auth,
         "POST",
