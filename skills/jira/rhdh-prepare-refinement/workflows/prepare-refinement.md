@@ -118,7 +118,7 @@ should discuss. Mention the milestone window. Be opinionated.}
       Call out any issue that also appeared above.}
 ```
 
-### Install team dashboards
+### Team dashboards
 
 | Dashboard | URL |
 |-----------|-----|
@@ -126,7 +126,6 @@ should discuss. Mention the milestone window. Be opinionated.}
 | Team Refinement | https://redhat.atlassian.net/jira/dashboards/22332 |
 | Hygiene | https://redhat.atlassian.net/jira/dashboards/23962 |
 
-For other teams, use a Jira JQL search URL instead.
 
 ## Tone
 
