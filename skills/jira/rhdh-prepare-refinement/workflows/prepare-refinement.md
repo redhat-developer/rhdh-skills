@@ -70,65 +70,91 @@ Determine the active milestone window:
 - Feature freeze < today ≤ code freeze → **Code Freeze** window
 - After code freeze → **GA** window
 
-## Step 4 — Analyze each issue
+## Step 4 — Deep analysis
 
-For every issue in the queue:
+For each issue, gather context beyond basic fields:
 
-| Check | How | Flag when |
-|-------|-----|-----------|
-| Assignee | `assignee` field | Missing |
-| Story Points | `storyPoints` or `customfield_10028` | Missing |
-| Priority | `priority.name` | "Undefined" |
-| Epic children | `acli jira workitem search --jql 'parent = KEY AND status != Closed' --count` | 0 children |
-| Status vs freeze | status + days to freeze | New/Refinement with ≤ 14 days to freeze |
+```bash
+acli jira workitem view ISSUE_KEY --json | jq '{
+  key, summary, status: .fields.status.name,
+  assignee: .fields.assignee.displayName // "Unassigned",
+  issuetype: .fields.issuetype.name,
+  created: .fields.created,
+  description: .fields.description,
+  links: .fields.issuelinks,
+  labels: .fields.labels,
+  components: .fields.components
+}'
 
-Name each issue by key. Say what specifically stands out. Connect the dots —
-an unsized Epic with no children 7 days from code freeze is a bigger deal than
-a Task missing priority.
+# For Epics, check children
+acli jira workitem search --jql 'parent = KEY AND status != Closed' --count
 
-## Step 5 — Present the brief
+# Get recent comments (last 30 days signals active discussion or blockers)
+acli jira workitem view ISSUE_KEY --comments --json | jq '.fields.comment.comments[-3:]'
+```
+
+Look for:
+- **Scope clarity**: Empty Epics, vague descriptions, "TBD" language
+- **Staleness**: Created >90 days ago but still in New/To Do
+- **Blockers**: Linked "blocked by" issues, comments mentioning blockers
+- **Cross-team deps**: Links to other team's boards, external components
+- **Related work clusters**: Multiple issues about same component (e.g., 3 must-gather items)
+
+## Step 5 — Risk patterns and recommendations
+
+Synthesize findings into actionable insights:
+
+1. **Timeline reality check**: Given days to code freeze and unsized queue, what's realistic?
+2. **Scope questions**: Which Epics/issues have unclear scope that needs discussion?
+3. **Blockers**: What's blocked or waiting on other work?
+4. **Grouping opportunities**: Should related items be consolidated or tracked as Epic?
+5. **Stale work**: Has anything been sitting untouched? Should it be descoped?
+6. **Assignment gaps**: Which unassigned items need owners vs. which can wait?
+
+Connect the dots — don't just list missing fields.
+
+## Step 6 — Present actionable insights
+
+**CRITICAL**: Every issue mentioned anywhere must have an inline link.
+
+Issue link format: `[RHIDP-XXXX](https://redhat.atlassian.net/browse/RHIDP-XXXX)`
 
 ```
-🎯 RHDH {Team} · Refinement
+🎯 RHDH {Team} · Refinement Brief
 
 Release: {version}
 {Milestone label}: {date} · {days} days [🔥 if ≤ 14 days]
 
-✨ Summary
-{2-3 sentences naming specific issues: why they matter, what the team
-should discuss. Mention the milestone window. Be opinionated.}
+## 🔥 What to discuss
 
-🚀 Feature Tracking
-   {version} · {team}
-   (Link: {dashboard or JQL URL})
+{Numbered priority list, top-to-bottom. Link EVERY issue EVERY time it's mentioned:}
 
-   ✨ {Per-issue: RHIDP-XXXX — what's wrong, why it matters now}
+1. **[RHIDP-XXXX](https://redhat.atlassian.net/browse/RHIDP-XXXX)** — {Why it matters}: {Specific observation}. → **Do this**: {Action with links if mentioning other issues}
 
-🎫 Team Queue
-   {version} · {team}
-   (Link: {dashboard or JQL URL})
+2. **Must-gather cluster** — [RHIDP-A](link), [RHIDP-B](link), [RHIDP-C](link): {Age, assignment, why clustered}. → **Do this**: Descope [RHIDP-A](link), [RHIDP-B](link) to 2.2.0; keep [RHIDP-C](link)
 
-   ✨ {Per-issue: unowned, unsized, or noteworthy — name the key}
+3. **Timeline reality** — [RHIDP-X](link), [RHIDP-Y](link), [RHIDP-Z](link) all 90+ days old, 7 days to freeze. → **Do this**: Move [RHIDP-X](link), [RHIDP-Y](link) to 2.2.0; focus on [RHIDP-Z](link)
 
-🧹 Hygiene
-   {version} · {team}
-   (Link: {dashboard or JQL URL})
+{If blockers exist:}
+4. **[RHIDP-YYYY](link)** blocked by [RHIDP-ZZZZ](link) — {Impact}. → **Do this**: Escalate or descope
 
-   ✨ {Items with missing fields. Name which issues, which fields.
-      Call out any issue that also appeared above.}
+---
+
+**Dashboards**
+- [Team refinement queue](https://redhat.atlassian.net/jira/dashboards/22332)
+- [Feature tracking](https://redhat.atlassian.net/jira/dashboards/17955)
+- [Hygiene](https://redhat.atlassian.net/jira/dashboards/23962)
+- [Release plan: RHDH {version}](https://redhat.atlassian.net/browse/RHDHPLAN-{KEY})
 ```
-
-### Team dashboards
-
-| Dashboard | URL |
-|-----------|-----|
-| Feature Tracking | https://redhat.atlassian.net/jira/dashboards/17955 |
-| Team Refinement | https://redhat.atlassian.net/jira/dashboards/22332 |
-| Hygiene | https://redhat.atlassian.net/jira/dashboards/23962 |
-
 
 ## Tone
 
-Write like a facilitator prepping for the call — brief, specific, opinionated.
-Name issues by key. Say what the team should discuss, not just what fields are
-empty. If everything looks good, say so and keep it short.
+Write like a facilitator who did the homework so the team doesn't have to.
+
+- **Surface insights**, not field validation. "RHIDP-17196 created 60 days ago, no Epic children, suggests scope unclear" beats "missing story points".
+- **Connect dots**. Three must-gather items unassigned → recommend consolidation or single owner.
+- **Be opinionated**. Given 7 days to code freeze, say what should be descoped.
+- **Name real risks**. Blocked items, unclear scope, stale work, timeline crunches.
+- **Skip noise**. Don't list every missing field — that's obvious from the dashboard.
+
+If the queue is clean and realistic, say so in 2 sentences and stop.

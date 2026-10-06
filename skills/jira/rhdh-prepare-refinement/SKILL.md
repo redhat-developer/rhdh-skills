@@ -1,12 +1,12 @@
 ---
 name: rhdh-prepare-refinement
 description: >-
-  Produces the facilitator brief before a team's refinement ceremony. The user
-  says "prepare refinement for Install on 2.1.0" and gets a terse report with
-  release milestones, per-issue observations, and dashboard links. Works for
-  any RHDH scrum team. Use for "prepare refinement", "refinement prep", "what
-  needs attention before refinement", or "refinement brief for [team] on
-  [version]".
+  Intelligent refinement brief for RHDH scrum teams. Analyzes the queue,
+  surfaces non-obvious risks (scope unclear, blockers, stale work, timeline
+  unrealistic), identifies patterns, and makes recommendations about what to
+  discuss. Say "prepare refinement for Install on 2.1.0" and get actionable
+  insights, not field validation. Use for "prepare refinement", "refinement
+  prep", or "what should we discuss in refinement for [team] on [version]".
 compatibility: "acli on PATH with a Jira session."
 ---
 
