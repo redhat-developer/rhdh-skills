@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Prepare Refinement"
+  short_description: "Produce a facilitator brief before a team's refinement ceremony"
