@@ -121,11 +121,11 @@
         "./skills/reference/mutation-gate",
         "./skills/jira/rhdh-jira-link",
         "./skills/jira/rhdh-jira-refine",
-        "./skills/jira/rhdh-prepare-refinement",
         "./skills/jira/rhdh-jira-sprint-plan",
         "./skills/jira/rhdh-jira-sprint-report",
         "./skills/jira/rhdh-jira-update",
-        "./skills/jira/rhdh-feature-docs"
+        "./skills/jira/rhdh-feature-docs",
+        "./skills/jira/rhdh-prepare-refinement"
       ]
     }
   ]
