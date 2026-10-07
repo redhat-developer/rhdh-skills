@@ -35,12 +35,15 @@ acli jira workitem view ISSUE_KEY --fields "*all" --json
 
 Read `customfield_10001.id` — that is the team UUID for JQL.
 
+If no active sprint exists, fall back to the most recent closed sprint or accept
+the team UUID directly as an argument.
+
 ## Step 2 — Fetch the queue
 
 ```bash
 acli jira workitem search \
-  --jql 'project = RHIDP AND sprint in openSprints() AND "Team[Team]" = TEAM_ID AND status in (New, Refinement, "To Do") AND fixVersion = "VERSION"' \
-  --fields "*all" --paginate --json
+  --jql 'project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint in openSprints() AND "Team[Team]" = TEAM_ID AND status in (New, Refinement, "To Do") AND fixVersion = "VERSION"' \
+  --paginate --json
 ```
 
 ## Step 3 — Resolve release milestones
@@ -76,7 +79,7 @@ For each issue, gather context beyond basic fields:
 
 ```bash
 acli jira workitem view ISSUE_KEY --json | jq '{
-  key, summary, status: .fields.status.name,
+  key, summary: .fields.summary, status: .fields.status.name,
   assignee: .fields.assignee.displayName // "Unassigned",
   issuetype: .fields.issuetype.name,
   created: .fields.created,

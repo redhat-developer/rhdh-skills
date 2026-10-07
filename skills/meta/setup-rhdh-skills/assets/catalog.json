@@ -68,15 +68,6 @@
       "requiresExternalSkills": []
     },
     {
-      "name": "rhdh-prepare-refinement",
-      "category": "jira",
-      "invocation": "model",
-      "requiresSkills": [
-        "rhdh-jira-api"
-      ],
-      "requiresExternalSkills": []
-    },
-    {
       "name": "rhdh-jira-sprint-plan",
       "category": "jira",
       "invocation": "model",
@@ -111,6 +102,15 @@
       "invocation": "model",
       "requiresSkills": [
         "prose-editing"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-prepare-refinement",
+      "category": "jira",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api"
       ],
       "requiresExternalSkills": []
     },

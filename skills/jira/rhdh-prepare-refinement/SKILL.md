@@ -24,7 +24,7 @@ Load `workflows/prepare-refinement.md`.
 
 If either is missing, ask.
 
-## Boundary
+## Boundary with the neighbouring skills
 
 - Per-issue exit-criteria checks, duplicates, comments → `/rhdh-jira-refine`.
 - Sprint planning from refined work → `/rhdh-jira-sprint-plan`.
@@ -33,5 +33,6 @@ If either is missing, ask.
 
 ## Completion
 
-Outputs a refinement brief to the conversation. No files written, no state
-changed—just analysis and recommendations for the team to discuss.
+Complete when the refinement brief is printed to the conversation with analyzed
+issues, identified risks, and actionable recommendations. No files written, no
+Jira state modified.
