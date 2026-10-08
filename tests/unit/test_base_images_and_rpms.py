@@ -302,6 +302,92 @@ class TestBaseImagesAndRpmsScript:
         assert result.returncode == 0, result.stderr
         assert result.stdout == "error: dnf transaction failed\n"
 
+    def test_latest_openshift_el9_beta_stream_from_listing_picks_highest(self) -> None:
+        function = _extract_bash_function(
+            MAIN_SCRIPT, "latest_openshift_el9_beta_stream_from_listing"
+        )
+        listing = (
+            '<a href="4.19-el9-beta/">4.19-el9-beta/</a>\n'
+            '<a href="4.21-el9-beta/">4.21-el9-beta/</a>\n'
+            '<a href="4.22-el9-beta/">4.22-el9-beta/</a>\n'
+            '<a href="4.9-el9-beta/">4.9-el9-beta/</a>\n'
+        )
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\nlatest_openshift_el9_beta_stream_from_listing"],
+            input=listing,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "4.22-el9-beta"
+
+    def test_bump_openshift_rpm_repos_in_file_rewrites_url_and_repoid(self, tmp_path: Path) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "bump_openshift_rpm_repos_in_file")
+        rpms_in = tmp_path / "rpms.in.yaml"
+        rpms_in.write_text(
+            "    - repoid: rhocp-4.21-for-rhel-9-$basearch-rpms\n"
+            "      baseurl: https://mirror.openshift.com/pub/openshift-v4/"
+            "$basearch/dependencies/rpms/4.21-el9-beta/\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{function}\nbump_openshift_rpm_repos_in_file "$1" "$2"',
+                "bash",
+                str(rpms_in),
+                "4.22-el9-beta",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        text = rpms_in.read_text(encoding="utf-8")
+        assert "4.22-el9-beta" in text
+        assert "rhocp-4.22-for-rhel-9-$basearch-rpms" in text
+        assert "4.21-el9-beta" not in text
+        assert "rhocp-4.21-for-rhel-9-" not in text
+
+    def test_bump_openshift_rpm_repos_in_file_noop_when_already_latest(
+        self, tmp_path: Path
+    ) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "bump_openshift_rpm_repos_in_file")
+        original = (
+            "    - repoid: rhocp-4.22-for-rhel-9-$basearch-rpms\n"
+            "      baseurl: https://mirror.openshift.com/pub/openshift-v4/"
+            "$basearch/dependencies/rpms/4.22-el9-beta/\n"
+        )
+        rpms_in = tmp_path / "rpms.in.yaml"
+        rpms_in.write_text(original, encoding="utf-8")
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{function}\nbump_openshift_rpm_repos_in_file "$1" "$2"',
+                "bash",
+                str(rpms_in),
+                "4.22-el9-beta",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert rpms_in.read_text(encoding="utf-8") == original
+
+    def test_skill_covers_openshift_el9_beta_rpm_bump(self) -> None:
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        assert "N-el9-beta" in skill
+        script = MAIN_SCRIPT.read_text(encoding="utf-8")
+        assert "bump_openshift_rpm_repos" in script
+        assert (
+            'commit_push_paths "${branch}" "chore: update rpms.lock.yaml [skip-build]" rpms.lock.yaml rpms.in.yaml'
+            in script
+        )
+
     def test_skill_forbids_go_toolchain_downgrade(self) -> None:
         skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
         assert "Never lower `go` or `toolchain`" in skill
