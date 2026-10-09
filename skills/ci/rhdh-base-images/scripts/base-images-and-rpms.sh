@@ -381,6 +381,56 @@ filter_rpm_lockfile_source_warnings() {
     grep -viE -- 'no sources found for |no matching sources' || true
 }
 
+# OpenShift clients RPMs are published under rotating N-el9-beta directories
+# (4.21-el9-beta 404s once 4.22-el9-beta is the current stream). Parse a directory
+# listing; pick the highest N.M-el9-beta token.
+latest_openshift_el9_beta_stream_from_listing() {
+    grep -oE '[0-9]+\.[0-9]+-el9-beta' | sort -u | sort -t. -k1,1n -k2,2n | tail -1
+}
+
+latest_openshift_el9_beta_stream() {
+    local listing
+    listing=$(curl -fsSL 'https://mirror.openshift.com/pub/openshift-v4/amd64/dependencies/rpms/') || return 1
+    printf '%s\n' "${listing}" | latest_openshift_el9_beta_stream_from_listing
+}
+
+# Rewrite rpms.in.yaml OpenShift clients baseurl and rhocp-N-for-rhel-9 repoids.
+bump_openshift_rpm_repos_in_file() {
+    local file="$1"
+    local new_stream="$2"
+    local old_stream old_ver new_ver
+    [[ -f "${file}" ]] || return 0
+    [[ -n "${new_stream}" ]] || return 0
+    new_ver="${new_stream%-el9-beta}"
+    while IFS= read -r old_stream; do
+        [[ -n "${old_stream}" ]] || continue
+        [[ "${old_stream}" != "${new_stream}" ]] || continue
+        old_ver="${old_stream%-el9-beta}"
+        sed -i \
+            -e "s|dependencies/rpms/${old_stream}|dependencies/rpms/${new_stream}|g" \
+            -e "s|rhocp-${old_ver}-for-rhel-9-|rhocp-${new_ver}-for-rhel-9-|g" \
+            "${file}"
+    done < <(grep -oE '[0-9]+\.[0-9]+-el9-beta' "${file}" | sort -u)
+}
+
+bump_openshift_rpm_repos() {
+    local repo_dir="$1"
+    local file="${repo_dir}/rpms.in.yaml"
+    local new_stream
+    [[ -f "${file}" ]] || return 0
+    if ! grep -qE 'dependencies/rpms/[0-9]+\.[0-9]+-el9-beta' "${file}"; then
+        log "RPM repos: no OpenShift N-el9-beta URL in ${file}"
+        return 0
+    fi
+    new_stream=$(latest_openshift_el9_beta_stream) || {
+        warn "RPM repos: could not list OpenShift el9-beta streams; leaving rpms.in.yaml"
+        return 0
+    }
+    [[ -n "${new_stream}" ]] || return 0
+    log "RPM repos: latest OpenShift el9-beta stream is ${new_stream}"
+    bump_openshift_rpm_repos_in_file "${file}" "${new_stream}"
+}
+
 update_rpm_lockfile() {
     local repo_dir="$1"
     local kind="$2"
@@ -394,10 +444,13 @@ update_rpm_lockfile() {
 
     log "RPM lockfile: $(basename "${repo_dir}") using ${containerfile}"
     if [[ ${DRY_RUN} -eq 1 ]]; then
+        echo "  dry-run: bump OpenShift N-el9-beta URLs in ${repo_dir}/rpms.in.yaml when present"
         echo "  dry-run: (cd ${repo_dir} && ${rpm_tool} -f ${containerfile} rpms.in.yaml)"
-        echo "  dry-run: commit and push rpms.lock.yaml to open base-images PR branch (or chore/automated-update-rpm-lockfile/${branch})"
+        echo "  dry-run: commit and push rpms.in.yaml and rpms.lock.yaml to open base-images PR branch (or chore/automated-update-rpm-lockfile/${branch})"
         return 0
     fi
+
+    bump_openshift_rpm_repos "${repo_dir}"
 
     pushd "${repo_dir}" >/dev/null
     rpm_err=$(mktemp)
@@ -1008,9 +1061,9 @@ run_analyze() {
 commit_push_rpm_lockfile() {
     local branch="$1"
 
-    if git diff --quiet rpms.lock.yaml 2>/dev/null \
-        && git diff --cached --quiet rpms.lock.yaml 2>/dev/null; then
-        log "RPM lockfile: no changes in rpms.lock.yaml"
+    if git diff --quiet rpms.lock.yaml rpms.in.yaml 2>/dev/null \
+        && git diff --cached --quiet rpms.lock.yaml rpms.in.yaml 2>/dev/null; then
+        log "RPM lockfile: no changes in rpms.lock.yaml or rpms.in.yaml"
         return 0
     fi
 
@@ -1021,7 +1074,7 @@ commit_push_rpm_lockfile() {
         pr_branch=$(find_open_base_images_pr_branch "${branch}" || true)
         if [[ -n "${pr_branch}" ]]; then
             log "RPM lockfile: attaching to open base-images PR branch ${pr_branch}"
-            git stash push -m "rpm-lock" -- rpms.lock.yaml
+            git stash push -m "rpm-lock" -- rpms.lock.yaml rpms.in.yaml
             git checkout "${pr_branch}"
             git stash pop || true
         else
@@ -1029,7 +1082,7 @@ commit_push_rpm_lockfile() {
         fi
     fi
 
-    commit_push_paths "${branch}" "chore: update rpms.lock.yaml [skip-build]" rpms.lock.yaml
+    commit_push_paths "${branch}" "chore: update rpms.lock.yaml [skip-build]" rpms.lock.yaml rpms.in.yaml
 }
 
 while [[ $# -gt 0 ]]; do
