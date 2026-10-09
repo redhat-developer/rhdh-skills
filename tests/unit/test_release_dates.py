@@ -89,7 +89,7 @@ def test_github_render_preserves_backstage_version_when_source_omits_it(mod):
     assert gh_entry(doc, "2.1.0")["backstage-version"] == "1.54.0"
     assert changed is False
     assert skipped == [
-        {"version": "2.1.0", "reason": "field-not-supplied", "field": "backstage_version"}
+        {"version": "2.1.0", "reason": "fields-not-supplied", "fields": ["backstage_version"]}
     ]
 
 

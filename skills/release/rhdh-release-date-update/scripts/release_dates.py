@@ -32,6 +32,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
@@ -349,7 +350,11 @@ def render_github(
         backstage = info.get("backstage_version")
         if not _supplied(backstage):
             skipped.append(
-                {"version": version, "reason": "field-not-supplied", "field": "backstage_version"}
+                {
+                    "version": version,
+                    "reason": "fields-not-supplied",
+                    "fields": ["backstage_version"],
+                }
             )
         elif str(entry.get("backstage-version")) != str(backstage):
             entry["backstage-version"] = DQ(backstage)
@@ -482,23 +487,28 @@ def apply_github(rendered_path: Path) -> dict[str, Any]:
     except RuntimeError as exc:
         return {"target": "github", "ok": False, "error": str(exc)}
 
-    existing_pr = _run_json(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--repo",
-            GITHUB_REPO,
-            "--base",
-            GITHUB_BASE_BRANCH,
-            "--head",
-            BRANCH_NAME,
-            "--state",
-            "open",
-            "--json",
-            "url,title",
-        ]
-    )
+    # The push already succeeded above; a failure here must not lose that
+    # result, so default to an empty list rather than letting it raise.
+    try:
+        existing_pr = _run_json(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--repo",
+                GITHUB_REPO,
+                "--base",
+                GITHUB_BASE_BRANCH,
+                "--head",
+                BRANCH_NAME,
+                "--state",
+                "open",
+                "--json",
+                "url,title",
+            ]
+        )
+    except RuntimeError:
+        existing_pr = None
     return {
         "target": "github",
         "ok": True,
@@ -561,7 +571,7 @@ def apply_gitlab(rendered_path: Path) -> dict[str, Any]:
             "api",
             "--hostname",
             GITLAB_HOST,
-            f"projects/{project}/merge_requests?source_branch={BRANCH_NAME}&state=opened",
+            f"projects/{project}/merge_requests?source_branch={quote(BRANCH_NAME, safe='')}&state=opened",
         ]
     )
     existing = json.loads(existing_mr.stdout) if existing_mr.returncode == 0 else []
