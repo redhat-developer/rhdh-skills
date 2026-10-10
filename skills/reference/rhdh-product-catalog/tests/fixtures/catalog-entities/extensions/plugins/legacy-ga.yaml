@@ -1,0 +1,11 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: legacy-ga
+  namespace: rhdh
+  title: Legacy GA Plugin
+  annotations:
+    extensions.backstage.io/pre-installed: true
+spec:
+  support: production
+  lifecycle: active
