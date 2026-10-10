@@ -45,6 +45,7 @@ and exact command per row — rather than approving them one at a time.
   `/rhdh-jira-update`. Refinement reports across many issues; it does not
   replace that.
 - Building the next sprint from the refined backlog is `/rhdh-jira-sprint-plan`.
+- Pre-refinement ceremony brief with smart analysis is `/rhdh-prepare-refinement`.
 - Exit criteria tables, field IDs, JQL, and the component catalog are
   `/rhdh-jira-api`.
 - Sizing scales, duplicate detection, and decomposition rules are

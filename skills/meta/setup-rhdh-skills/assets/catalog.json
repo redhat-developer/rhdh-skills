@@ -97,6 +97,15 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-prepare-refinement",
+      "category": "jira",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-backstage-upgrade",
       "category": "plugins",
       "invocation": "model",

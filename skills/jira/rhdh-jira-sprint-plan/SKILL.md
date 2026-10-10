@@ -29,6 +29,8 @@ call.
   per-member results, demo checklist — is `/rhdh-jira-sprint-report`. This skill
   looks forward; that one looks back.
 - Making the backlog worth planning from is `/rhdh-jira-refine`.
+- Pre-refinement ceremony analysis and facilitator brief is
+  `/rhdh-prepare-refinement`.
 - Picking and setting an assignee is `/rhdh-jira-update`. This skill invokes it
   for fill suggestions rather than scoring assignees itself.
 - Board IDs, sprint naming, JQL, and the Team field's JQL limitation are
