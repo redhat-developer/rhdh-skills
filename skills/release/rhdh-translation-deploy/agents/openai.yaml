@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Translation Deploy"
+  short_description: "Download TMS translations; merge .ts and rhdh SOT; no backstage PR"
