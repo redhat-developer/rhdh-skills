@@ -8,7 +8,7 @@ rhdh-release-fixversions import from here instead of carrying their own copies.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 MILESTONE_LABELS = {
@@ -18,6 +18,60 @@ MILESTONE_LABELS = {
     "go_no_go": r"\bGo/No Go\b",
     "ga_announce": r"\bGA Announce\b",
 }
+
+_MONTH_NAMES = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+
+_NATURAL_DATE_RE = re.compile(
+    r"\b(January|February|March|April|May|June|July|August"
+    r"|September|October|November|December"
+    r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+    r"\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_natural_date(text: str, reference_year: int | None = None) -> str | None:
+    """Parse 'September 14', 'Sep 14, 2026', etc. into an ISO date string."""
+    match = _NATURAL_DATE_RE.search(text)
+    if not match:
+        return None
+    month = _MONTH_NAMES.get(match.group(1).lower())
+    day = int(match.group(2))
+    year = (
+        int(match.group(3))
+        if match.group(3)
+        else (reference_year or datetime.now(timezone.utc).year)
+    )
+    if not month:
+        return None
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
 
 
 def adf_text(node: dict[str, Any]) -> str:
@@ -47,26 +101,13 @@ def adf_table_rows(node: dict[str, Any]) -> list[str]:
 
 def parse_natural_date(text: str) -> str | None:
     """Parse a natural-language date like 'August 24' or 'Sep 2 (done)'."""
-    cleaned = re.sub(r"\(.*?\)", "", text).strip()
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    if not cleaned:
-        return None
-    year = datetime.now().year
-    with_year = f"{cleaned}, {year}"
-    for fmt in ("%B %d, %Y", "%b %d, %Y"):
-        try:
-            return datetime.strptime(with_year, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    for fmt in ("%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(cleaned, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
+    return _parse_natural_date(text)
 
 
-def extract_milestone_dates(description: dict[str, Any] | str | None) -> dict[str, str]:
+def extract_milestone_dates(
+    description: dict[str, Any] | str | None,
+    reference_year: int | None = None,
+) -> dict[str, str]:
     """Parse the milestone table embedded in a release Feature description."""
     dates = {key: "TBD" for key in MILESTONE_LABELS}
     if isinstance(description, dict):
@@ -82,7 +123,7 @@ def extract_milestone_dates(description: dict[str, Any] | str | None) -> dict[st
             date_str = iso_match.group(0)
         else:
             parts = line.split("|")
-            date_str = parse_natural_date(parts[-1]) if len(parts) >= 2 else None
+            date_str = _parse_natural_date(parts[-1], reference_year) if len(parts) >= 2 else None
         if not date_str:
             continue
         for key, label_pattern in MILESTONE_LABELS.items():

@@ -102,6 +102,7 @@
         "./skills/plugins/rhdh-playwright",
         "./skills/plugins/rhdh-pr-create",
         "./skills/plugins/rhdh-pr-review",
+        "./skills/plugins/rhdh-pr-triage",
         "./skills/plugins/rhdh-test-placement",
         "./skills/plugins/rhdh-backport"
       ]

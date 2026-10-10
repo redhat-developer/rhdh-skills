@@ -221,7 +221,11 @@ def _adf_table_rows(node: dict) -> list[str]:
 
 
 def _parse_natural_date(text: str) -> str | None:
-    """Parse a natural-language date like 'August 24' or 'Sep 2 (done)'."""
+    """Parse a natural-language date like 'August 24' or 'Sep 2 (done)'.
+
+    Strips annotations like '(done)' or '(tentative)'. When no year is present,
+    uses the current year.
+    """
     cleaned = re.sub(r"\(.*?\)", "", text).strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
     if not cleaned:
