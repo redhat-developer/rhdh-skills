@@ -42,3 +42,4 @@ rhdh-local-setup/
 
 # Temporary testing checkouts
 tmp/
+.playwright-cli

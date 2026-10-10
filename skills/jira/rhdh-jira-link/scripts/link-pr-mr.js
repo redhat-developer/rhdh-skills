@@ -35,7 +35,6 @@ const {
   shouldSkipTeamAndSprint,
   classifyPrMrState,
   prefixForPrMrState,
-  stripOutcomePrefix,
   withClosedPrefix,
   withMergedPrefix,
   parseArgs: parseArgv,
@@ -127,8 +126,8 @@ Auth: JIRA_API_TOKEN + ~/.config/.jira/.config.yml, or .jira-token next to acli
 RHDHPLAN Epic/Story/Task issues are moved to RHIDP before defaults.
 
 After link (unless --no-comment), posts/updates a Jira comment:
-  PR/MR:
-  * <a href="{url}">{repo} #{id}: {title}</a>   (same text as the Web link title)
+  PR: <a href="{url}">{url}</a>   (GitHub)
+  MR: <a href="{url}">{url}</a>   (GitLab)
   Adjusted fields:   (only newly set fields; omitted if none)
 `);
   process.exit(exitCode);
@@ -550,35 +549,23 @@ function adfBulletList(items) {
   };
 }
 
-function adfPrMrBullet(url, linkTitle) {
+function adfPrOrMrLine(url, host) {
+  const label = detectHost(url, host) === 'github' ? 'PR: ' : 'MR: ';
   return {
-    type: 'bulletList',
+    type: 'paragraph',
     content: [
+      { type: 'text', text: label },
       {
-        type: 'listItem',
-        content: [
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: linkTitle,
-                marks: [{ type: 'link', attrs: { href: url } }],
-              },
-            ],
-          },
-        ],
+        type: 'text',
+        text: url,
+        marks: [{ type: 'link', attrs: { href: url } }],
       },
     ],
   };
 }
 
-function buildLinkCommentAdf({ url, webLink, status, defaults }) {
-  const linkTitle =
-    stripOutcomePrefix(webLink?.title) ||
-    displayTitleFromLinkTitle(webLink?.title) ||
-    url;
-  const content = [adfParagraph('PR/MR:'), adfPrMrBullet(url, linkTitle)];
+function buildLinkCommentAdf({ url, status, defaults, host }) {
+  const content = [adfPrOrMrLine(url, host)];
   const adjusted = collectAdjustedFieldLines(defaults, status);
   if (adjusted.length > 0) {
     content.push(adfParagraph('Adjusted fields:'));
@@ -613,8 +600,8 @@ async function findCommentMentioningUrl(cfg, issue, url) {
   return match;
 }
 
-async function postLinkComment(cfg, issue, { url, webLink, status, defaults }) {
-  const body = buildLinkCommentAdf({ url, webLink, status, defaults });
+async function postLinkComment(cfg, issue, { url, webLink, status, defaults, host }) {
+  const body = buildLinkCommentAdf({ url, webLink, status, defaults, host });
   const existing = await findCommentMentioningUrl(cfg, issue, url);
   if (existing?.id) {
     await jiraFetch(cfg, 'PUT', `/rest/api/3/issue/${issue}/comment/${existing.id}`, {
@@ -665,6 +652,7 @@ async function cmdLink(args, cfg) {
         webLink,
         status: statusLine,
         defaults,
+        host,
       });
     } catch (err) {
       commentLine = `failed — ${err.message}`;

@@ -18,8 +18,10 @@ GraphQL capability. This reference owns query semantics, not credentials or HTTP
 4. If neither adapter satisfies the branch, say so and tell the human to run
    `/setup-rhdh-skills atlassian-mcp`.
 
-Never create an `AUTH` variable, read a token file, build an Authorization header, or invoke a raw
-HTTP client with credentials. Authentication stays inside the native CLI or host connector.
+The agent never creates an `AUTH` variable, reads a token file into context, builds an
+Authorization header, or invokes a raw HTTP client with credentials. Authentication stays
+inside the native CLI, the bundled Greenhopper adapter (in-process; never printed), or a
+host connector.
 
 ## Query contract
 
@@ -149,8 +151,9 @@ A team can also be reached from an issue through `JiraTeamViewField`, whose
 `selectedTeam.fullTeam.members` returns the same node shape. Prefer `teamV2` when a team id is
 known; it avoids fetching an issue to reach the roster.
 
-`/rhdh-jira-update` consumes this roster for expertise and capacity analysis, and
-`/rhdh-jira-sprint-plan` consumes it for per-member capacity.
+`/rhdh-jira-update` consumes this roster for expertise and capacity analysis,
+`/rhdh-jira-sprint-plan` consumes it for per-member capacity, and
+`/rhdh-release-capacity-plan` consumes it for release-horizon availability.
 
 ## Fallback rules
 
@@ -161,6 +164,7 @@ known; it avoids fetching an issue to reach the roster.
 | Relationship-heavy bulk read | Authenticated host GraphQL adapter |
 | Team roster by team id | Authenticated host GraphQL adapter, `team.teamV2` |
 | Unsupported custom-field read or write | [rest-api-fallback.md](rest-api-fallback.md) |
+| Sprint report / burndown | Bundled `scripts/greenhopper.py` (local token file). Host REST adapter only if that script cannot run |
 | No capable authenticated adapter | Name the missing capability and `/setup-rhdh-skills atlassian-mcp` |
 
 `issueSearchStable` is an evolving API. When it fails, fall back to paginated `acli`, not raw REST

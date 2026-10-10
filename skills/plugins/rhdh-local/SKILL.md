@@ -30,6 +30,7 @@ use this skill's standalone CLI; another skill does not need to be installed.
 
 | Outcome | Load and follow |
 |---|---|
+| Read a plugin version or artifact at an overlay branch or tag | Run `python3 scripts/fetch-plugin-metadata.py <plugin-name> --branch <branch-or-tag> --json`; default ref is `main` and runtime setup is not required |
 | Enable a catalog or PR artifact | `workflows/enable-plugin.md` |
 | Disable a plugin | `workflows/disable-plugin.md` |
 | Switch pristine/customized mode | `workflows/switch-mode.md` |

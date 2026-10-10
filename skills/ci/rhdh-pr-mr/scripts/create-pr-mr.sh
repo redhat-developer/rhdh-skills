@@ -64,6 +64,12 @@ if [[ -n "${BODY_FILE}" ]]; then
 fi
 [[ -n "${BODY}" ]] || BODY="${TITLE}"
 
+# Keep parallel stream MRs distinct: "chore: … [release-2.1]".
+branch_suffix=" [${BASE}]"
+if [[ "${TITLE}" != *"${branch_suffix}" ]]; then
+  TITLE="${TITLE}${branch_suffix}"
+fi
+
 if [[ "${GITLAB_PIPELINE:-}" == "true" ]]; then
   NO_OPEN=1
 fi

@@ -24,6 +24,44 @@ describe("rewriteExtras", () => {
       "ENV YARN=/.yarn/releases/yarn-4.18.1.cjs\nyarn set version 4.18.1\n",
     );
   });
+
+  it("rewrites yarn_version and leaves the variable install line", () => {
+    const src =
+      'yarn_version="4.18.1" \\\nyarn set version $yarn_version; yarn -v; \\\n';
+    const out = bumpYarn.rewriteExtras(src, ["4.17.1"], "4.19.0");
+    assert.equal(
+      out,
+      'yarn_version="4.19.0" \\\nyarn set version $yarn_version; yarn -v; \\\n',
+    );
+  });
+
+  it("rewrites a literal yarn set version that is not in from", () => {
+    const out = bumpYarn.rewriteExtras(
+      "yarn set version 4.16.0\n",
+      ["4.17.1"],
+      "4.19.0",
+    );
+    assert.equal(out, "yarn set version 4.19.0\n");
+  });
+
+  it("keeps denylist yarn_version pins and single-quoted or bare assignments", () => {
+    const src =
+      "yarn_version=\"4.8.1\"\nyarn_version='4.9.2'\nyarn_version=4.15.0\n";
+    assert.equal(bumpYarn.rewriteExtras(src, ["4.17.1"], "4.19.0"), src);
+  });
+
+  it("keeps a yarn_version assignment that is already --to", () => {
+    const src = 'yarn_version="4.19.0"\nyarn set version 4.19.0\n';
+    assert.equal(bumpYarn.rewriteExtras(src, ["4.17.1"], "4.19.0"), src);
+  });
+
+  it("rewrites quoted and bare yarn_version assignments", () => {
+    const src = "yarn_version='4.17.1'\nyarn_version=4.14.1\n";
+    assert.equal(
+      bumpYarn.rewriteExtras(src, [], "4.19.0"),
+      "yarn_version='4.19.0'\nyarn_version=4.19.0\n",
+    );
+  });
 });
 
 describe("collectFromVersions", () => {
@@ -82,5 +120,52 @@ describe("copyYarnBin", () => {
       fs.existsSync(path.join(dest, ".yarn", "releases", "yarn-4.17.1.cjs")),
       false,
     );
+  });
+});
+
+describe("installReleaseBins", () => {
+  it("installs the fetched CLI, updates yarnPath, and keeps denylist binaries", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "yarn-install-"));
+    const bin = path.join(root, "fetched.cjs");
+    fs.writeFileSync(bin, "#!/usr/bin/env node\n/* fetched */\n");
+    const rel = path.join(root, "ws", ".yarn", "releases");
+    const legacy = path.join(root, "legacy", ".yarn", "releases");
+    fs.mkdirSync(rel, { recursive: true });
+    fs.mkdirSync(legacy, { recursive: true });
+    fs.writeFileSync(path.join(rel, "yarn-4.17.1.cjs"), "old");
+    fs.writeFileSync(path.join(legacy, "yarn-4.8.1.cjs"), "deny");
+    fs.writeFileSync(
+      path.join(root, "ws", ".yarnrc.yml"),
+      "yarnPath: .yarn/releases/yarn-4.17.1.cjs\n",
+    );
+    fs.writeFileSync(
+      path.join(root, "legacy", ".yarnrc.yml"),
+      "yarnPath: .yarn/releases/yarn-4.8.1.cjs\n",
+    );
+
+    const installed = bumpYarn.installReleaseBins(
+      root,
+      ["4.17.1"],
+      "4.19.0",
+      bin,
+      false,
+    );
+    assert.deepEqual(installed, ["ws/.yarn/releases/yarn-4.19.0.cjs"]);
+    assert.equal(
+      fs.readFileSync(path.join(rel, "yarn-4.19.0.cjs"), "utf8"),
+      "#!/usr/bin/env node\n/* fetched */\n",
+    );
+    assert.equal(fs.existsSync(path.join(rel, "yarn-4.17.1.cjs")), false);
+    assert.equal(
+      fs.readFileSync(path.join(root, "ws", ".yarnrc.yml"), "utf8"),
+      "yarnPath: .yarn/releases/yarn-4.19.0.cjs\n",
+    );
+    assert.equal(fs.readFileSync(path.join(legacy, "yarn-4.8.1.cjs"), "utf8"), "deny");
+    assert.equal(
+      fs.readFileSync(path.join(root, "legacy", ".yarnrc.yml"), "utf8"),
+      "yarnPath: .yarn/releases/yarn-4.8.1.cjs\n",
+    );
+    const mode = fs.statSync(path.join(rel, "yarn-4.19.0.cjs")).mode & 0o777;
+    assert.equal(mode, 0o755);
   });
 });

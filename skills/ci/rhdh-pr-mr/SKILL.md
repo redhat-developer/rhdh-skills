@@ -40,13 +40,17 @@ SKILL=<this skill's directory>
 Default is `--no-open` (no browser). Pass `--open` only for interactive agent runs.
 `GITLAB_PIPELINE=true` forces no browser.
 
+The script appends ` [<base>]` to `--title` when that suffix is missing, including
+for `main` (`chore: short summary` becomes `chore: short summary [main]`). A
+title that already ends with the base branch is left as-is.
+
 Stdout includes `url: …`. Exit 0 if a PR/MR already exists for `--head`.
 
 ## Jira
 
 | Condition | Behavior |
 | --- | --- |
-| `--issue KEY` or `JIRA_ISSUE` set + `JIRA_API_TOKEN` | After open, invoke `/rhdh-jira-link` (`link-pr-mr.js link`) |
+| `--issue KEY` or `JIRA_ISSUE` set + `JIRA_API_TOKEN` | After open, invoke `/rhdh-jira-link` (`link-pr-mr.js link`). The Jira comment is `PR: <url>` or `MR: <url>` (plus optional Adjusted fields). |
 | Issue set but no token / missing link script | Warn; PR/MR still succeeds |
 | No issue | `[INFO] no Jira issue; skip link` |
 

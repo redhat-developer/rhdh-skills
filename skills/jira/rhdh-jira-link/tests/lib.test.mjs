@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+const { buildLinkCommentAdf } = require('../scripts/link-pr-mr.js');
 
 import {
   buildBulkMovePayload,
@@ -267,5 +271,37 @@ describe('parseEmailToken / resolveJiraAuth', () => {
     assert.equal(auth.login, 'from-file@example.com');
     assert.equal(auth.token, 'bare-token');
     assert.equal(auth.server, 'https://example.atlassian.net');
+  });
+});
+
+describe('buildLinkCommentAdf', () => {
+  const githubUrl = 'https://github.com/org/repo/pull/123';
+  const gitlabUrl = 'https://gitlab.cee.redhat.com/group/repo/-/merge_requests/817';
+
+  function firstParagraphText(doc) {
+    const nodes = doc.content[0].content;
+    return nodes.map((n) => n.text).join('');
+  }
+
+  it('uses PR: <url> for GitHub', () => {
+    const doc = buildLinkCommentAdf({ url: githubUrl, host: 'github' });
+    assert.equal(firstParagraphText(doc), `PR: ${githubUrl}`);
+    assert.equal(doc.content[0].content[1].marks[0].attrs.href, githubUrl);
+    assert.equal(doc.content.length, 1);
+  });
+
+  it('uses MR: <url> for GitLab', () => {
+    const doc = buildLinkCommentAdf({ url: gitlabUrl });
+    assert.equal(firstParagraphText(doc), `MR: ${gitlabUrl}`);
+  });
+
+  it('appends Adjusted fields when defaults were newly set', () => {
+    const doc = buildLinkCommentAdf({
+      url: githubUrl,
+      host: 'github',
+      status: 'transitioned To Do → In Progress',
+      defaults: { priority: 'set Normal' },
+    });
+    assert.equal(doc.content[1].content[0].text, 'Adjusted fields:');
   });
 });

@@ -130,8 +130,15 @@ writes. Follow `/mutation-gate`.
 - Always pass `--no-push` / `--nopush`. Do not push or open a PR unless the user
   explicitly asks. `generatePipelineRuns.sh` neither commits nor pushes. When the
   user does ask to open a PR/MR, invoke `/rhdh-pr-mr` by name after
-  `/mutation-gate` approval; pass `--issue` when a Jira key is known, otherwise
-  skip linking.
+  `/mutation-gate` approval.
+- When this skill opens a PR or MR, end the title with the target branch in
+  brackets, for example `chore: update Konflux Tekton tasks [release-2.1]`.
+  Include `[main]` on `main`. `/rhdh-pr-mr` appends that suffix when it is missing.
+- Always include https://github.com/redhat-developer/rhdh-skills/tree/main/skills/ci/rhdh-konflux-tasks in the body.
+  Before opening, ask which Jira key to cite. If the user gives a key, add
+  `https://redhat.atlassian.net/browse/<KEY>` and pass `--issue`. If they omit
+  it or say "no jira", omit the Jira line and do not pass `--issue`. Do not
+  look a key up and do not invent one.
 - When replacing a legacy task with `-oci-ta`, edit templates and shared
   pipelines first, then regenerate PLRs (or patch inline `pipelineSpec` PLRs by
   hand). Editing only PLRs leaves the source of truth stale.

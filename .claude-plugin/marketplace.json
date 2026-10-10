@@ -50,11 +50,12 @@
         "./skills/release/rhdh-platform-lifecycle",
         "./skills/release/rhdh-release-announce",
         "./skills/reference/prose-editing",
+        "./skills/release/rhdh-release-capacity-plan",
+        "./skills/reference/rhdh-jira-api",
         "./skills/release/rhdh-release-schedule",
         "./skills/release/rhdh-release-status",
         "./skills/release/rhdh-release-teams",
         "./skills/release/rhdh-release-fixversions",
-        "./skills/reference/rhdh-jira-api",
         "./skills/reference/mutation-gate",
         "./skills/release/rhdh-release-sos",
         "./skills/release/rhdh-smoke-tests",
@@ -98,10 +99,12 @@
         "./skills/plugins/rhdh-plugin-midstream-propagate",
         "./skills/plugins/rhdh-plugin-nfs-migration",
         "./skills/plugins/rhdh-plugin-wiring",
+        "./skills/plugins/rhdh-playwright",
         "./skills/plugins/rhdh-pr-create",
         "./skills/plugins/rhdh-pr-review",
         "./skills/plugins/rhdh-pr-triage",
-        "./skills/plugins/rhdh-test-placement"
+        "./skills/plugins/rhdh-test-placement",
+        "./skills/plugins/rhdh-backport"
       ]
     },
     {

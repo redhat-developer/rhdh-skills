@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Backport"
+  short_description: "Backport RHDH plugin changes to release branches"

@@ -210,4 +210,4 @@ Real dev app examples in rhdh-plugins:
 
 - `workspaces/orchestrator/packages/app/` — full NFS app with sidebar, auth, catalog
 - `workspaces/homepage/packages/app/` — simpler NFS app setup
-- `workspaces/lightspeed/packages/app/` — NFS with AI-specific extensions
+- `workspaces/intelligent-assistant/packages/app/` — NFS with AI-specific extensions

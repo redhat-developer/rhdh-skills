@@ -148,8 +148,10 @@ updateBaseImages.sh -w REPO_ROOT -b BRANCH -sb SCRIPTS_BRANCH -maxdepth 5 --pr
 Matches each repo's GitHub Action, then commits and pushes to the automation PR:
 
 ```bash
+# Bump rotating OpenShift clients N-el9-beta URLs in rpms.in.yaml first
+# (4.21-el9-beta 404s once 4.22-el9-beta is published).
 rpm-lockfile-prototype -f CONTAINERFILE rpms.in.yaml
-git add rpms.lock.yaml
+git add rpms.in.yaml rpms.lock.yaml
 git commit -s -m "chore: update rpms.lock.yaml [skip-build]"
 git push origin <chore/automated-update-base-images-*>   # same PR as base images
 ```
@@ -197,6 +199,7 @@ Do not downgrade. If `go.mod` already pins a newer toolchain (for example `go1.2
 - Running on a branch that does not exist in one of the in-scope repos.
 - Omitting `registry.redhat.io` login before base image updates.
 - Committing `rpms.lock.yaml` without checking the base image minor (e.g. UBI `9.8`) still matches `rpms.in.yaml` repo URLs.
+- Regenerating `rpms.lock.yaml` while `rpms.in.yaml` still points at a vanished OpenShift `N-el9-beta` directory (hermeto FetchError on `openshift-clients`).
 - Treating `rpm-lockfile-prototype` `No sources found for` / "no matching sources" warnings as a failure or remaining risk. The source RPM is often unpublished; the lockfile is still valid.
 - Lowering `go.mod` `toolchain` (or `go`) to match an older UBI Go toolset image. Keep the newer pin.
 - Copying plugin-catalog `.nvm/` headers while leaving `builder.Containerfile` FROM on an older UBI Node tag, or leaving a stale `node-v*` in `konflux.additional-tags`.

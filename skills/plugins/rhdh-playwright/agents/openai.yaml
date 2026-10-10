@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Playwright"
+  short_description: "Navigate and verify RHDH pages with playwright-cli"

@@ -7,7 +7,8 @@ description: >-
   and bump overlays `versions.json` `node` on `main` or a `release-1.10` branch.
   Use for weekly base-image maintenance, a UBI or RHEL bump, an RPM lockfile
   refresh, "which base images are out of date", node-v*-headers.tar.gz, catalog
-  builder FROM, overlays Node version, or UBI minor skew inside a Containerfile.
+  builder FROM, overlays Node version, UBI minor skew inside a Containerfile,
+  or an OpenShift clients `N-el9-beta` / `4.21-el9-beta` RPM 404.
 compatibility: "bash, jq, skopeo, curl, git, python3; podman or docker for toolchain detection; gh or glab for PR/MR creation."
 ---
 
@@ -57,6 +58,10 @@ until that path is migrated.
 - Accepted branch selectors are `main` or `release-*`; map them to the documented
   GitLab scripts branch in `references/repos.md`.
 - Keep base-image UBI minors aligned with RPM repository URLs.
+- Before regenerating `rpms.lock.yaml`, bump OpenShift clients `N-el9-beta`
+  `baseurl` values and matching `rhocp-N-for-rhel-9-$basearch-rpms` repoids in
+  `rpms.in.yaml` to the latest stream on mirror.openshift.com (for example
+  `4.21-el9-beta` → `4.22-el9-beta`). Skip when the file has no such repo.
 - On RHDH, update Node headers when the builder image changes Node. Then, when
   those checkouts are in scope, pin plugin-catalog
   `build/containerfiles/builder.Containerfile` FROM to the same UBI Node

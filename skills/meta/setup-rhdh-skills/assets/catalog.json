@@ -191,6 +191,13 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-playwright",
+      "category": "plugins",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-pr-create",
       "category": "plugins",
       "invocation": "model",
@@ -243,6 +250,15 @@
       "requiresExternalSkills": [
         "grilling"
       ]
+    },
+    {
+      "name": "rhdh-backport",
+      "category": "plugins",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
     },
     {
       "name": "rhdh-base-images",
@@ -338,6 +354,17 @@
       "invocation": "model",
       "requiresSkills": [
         "prose-editing"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-release-capacity-plan",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api",
+        "rhdh-release-teams",
+        "rhdh-release-schedule"
       ],
       "requiresExternalSkills": []
     },

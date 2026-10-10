@@ -77,6 +77,8 @@ def _parse_natural_date(text: str, reference_year: int | None = None) -> str | N
 def adf_text(node: dict[str, Any]) -> str:
     """Render the text and date values from an Atlassian Document Format node."""
     if node.get("type") == "text":
+        if any(mark.get("type") == "strike" for mark in node.get("marks", [])):
+            return ""
         return node.get("text", "")
     if node.get("type") == "date":
         try:
@@ -97,6 +99,11 @@ def adf_table_rows(node: dict[str, Any]) -> list[str]:
     return rows
 
 
+def parse_natural_date(text: str) -> str | None:
+    """Parse a natural-language date like 'August 24' or 'Sep 2 (done)'."""
+    return _parse_natural_date(text)
+
+
 def extract_milestone_dates(
     description: dict[str, Any] | str | None,
     reference_year: int | None = None,
@@ -112,7 +119,11 @@ def extract_milestone_dates(
 
     for line in lines:
         iso_match = re.search(r"\b\d{4}-\d{2}-\d{2}\b", line)
-        date_str = iso_match.group(0) if iso_match else _parse_natural_date(line, reference_year)
+        if iso_match:
+            date_str = iso_match.group(0)
+        else:
+            parts = line.split("|")
+            date_str = _parse_natural_date(parts[-1], reference_year) if len(parts) >= 2 else None
         if not date_str:
             continue
         for key, label_pattern in MILESTONE_LABELS.items():

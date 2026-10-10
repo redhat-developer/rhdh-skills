@@ -113,15 +113,24 @@ Stdout includes `move: …` and the post-move `issue:` key.
 Comment shape (only **newly set** fields; omit `kept` values):
 
 ```
-PR/MR:
-* example #817: fix: short summary
+PR: https://github.com/org/repo/pull/123
+```
 
+or, for GitLab:
+
+```
+MR: https://gitlab.cee.redhat.com/group/repo/-/merge_requests/817
+```
+
+Then, when any defaults were newly set:
+
+```
 Adjusted fields:
 * Priority: Normal
 * Status: In Progress
 ```
 
-Visible link text matches the Web link title (`repo #N: <title>`).
+The Web link title remains `repo #N: <title>` (unchanged).
 
 ### Mark merged / closed
 

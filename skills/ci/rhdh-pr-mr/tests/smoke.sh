@@ -23,6 +23,10 @@ git -C "${tmpdir}" remote add origin 'https://github.com/example/rhdh-plugins.gi
 git -C "${tmpdir}" commit --allow-empty -q -m 'init'
 
 dry=$("${SH}" --cwd "${tmpdir}" --base main --head chore/test --title 'chore: test' --dry-run)
+printf '%s\n' "${dry}" | grep -q 'title=chore: test \[main\]' || {
+  echo "expected title suffix [main]" >&2
+  exit 1
+}
 printf '%s\n' "${dry}" | grep -q 'no Jira issue; skip link' || {
   echo "expected skip-link message" >&2
   exit 1

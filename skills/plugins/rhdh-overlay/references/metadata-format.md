@@ -22,6 +22,9 @@ metadata:
   description: <Brief description>
 spec:
   packageName: <npm-package-name>  # e.g., @aws/backstage-plugin-aws-codebuild
+  # Artifact reference used by dynamic plugin loading (OCI image, tgz archive, npm package, or a directory path)
+  dynamicArtifact: <artifact-reference>
+  version: <package-version>
 
   # Dynamic plugin configuration
   dynamicPluginConfig:
@@ -46,6 +49,7 @@ spec:
 
 **Key sections:**
 
+- `dynamicArtifact` — artifact reference used for plugin loading (OCI image, tgz archive, npm package, or a directory path)
 - `dynamicPluginConfig` — how the plugin mounts in RHDH
 - `appConfigExamples` — configuration snippets for users
 </package_entity>
@@ -103,5 +107,5 @@ Add to `catalog-entities/marketplace/plugins/all.yaml` (alphabetical order).
 </plugin_entity>
 
 <documentation_link>
-Full annotated example: [catalog-entities/marketplace/README.md](https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/catalog-entities/marketplace/README.md)
+Full annotated example: [catalog-entities/extensions/README.md](https://github.com/redhat-developer/rhdh-plugin-export-overlays/blob/main/catalog-entities/extensions/README.md)
 </documentation_link>
