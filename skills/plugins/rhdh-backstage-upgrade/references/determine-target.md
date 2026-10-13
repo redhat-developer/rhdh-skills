@@ -33,7 +33,12 @@ The `--release` flag for `backstage-cli versions:bump` accepts:
 - `next` — latest weekly pre-release
 - `1.45.3` — exact version pin
 
-For RHDH alignment, always use the exact version from the matrix.
+Validate every target against the accepted forms before passing it to a command.
+For RHDH alignment, require the exact stable `X.Y.Z` version from the matrix and
+confirm that release exists in the Backstage release feed or npm metadata. For a
+standalone plugin or app, accept an exact `X.Y.Z`, or the literal `main` or `next`
+only when the user explicitly requests that channel. Resolve "latest stable" to
+an exact release. Do not pass free-form request text to `--release`.
 
 ## Checking if an upgrade is needed
 

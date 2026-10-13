@@ -39,10 +39,74 @@ cf[10785] is EMPTY
 | Field | JQL Name | Notes |
 |-------|----------|-------|
 | Fix Version | `fixVersion` | Version targeting. `fixVersion = '1.10.0'` |
-| Affects Version | `affectedVersion` | Used in RHDHBUGS for bug version tracking. |
+| Affects Version | `affectedVersion` | **Required on RHDHBUGS Bug create** — the project createmeta rejects create without it. REST/create payload field is `versions` (e.g. `[{"name": "1.10.0"}]`). Name the RHDH release that exhibits the defect. Not the same as Fix Version. |
 | Components | `component` | JQL-filterable: `component = 'Documentation'`. Not available via `--fields` — use `--json`. |
 | Parent | `parent` | Native hierarchy: sub-task → parent, epic → feature. `parent = RHDHPLAN-382` |
-| Security Level | `security` | Present on RHIDP/RHDHPLAN (`"Red Hat Employee"`), typically null on RHDHBUGS/RHDHSUPP. **NOT JQL-filterable** — `security is not EMPTY` returns parse error. |
+| Security Level | `level` | Query with `level = "Red Hat Employee"`. REST field name is `security` (not valid JQL). Create rules below. |
+
+### Private issues (Security Level) — create rule (authoritative)
+
+Security Level limits visibility **within** a project. It is not project browse
+permission.
+
+| Project | Without Security Level | Set `security` on create when |
+|---|---|---|
+| RHIDP, RHDHPLAN, RHDHBUGS | **Public** to project browsers | The issue must stay private |
+| RHDHSUPP | **Private project** | Optional (user asks, or extra safeguard) |
+
+**Hard rule (public projects):** put `security` on the **create** call. Creating
+publicly then restricting exposes the summary and description — do not do that.
+If create cannot set `security` when required, **stop**.
+
+Require `security` on create for: user asks private / employee-only; internal or
+embargoed security (CVE, vulnerability detail); customer-**identifying** or other
+private data that must live on the issue. Case keys and non-identifying context
+may stay public (Customer identity below). Prefer keeping identifying detail off
+the issue (`RHDH-Customer` + case key) when possible.
+
+Usual level: `"Red Hat Employee"` (`10034`). Other createmeta levels:
+`Embargoed Security Issue`, `Red Hat Engineering Authorized`, `Red Hat Partner`,
+`Restricted`, `Team` — confirm when not plainly employee-only. No `--security`
+flag.
+
+| Pathway | Set at create |
+|---|---|
+| `acli … create --from-json` | `additionalAttributes.security` |
+| MCP `createJiraIssue` | `additional_fields.security` |
+| Adapter REST create | `fields.security` |
+
+```json
+{
+  "projectKey": "RHIDP",
+  "type": "Story",
+  "summary": "…",
+  "description": { "type": "doc", "version": 1, "content": [] },
+  "additionalAttributes": {
+    "security": { "name": "Red Hat Employee" }
+  }
+}
+```
+
+REST/MCP field shape: `{"security": {"name": "Red Hat Employee"}}` (or
+`{"id": "10034"}`). On RHDHBUGS, put `versions` and `security` on the same
+create. Omitting `security` leaves the issue public on every pathway.
+
+**Verify before reporting success.** Create receipts and default acli
+`search`/`view` JSON omit `security` (private looks public).
+`search --fields security` is rejected. MCP `compact`/`evidence` omit it unless
+`fields` includes `security`.
+
+```bash
+acli jira workitem view KEY --fields '*all' --json
+# assert fields.security.name
+```
+
+Or JQL `key = KEY AND level = "Red Hat Employee"`. If `security` is null when
+required, treat as a privacy failure — do not add more sensitive content.
+`security is not EMPTY` fails in acli (parse error) and often returns empty hits
+in MCP with no error — use `level`.
+
+`/rhdh-jira-create` enforces this on every private create.
 
 ## Labels
 
@@ -131,8 +195,8 @@ Full list of RHDH project components with descriptions, grouped by category. Fre
 | Helm Chart | Helm chart for RHDH deployment on OpenShift/Kubernetes | | | | |
 | High Availability | Multi-replica and HA deployment configurations | | | | |
 | Homepage | Dynamic homepage plugin and backend | | | | |
+| Intelligent-Assistant | AI-powered developer assistant plugin | | | | |
 | LDAP | LDAP auth provider and entity ingestion | | | | |
-| Lightspeed | AI-powered developer assistant plugin | | | | |
 | Localization | i18n and RTL language support | | | | |
 | LTS | Long Term Support release stream and lifecycle management | | | | |
 | MCP | Model Context Protocol server and AI permissions | | | | |

@@ -154,9 +154,10 @@ By type, the fields that matter most:
 
 | Type | Key fields |
 |---|---|
-| Feature | Priority, Team, Size (T-shirt), Assignee as Feature Owner, Components, Labels |
-| Epic | Team, Priority, Size (T-shirt), Component, Assignee as Epic Owner |
-| Story / Task / Bug / Spike | Priority, Component, Assignee, Story Points (required for Spikes) |
+| Feature | Priority, Team, Size (T-shirt), Assignee as Feature Owner, Components, Labels, Security Level when private |
+| Epic | Team, Priority, Size (T-shirt), Component, Assignee as Epic Owner, Security Level when private |
+| Story / Task / Spike | Priority, Component, Assignee, Story Points (required for Spikes), Security Level when private |
+| Bug (RHDHBUGS) | Priority, Component, Assignee, **Affects Version** (required at create — see `/rhdh-jira-api`), Security Level when the bug must not be project-public |
 
 When chained, inherit Priority, Team, and Component from the parent unless the
 conversation contradicts them.
@@ -165,6 +166,17 @@ conversation contradicts them.
 and Code Freeze queries, so they are not a detail to skip. Infer them, validate
 them against the component catalog in `/rhdh-jira-api`, and confirm with the user
 — never auto-set a component.
+
+**Affects Version** (RHDHBUGS Bugs): required at create. Infer from Build Details /
+prerequisites, confirm with the user, and put it on the create payload (Step 8).
+Authoritative constraint and payload field name: `/rhdh-jira-api` (`fields.md`,
+Bug workflow).
+
+**Security Level:** RHIDP / RHDHPLAN / RHDHBUGS are public — set `security` on
+create when the issue must stay private (user asks; internal/embargoed security;
+identifying/private data that must live on the issue). Usual value:
+`"Red Hat Employee"`. RHDHSUPP is project-private; level is optional. Never
+create-then-restrict. Details: `/rhdh-jira-api` (`fields.md` — Private issues).
 
 **Labels — ask about each during the interview:**
 
@@ -213,6 +225,8 @@ cat > "$REVIEW" << 'EOF'
 - **Component**: {value}
 - **Assignee**: {value}
 - **Labels**: {values}
+- **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-api`)
+- **Security Level**: {value or public} — when private, must be on the create payload (see `/rhdh-jira-api`)
 EOF
 ```
 
@@ -241,12 +255,32 @@ Re-check the customer-identity and label rules from Validate before creating in
 description if any survived; confirm at most one `RHDH-Customer` label.
 
 Write the filled template to a temp file, then invoke `/rhdh-jira-api` to convert
-it to ADF and hand back the JSON file path. Jira Cloud renders raw wiki markup as
-literal `h1.` and `*text*`, so an unconverted description ships broken. Let that
-skill run its own converter; do not reach into its directory for the script.
+it to ADF and hand back the JSON file path (`jira-wiki-to-adf.py`). Jira Cloud
+renders raw wiki markup and Markdown as literal characters when stuffed into ADF
+text nodes, so an unconverted description ships broken. Always use that helper —
+do not hand-split Markdown or wiki into ADF paragraphs, and do not reach into
+`/rhdh-jira-api`'s directory for the script; invoke the skill so it runs the
+converter. When creating through the Atlassian MCP instead of `acli`, pass
+`contentFormat: markdown` and skip the wiki→ADF step.
 
-`create` does **not** accept `--priority`, `--component`, or `--yes`; passing
-them fails with "unknown flag". Create first, then set the rest.
+`create` does **not** accept `--priority`, `--component`, `--yes`,
+`--version` / Affects Version, or `--security` flags; passing unknown flags
+fails. For most **public** types, create with `--description-file` (ADF from
+`/rhdh-jira-api`), then set the rest.
+
+**Exception — RHDHBUGS Bug:** Affects Version must be on the create call. Use a
+single `--from-json` file that embeds both `versions` and the ADF `description`
+— do **not** also pass `--description-file` on that create. Scaffold with
+`acli jira workitem create --generate-json`, or create through the Atlassian MCP
+with Affects Version / `versions` set.
+
+**Exception — private issue (RHIDP / RHDHPLAN / RHDHBUGS):** put `security` on
+the create call — `acli --from-json` (`additionalAttributes.security`) or MCP
+`createJiraIssue` (`additional_fields.security`). On RHDHBUGS include `versions`
+in the same create. Never create-then-restrict. If `security` cannot be set when
+required, stop. Verify with `view KEY --fields '*all' --json` or MCP
+`getJiraIssue` requesting `security` (defaults omit it). RHDHSUPP: level
+optional. Details: `/rhdh-jira-api` (`fields.md` — Private issues).
 
 ```bash
 # Feature
@@ -262,9 +296,11 @@ acli jira workitem create --project RHIDP --type Epic \
 acli jira workitem create --project RHIDP --type Story \
   --summary "Story summary" --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
 
-# Bug
-acli jira workitem create --project RHDHBUGS --type Bug \
-  --summary "Bug summary" --description-file "$ISSUE_ADF"
+# Bug — Affects Version + ADF description inside one JSON file
+acli jira workitem create --from-json "$BUG_CREATE_JSON"
+
+# Private issue — security on create (never create-then-restrict)
+acli jira workitem create --from-json "$PRIVATE_CREATE_JSON"
 
 # Spike
 acli jira workitem create --project RHIDP --type Task \
@@ -272,8 +308,40 @@ acli jira workitem create --project RHIDP --type Task \
   --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
 ```
 
+Minimal RHDHBUGS Bug `--from-json` shape (ADF `description` from
+`/rhdh-jira-api` wiki→ADF conversion; start from `--generate-json` if unsure):
+
+```json
+{
+  "projectKey": "RHDHBUGS",
+  "type": "Bug",
+  "summary": "Bug summary",
+  "description": { "type": "doc", "version": 1, "content": [] },
+  "additionalAttributes": {
+    "versions": [{ "name": "1.10.0" }],
+    "components": [{ "name": "Actions" }]
+  }
+}
+```
+
+Minimal private-create `--from-json` shape (same ADF rules; usual level
+`"Red Hat Employee"`):
+
+```json
+{
+  "projectKey": "RHIDP",
+  "type": "Story",
+  "summary": "Private summary",
+  "description": { "type": "doc", "version": 1, "content": [] },
+  "additionalAttributes": {
+    "security": { "name": "Red Hat Employee" }
+  }
+}
+```
+
 Then set the fields `create` could not, in one update through the authenticated
-host adapter. Show the payload for approval alongside the create command:
+host adapter — **except Security Level on a private issue, which is not a
+post-create field.** Show the payload for approval alongside the create command:
 
 ```json
 {
@@ -381,7 +449,9 @@ The user merges, drops, or approves before any Epic is created.
 |---|---|
 | Target project inaccessible | Stop. The user lacks project access. |
 | Type inference ambiguous | Ask the user directly. Do not guess a hierarchy level. |
-| `acli create` fails | Retry through the authenticated host adapter in `/rhdh-jira-api`; if the payload changes, get approval again. |
+| `acli create` fails | Retry via `/rhdh-jira-api` adapter; re-approve if the payload changes. Private retries must still carry `security` — never fall back to a public create. |
+| Private create cannot set `security` | Stop. Do not create-then-restrict. |
+| Private create OK but `security` null on read-back | Report failure; do not add sensitive content. Remediate only with user approval. |
 | Field update after create fails | Report it. The issue exists — say which fields are unset. |
 | Parent link fails | Report it. The issue exists and can be linked manually. |
 | Spike without a time-box | Do not create. Ask for the story points first. |
@@ -389,9 +459,9 @@ The user merges, drops, or approves before any Epic is created.
 
 ## Caveats
 
-1. **Bugs never go in RHIDP.** RHDHBUGS is public: support case key in the
-   summary and description, a single `RHDH-Customer` label, and no
-   customer-identifying detail in any unprotected field.
+1. **Bugs never go in RHIDP.** RHDHBUGS is public: case key + one `RHDH-Customer`
+   label; no customer-identifying detail in unprotected fields. When the bug
+   must stay private, set Security Level on create (same as RHIDP/RHDHPLAN).
 2. **Owner responsibility is real.** A Feature's assignee is the Feature Owner —
    single point of contact, coordinates cross-team dependencies, owns sizing and
    labels. An Epic's assignee is the Epic Owner and is responsible for sizing the
@@ -411,3 +481,6 @@ The user merges, drops, or approves before any Epic is created.
    of the definition of done.
 8. **After creating a Feature**, it should pass the full Feature Exploration
    checklist in `/rhdh-jira-refine` before it moves to Backlog.
+9. **Private at create** in public projects (RHIDP, RHDHPLAN, RHDHBUGS). Set
+   Security Level on create (`/rhdh-jira-api`); never create-then-restrict. Stop
+   if it cannot be set when required. RHDHSUPP: level optional.

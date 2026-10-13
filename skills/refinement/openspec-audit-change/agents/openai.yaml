@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Audit Change"
+  short_description: "Adversarially audit an OpenSpec change's artifacts for cross-artifact consistency"

@@ -64,6 +64,7 @@ After the grill questions are complete, present all inferred fields at once:
 | **Component** | Technical domain discussed (RBAC, plugins, catalog, helm, operator, CI/CD, docs). Match against the component catalog in `/rhdh-jira-api`. Also check codebase context — if the user has been editing files during the session, infer from file paths (see below). |
 | **Assignee** | If the user is describing their own work, suggest them. Otherwise, run a lightweight expertise match from the conversation context (component + domain keywords against team roster). For a real roster-and-capacity analysis, hand off to `/rhdh-jira-update`. |
 | **Labels** | Customer-facing → `demo`. Release target mentioned → `rhdh-X.Y-candidate`. Stretch goal language → `stretch`. Support/customer origin → single `RHDH-Customer` (never also apply `rhdh-customer`). |
+| **Affects Version** | RHDHBUGS Bugs only. Infer from Build Details / prerequisites. Required at create — see `/rhdh-jira-api` (`fields.md`, Bug workflow). Confirm before the write gate. Not Fix Version. |
 
 ### Codebase-aware component inference
 
@@ -82,7 +83,7 @@ Path-to-component signals:
 | `plugins/rbac/`, `rbac-backend` | RBAC |
 | `plugins/tekton/` | Tekton |
 | `plugins/topology/` | Topology |
-| `plugins/lightspeed/` | Lightspeed |
+| `plugins/intelligent-assistant/`, `workspaces/intelligent-assistant/` | Intelligent-Assistant |
 | `plugins/bulk-import/` | Bulk Import |
 | `packages/backend/`, `packages/app/` | Build |
 | `docker/`, `Dockerfile`, `Containerfile` | Build |
@@ -191,7 +192,7 @@ Keep this lightweight. One search during the grill is enough — don't run a sea
 
 Before proceeding to creation, verify the issue would pass New-status entry criteria:
 
-- Are all required fields for New status determined? (Assignee, Priority, Team, Component — varies by type)
+- Are all required fields for New status determined? (Assignee, Priority, Team, Component — varies by type; for RHDHBUGS Bugs also Affects Version — see `/rhdh-jira-api`)
 - Is the description substantive enough? A one-sentence description on a Feature is a red flag.
 - Is the summary clear and specific? Summaries like "Update plugins" or "Fix bug" are too vague.
 

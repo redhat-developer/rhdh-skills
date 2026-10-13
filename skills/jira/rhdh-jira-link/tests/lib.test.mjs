@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { describe, it } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+const { buildLinkCommentAdf } = require('../scripts/link-pr-mr.js');
 
 import {
   buildBulkMovePayload,
@@ -20,6 +24,9 @@ import {
   shouldSkipTeamAndSprint,
   stripMergedPrefix,
   withMergedPrefix,
+  classifyPrMrState,
+  prefixForPrMrState,
+  withClosedPrefix,
 } from '../scripts/lib.js';
 
 describe('detectHost', () => {
@@ -45,11 +52,58 @@ describe('title helpers', () => {
       '[x] merged: repo #1: fix',
     );
   });
+  it('strips and adds closed prefix', () => {
+    assert.equal(stripMergedPrefix('[!] closed: repo #1: fix'), 'repo #1: fix');
+    assert.equal(withClosedPrefix('repo #1: fix'), '[!] closed: repo #1: fix');
+    assert.equal(
+      withClosedPrefix('[!] closed: repo #1: fix'),
+      '[!] closed: repo #1: fix',
+    );
+  });
+  it('swaps closed and merged prefixes', () => {
+    assert.equal(
+      withMergedPrefix('[!] closed: repo #1: fix'),
+      '[x] merged: repo #1: fix',
+    );
+    assert.equal(
+      withClosedPrefix('[x] merged: repo #1: fix'),
+      '[!] closed: repo #1: fix',
+    );
+  });
   it('displayTitleFromLinkTitle drops repo#N prefix', () => {
     assert.equal(
       displayTitleFromLinkTitle('rhdh #12: fix: widget'),
       'fix: widget',
     );
+    assert.equal(
+      displayTitleFromLinkTitle('[!] closed: rhdh #12: fix: widget'),
+      'fix: widget',
+    );
+  });
+});
+
+describe('classifyPrMrState', () => {
+  it('treats GitHub merged+closed as merged', () => {
+    assert.equal(classifyPrMrState({ merged: true, state: 'closed' }), 'merged');
+    assert.equal(classifyPrMrState({ merged: 'true', state: 'closed' }), 'merged');
+  });
+  it('treats closed unmerged as closed', () => {
+    assert.equal(classifyPrMrState({ merged: false, state: 'closed' }), 'closed');
+    assert.equal(classifyPrMrState({ state: 'closed' }), 'closed');
+  });
+  it('treats GitLab merged_at / state=merged as merged', () => {
+    assert.equal(classifyPrMrState({ mergedAt: '2026-01-01T00:00:00Z' }), 'merged');
+    assert.equal(classifyPrMrState({ state: 'merged' }), 'merged');
+  });
+  it('treats opened as open', () => {
+    assert.equal(classifyPrMrState({ merged: false, state: 'open' }), 'open');
+    assert.equal(classifyPrMrState({ state: 'opened' }), 'open');
+    assert.equal(classifyPrMrState({}), 'open');
+  });
+  it('prefixForPrMrState maps merged and closed', () => {
+    assert.equal(prefixForPrMrState('merged', 'repo #1: fix'), '[x] merged: repo #1: fix');
+    assert.equal(prefixForPrMrState('closed', 'repo #1: fix'), '[!] closed: repo #1: fix');
+    assert.equal(prefixForPrMrState('open', 'repo #1: fix'), 'repo #1: fix');
   });
 });
 
@@ -217,5 +271,37 @@ describe('parseEmailToken / resolveJiraAuth', () => {
     assert.equal(auth.login, 'from-file@example.com');
     assert.equal(auth.token, 'bare-token');
     assert.equal(auth.server, 'https://example.atlassian.net');
+  });
+});
+
+describe('buildLinkCommentAdf', () => {
+  const githubUrl = 'https://github.com/org/repo/pull/123';
+  const gitlabUrl = 'https://gitlab.cee.redhat.com/group/repo/-/merge_requests/817';
+
+  function firstParagraphText(doc) {
+    const nodes = doc.content[0].content;
+    return nodes.map((n) => n.text).join('');
+  }
+
+  it('uses PR: <url> for GitHub', () => {
+    const doc = buildLinkCommentAdf({ url: githubUrl, host: 'github' });
+    assert.equal(firstParagraphText(doc), `PR: ${githubUrl}`);
+    assert.equal(doc.content[0].content[1].marks[0].attrs.href, githubUrl);
+    assert.equal(doc.content.length, 1);
+  });
+
+  it('uses MR: <url> for GitLab', () => {
+    const doc = buildLinkCommentAdf({ url: gitlabUrl });
+    assert.equal(firstParagraphText(doc), `MR: ${gitlabUrl}`);
+  });
+
+  it('appends Adjusted fields when defaults were newly set', () => {
+    const doc = buildLinkCommentAdf({
+      url: githubUrl,
+      host: 'github',
+      status: 'transitioned To Do → In Progress',
+      defaults: { priority: 'set Normal' },
+    });
+    assert.equal(doc.content[1].content[0].text, 'Adjusted fields:');
   });
 });

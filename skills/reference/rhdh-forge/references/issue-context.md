@@ -121,7 +121,15 @@ operation afterwards. `/mutation-gate` owns that rule.
 gh issue comment <number> --repo <owner/repo> --body "<exact body>"
 gh issue edit <number> --repo <owner/repo> --add-label "<label>"
 gh issue edit <number> --repo <owner/repo> --remove-label "<label>"
+gh issue edit <number> --repo <owner/repo> --body-file "<path>"
 ```
+
+An issue body is multi-line Markdown. Write it to an absolute readable file in
+a unique temporary directory and pass `--body-file`, never `--body`, so the
+content reaches `gh` as data rather than as shell syntax. `--body-file`
+replaces the whole body — a caller that must preserve hand-written sections
+reads the current body, edits it, and passes the result, rather than rendering
+a fresh one from a template.
 
 The GitLab equivalents are in `references/glab-cli.md`.
 
@@ -131,7 +139,7 @@ The GitLab equivalents are in `references/glab-cli.md`.
 |---|---|
 | `gh` or `glab` not authenticated | Stop at the readiness check and report that `gh auth login`, or `glab auth login --hostname <host>`, is required |
 | Issue not found (404) | Report `Issue #<n> not found in <repo>` and ask the user to confirm the number and repository |
-| No write access | A label or comment write fails; report it and let the caller continue the read-only work |
+| No write access | A label, comment, or body write fails; report it and let the caller continue the read-only work |
 | Issue already closed | Report the state and ask whether to proceed |
 | Repository undetectable for a bare number | Ask for the repository rather than guessing from a similarly named remote |
 | A number without a sigil on GitLab | Ask whether it is an issue or a merge request rather than trying both |

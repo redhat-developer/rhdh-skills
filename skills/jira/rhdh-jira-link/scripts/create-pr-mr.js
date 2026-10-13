@@ -8,8 +8,8 @@
   Opens diffs once unless --no-open (agents: report browserOpened from stdout).
 
   Jira comment markup is owned by link-pr-mr.js:
-    PR/MR:
-    * <a href="{url}">{repo} #{id}: {title}</a>   (same text as the Web link title)
+    PR: <a href="{url}">{url}</a>   (GitHub)
+    MR: <a href="{url}">{url}</a>   (GitLab)
     Adjusted fields: (only newly set; omitted if none)
 
   Usage:

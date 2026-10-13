@@ -43,8 +43,8 @@ _Avoid_: intent, route, keyword
 
 **Editorial category**:
 A reader-facing grouping of promoted skills by domain — `jira`, `plugins`, `ci`,
-`release`, `reference`, `meta`. It is not a namespace, dependency boundary, or
-composition path, and it is stripped when the pack is installed.
+`release`, `refinement`, `reference`, `meta`. It is not a namespace, dependency
+boundary, or composition path, and it is stripped when the pack is installed.
 _Avoid_: package, subsystem
 
 **Named skill composition**:

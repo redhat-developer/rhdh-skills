@@ -5,11 +5,11 @@ description: >-
   RHIDP, RHDHPLAN, RHDHBUGS, or RHDHSUPP: attach the Jira Web link titled
   `repo #N: <title>`, post or update the structured comment, fill empty issue
   fields, move an RHDHPLAN Epic, Story, or Task to RHIDP, and mark a Web link
-  merged. Raises the PR or MR first when one does not exist yet. Use for "link
-  this PR to RHIDP-1234", "attach the MR to the Jira issue", "mark the Web links
-  merged", replacing a hand-rolled remotelink or comment step, or a PR outside
-  the rhdh-plugins and community-plugins monorepo flow. The full monorepo flow —
-  build, changeset, recordings — is rhdh-pr-create.
+  merged or closed. Raises the PR or MR first when one does not exist yet. Use
+  for "link this PR to RHIDP-1234", "attach the MR to the Jira issue", "mark the
+  Web links merged", "mark closed PRs", replacing a hand-rolled remotelink or
+  comment step, or a PR outside the rhdh-plugins and community-plugins monorepo
+  flow. The full monorepo flow — build, changeset, recordings — is rhdh-pr-create.
 compatibility: "Node on PATH; gh for GitHub and glab for GitLab; a Jira API token via JIRA_API_TOKEN or the .jira-token file acli uses."
 ---
 
@@ -113,27 +113,39 @@ Stdout includes `move: …` and the post-move `issue:` key.
 Comment shape (only **newly set** fields; omit `kept` values):
 
 ```
-PR/MR:
-* example #817: fix: short summary
+PR: https://github.com/org/repo/pull/123
+```
 
+or, for GitLab:
+
+```
+MR: https://gitlab.cee.redhat.com/group/repo/-/merge_requests/817
+```
+
+Then, when any defaults were newly set:
+
+```
 Adjusted fields:
 * Priority: Normal
 * Status: In Progress
 ```
 
-Visible link text matches the Web link title (`repo #N: <title>`).
+The Web link title remains `repo #N: <title>` (unchanged).
 
-### Mark merged
+### Mark merged / closed
 
 ```bash
 node "$SKILL/scripts/link-pr-mr.js" mark-merged --issue RHIDP-12345
 ```
 
-Prefixes Web link titles with `[x] merged:`. Does not re-apply defaults/comment.
-Stdout lists each title **and** its PR/MR URL (indented under the title).
+Prefixes Web link titles with `[x] merged: ` when the PR/MR is merged, or
+`[!] closed: ` when it is closed without merging. Does not re-apply
+defaults/comment. Stdout lists each title **and** its PR/MR URL (indented under
+the title). Open PRs/MRs stay in `leftOpen` with no prefix.
 
-`mark-merged` checks merge status via `gh` / `glab`. Failed checks print a
-`warn:` line. For GitLab remotelinks it passes `--hostname` from the URL
+`mark-merged` checks status via `gh` / `glab`. Failed checks print a
+`warn:` line and leave the link in `leftOpen` (do not treat a failed check as
+closed). For GitLab remotelinks it passes `--hostname` from the URL
 (e.g. `gitlab.cee.redhat.com`), so CEE MRs resolve against the right host.
 Prefer `glab` default `host: gitlab.cee.redhat.com` in
 `~/.config/glab-cli/config.yml` for day-to-day CEE work.
@@ -147,6 +159,7 @@ When summarizing to the user, use markdown links (`[<title>](<url>)`).
 ```
 
 Merged: `[x] merged: <repo-short-name> #<id>: <full PR/MR title>`
+Closed (not merged): `[!] closed: <repo-short-name> #<id>: <full PR/MR title>`
 
 ## Defaults `link` applies (only if empty)
 
@@ -208,7 +221,8 @@ free to transition the issue to **Review** (see
    `jiraLink:` from its stdout (`browserOpened: true` or `--no-open` means the
    open step is already done).
 4. Fallback: raw create → run `link-pr-mr.js`, then open diffs yourself once.
-5. For mark-merged: `link-pr-mr.js mark-merged --issue KEY`.
+5. For mark-merged: `link-pr-mr.js mark-merged --issue KEY`. Report merged,
+   closed, and still-open Web links.
 6. In user-facing summaries, link PR/MRs as `[<title>](<url>)`.
 
 ## Every run here is an external write

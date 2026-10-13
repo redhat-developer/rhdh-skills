@@ -43,9 +43,11 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,12 +60,32 @@ from gangway_adapter import GANGWAY_URL, GangwayAdapter, GangwayAdapterError
 # --- Constants ---
 CI_SERVER = "https://api.ci.l2s4.p1.openshiftapps.com:6443"
 
-REPOS = [
-    "redhat-developer/rhdh",
-    "redhat-developer/rhdh-plugin-export-overlays",
-]
+RHDH_REPO = "redhat-developer/rhdh"
+OVERLAY_REPO = "redhat-developer/rhdh-plugin-export-overlays"
+REPOS = [RHDH_REPO, OVERLAY_REPO]
 
 OVERLAY_JOB_PREFIX = "periodic-ci-redhat-developer-rhdh-plugin-export-overlays-"
+# The branch segment is anchored so sibling repositories such as rhdh-operator
+# cannot pass as rhdh jobs.
+NIGHTLY_JOB_PATTERN = re.compile(
+    r"periodic-ci-redhat-developer-rhdh-(?:plugin-export-overlays-)?"
+    r"(?:main|release-[0-9]+\.[0-9]+)-e2e-[a-zA-Z0-9][a-zA-Z0-9_.-]*-nightly"
+)
+# Keep in sync with the override arguments in build_parser(); a test enforces it.
+TRIGGER_OVERRIDES = (
+    "image_registry",
+    "image_repo",
+    "tag",
+    "catalog_index_image",
+    "chart_version",
+    "playwright_version",
+    "org",
+    "repo",
+    "branch",
+    "send_alerts",
+)
+CONFIGURED_JOBS_ATTEMPTS = 3
+POLL_ATTEMPTS = 5
 
 
 # --- Logging ---
@@ -91,13 +113,35 @@ def fetch_configured_jobs(repo: str) -> list[str]:
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             html = resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError) as exc:
+    except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
+        # ValueError covers UnicodeDecodeError from a proxy or captive-portal body.
         log_warn(f"Failed to fetch jobs from {url}: {exc}")
         return []
 
     # Extract job names from embedded JSON: "name":"periodic-ci-...-nightly"
-    matches = re.findall(r'"name":"(periodic-ci-[^"]*-nightly)"', html)
+    matches = re.findall(r'"name"\s*:\s*"(periodic-ci-[^"]*-nightly)"', html)
     return sorted(set(matches))
+
+
+def ensure_configured_job(job: str) -> None:
+    """Require membership in the owning repository's live job list before a POST."""
+    repo = OVERLAY_REPO if job.startswith(OVERLAY_JOB_PREFIX) else RHDH_REPO
+    jobs: list[str] = []
+    for attempt in range(CONFIGURED_JOBS_ATTEMPTS):
+        jobs = fetch_configured_jobs(repo)
+        if jobs:
+            break
+        if attempt < CONFIGURED_JOBS_ATTEMPTS - 1:
+            time.sleep(2**attempt)
+    if not jobs:
+        log_error(f"Cannot verify configured nightly jobs for {repo}; no job was submitted.")
+        log_error("Check the configured-jobs page and network access, then retry --list.")
+        log_error("If the page is down and the job name is confirmed, rerun with --skip-job-check.")
+        sys.exit(1)
+    if job not in jobs:
+        log_error(f"Job is not configured for {repo}: {job}")
+        log_error("Run --list and select a configured nightly job. No job was submitted.")
+        sys.exit(1)
 
 
 def _short_name(job: str, repo: str) -> str:
@@ -403,11 +447,12 @@ def trigger_job(adapter: GangwayAdapter, payload: dict) -> dict:
         body = adapter.trigger(payload)
     except GangwayAdapterError as error:
         log_error(str(error))
-        log_error(
-            "The job name may be invalid. Verify at:\n"
-            "  https://prow.ci.openshift.org/configured-jobs/redhat-developer/rhdh\n"
-            "  https://prow.ci.openshift.org/configured-jobs/redhat-developer/rhdh-plugin-export-overlays"
-        )
+        if error.outcome_unknown:
+            log_warn(
+                "Submission outcome is unknown; a job may have been created. "
+                "Inspect Prow job history before retrying the trigger: "
+                f"https://prow.ci.openshift.org/?job={payload['job_name']}"
+            )
         sys.exit(1)
 
     log_info("Response:")
@@ -415,37 +460,71 @@ def trigger_job(adapter: GangwayAdapter, payload: dict) -> dict:
     return body
 
 
+def replay_command(*arguments: str) -> str:
+    """Render a shell-safe command that also works outside the skill directory."""
+    return shlex.join(["uv", "run", os.path.abspath(__file__), *arguments])
+
+
+def show_job_status(adapter: GangwayAdapter, job_id: str) -> None:
+    """Read one existing execution without ever submitting a job."""
+    log_info(f"Job ID: {job_id}")
+    try:
+        response = adapter.status(job_id)
+    except GangwayAdapterError as error:
+        log_error(str(error))
+        sys.exit(1)
+    print(json.dumps(response, indent=2))
+    if response.get("job_url"):
+        log_info(f"Job URL: {response['job_url']}")
+    else:
+        log_warn("Job URL not yet available; repeat --status with this execution ID.")
+
+
 def poll_job_status(adapter: GangwayAdapter, job_id: str) -> None:
-    """Poll the Gangway API for the job URL."""
+    """Poll the Gangway API for the job URL.
+
+    Gangway can answer 500 for an execution it has not registered yet, so 5xx
+    and network failures are retried with backoff (1s, 2s, 4s, 8s). Other
+    failures, such as 401 or 403, stop polling at once. ``--status`` covers
+    anything slower than this budget.
+    """
     print("", file=sys.stderr)
     log_info(f"Job ID: {job_id}")
+    log_info(f"Refresh status: {replay_command('--status', job_id)}")
     log_info("Waiting for Prow URL...")
 
     job_url = ""
-    for _ in range(5):
+    last_error: GangwayAdapterError | None = None
+    for attempt in range(POLL_ATTEMPTS):
         print(".", end="", flush=True, file=sys.stderr)
         try:
             data = adapter.status(job_id)
+            last_error = None
             job_url = data.get("job_url", "")
             if job_url:
                 break
-        except GangwayAdapterError:
-            pass
-        time.sleep(2)
+        except GangwayAdapterError as error:
+            last_error = error
+            if not error.retryable:
+                break
+        if attempt < POLL_ATTEMPTS - 1:
+            time.sleep(2**attempt)
 
     print("", file=sys.stderr)
+    if last_error is not None:
+        log_warn(f"Job was submitted, but status lookup failed: {last_error}")
+        return
     if job_url:
         log_info(f"Job URL: {job_url}")
     else:
         log_warn("Job URL not yet available.")
 
-    log_info("Re-run this command to refresh the job status through the authenticated adapter.")
-
 
 # --- CLI ---
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Trigger RHDH nightly ProwJobs via the OpenShift CI Gangway REST API.",
+        allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Job name patterns:
@@ -454,31 +533,38 @@ Job name patterns:
 
 Examples:
   %(prog)s --list
+  %(prog)s --status <EXECUTION_ID>
   %(prog)s --job periodic-ci-redhat-developer-rhdh-main-e2e-ocp-helm-nightly
   %(prog)s --job periodic-ci-redhat-developer-rhdh-plugin-export-overlays-main-e2e-ocp-helm-nightly
   %(prog)s --job periodic-ci-redhat-developer-rhdh-main-e2e-ocp-helm-nightly --tag 1.9-123
 """,
     )
 
-    parser.add_argument(
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument(
         "-l",
         "--list",
         action="store_true",
         dest="list_jobs",
         help="List available nightly jobs from all repos.",
     )
-    parser.add_argument(
+    action.add_argument(
         "-j",
         "--job",
         dest="job",
         help="Full ProwJob name to trigger.",
     )
-    parser.add_argument(
+    action.add_argument(
         "-T",
         "--list-tags",
         action="store_true",
         dest="list_tags",
         help="List available image tags from quay.io. Use --image-repo to specify the repo.",
+    )
+    action.add_argument(
+        "--status",
+        metavar="EXECUTION_ID",
+        help="Read an existing execution's status and URL without triggering a job.",
     )
     parser.add_argument(
         "--tag-filter",
@@ -566,27 +652,65 @@ Examples:
         help="Print the request payload without executing.",
     )
     parser.add_argument(
+        "--skip-job-check",
+        action="store_true",
+        dest="skip_job_check",
+        help=(
+            "Submit without checking the Prow configured-jobs page. Emergency use only, "
+            "when that page is unavailable and the job name is confirmed."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="json_output",
         help="Output structured JSON instead of human-readable text (for --list and --list-tags).",
     )
 
-    return parser.parse_args(argv)
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
 
 
 def validate_args(args: argparse.Namespace) -> None:
     """Validate parsed arguments."""
-    if not args.list_jobs and not args.list_tags and not args.job:
-        log_error("Either --list, --list-tags, or --job is required.")
+    if args.status is not None:
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", args.status):
+            log_error("--status requires an execution ID, not a URL or path.")
+            sys.exit(1)
+        if (
+            any(getattr(args, name) for name in TRIGGER_OVERRIDES)
+            or args.dry_run
+            or args.tag_filter
+            or args.skip_job_check
+            or args.json_output
+        ):
+            log_error(
+                "--status cannot be combined with --dry-run, trigger overrides, "
+                "--skip-job-check, --tag-filter, or --json; its output is already JSON."
+            )
+            sys.exit(1)
+
+    if args.dry_run and args.job is None:
+        log_error("--dry-run requires --job.")
+        sys.exit(1)
+
+    if args.skip_job_check and args.job is None:
+        log_error("--skip-job-check requires --job.")
         sys.exit(1)
 
     if args.tag_filter and not args.list_tags:
         log_warn("--tag-filter is only used with --list-tags, ignoring.")
 
-    if args.job:
-        if not args.job.startswith("periodic-ci-"):
-            log_error(f"Job name must start with 'periodic-ci-', got: {args.job}")
+    if args.job is not None:
+        if not NIGHTLY_JOB_PATTERN.fullmatch(args.job):
+            log_error(
+                "Expected a periodic-ci-redhat-developer-rhdh-{BRANCH}-e2e-*-nightly or "
+                "periodic-ci-redhat-developer-rhdh-plugin-export-overlays-{BRANCH}-e2e-*-nightly "
+                f"job with BRANCH main or release-N.N, got: {args.job}"
+            )
             sys.exit(1)
 
         if args.image_repo and not args.tag:
@@ -602,9 +726,18 @@ def print_summary(args: argparse.Namespace, payload: dict) -> None:
     print("", file=sys.stderr)
 
 
-def print_dry_run(payload: dict) -> None:
-    """Print a credential-free adapter request preview."""
-    print("[DRY RUN] Authenticated adapter request:")
+def print_dry_run(args: argparse.Namespace, payload: dict) -> None:
+    """Print the proposed command, request, impact, and recovery without I/O."""
+    arguments = ["--job", args.job]
+    if args.skip_job_check:
+        arguments.append("--skip-job-check")
+    for name in TRIGGER_OVERRIDES:
+        value = getattr(args, name)
+        if value:
+            arguments.append(f"--{name.replace('_', '-')}")
+            if not isinstance(value, bool):
+                arguments.append(value)
+    print("[DRY RUN] No job submitted. Proposed authenticated adapter request:")
     print(
         json.dumps(
             {
@@ -612,7 +745,39 @@ def print_dry_run(payload: dict) -> None:
                 "operation": "gangway.execution.create",
                 "target": GANGWAY_URL,
                 "authentication": "native oc kubeconfig (redacted)",
+                "execution_command": replay_command(*arguments),
                 "payload": payload,
+                "validation": {
+                    "job_name_and_flags": "passed",
+                    "configured_job": (
+                        "skipped by --skip-job-check"
+                        if args.skip_job_check
+                        else "unchecked offline; required before live submission"
+                    ),
+                    "authentication": "unchecked",
+                    "images_and_chart": "unchecked",
+                },
+                "impact": (
+                    "Creates one ProwJob, consuming CI compute and the configured test cluster "
+                    "or cloud resources. Tests deploy workloads and may change cluster state. "
+                    "Duration and monetary cost are unknown; no resources are reserved by this preview."
+                ),
+                "abort": (
+                    "Before submission, decline to run the execution command. After submission, "
+                    "stopping this client does not cancel the job. Give the execution ID/URL to "
+                    "an OpenShift CI administrator to abort the run and check resource cleanup; "
+                    "this CLI has no cancellation operation."
+                ),
+                "failure_behavior": (
+                    "Stop if job discovery, authentication, or submission fails; no automatic "
+                    "POST retry. A network failure, server error, or invalid response can leave "
+                    "submission outcome unknown. Inspect Prow job history before retrying."
+                ),
+                "verification": (
+                    "Report the API response and execution ID/URL. Read the existing execution with "
+                    f"{replay_command('--status', '<EXECUTION_ID>')}. "
+                    "If neither ID nor URL is returned, report that verification is incomplete."
+                ),
             },
             indent=2,
         )
@@ -625,8 +790,8 @@ def main(argv: list[str] | None = None) -> None:
         "XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")
     )
     kubeconfig = os.path.join(config_home, "openshift-ci", "kubeconfig")
-    os.makedirs(os.path.dirname(kubeconfig), exist_ok=True)
 
+    argv = sys.argv[1:] if argv is None else argv
     args = parse_args(argv)
     validate_args(args)
 
@@ -642,20 +807,38 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
 
+    if args.status is not None:
+        ensure_capability(kubeconfig)
+        show_job_status(GangwayAdapter(kubeconfig), args.status)
+        return
+
     payload = build_payload(args)
     print_summary(args, payload)
 
     if args.dry_run:
-        print_dry_run(payload)
+        print_dry_run(args, payload)
         return
 
     ensure_capability(kubeconfig)
+    if args.skip_job_check:
+        log_warn("Skipping the configured-jobs check (--skip-job-check).")
+    else:
+        ensure_configured_job(args.job)
+    log_info(f"Command: {replay_command(*argv)}")
     adapter = GangwayAdapter(kubeconfig)
     response = trigger_job(adapter, payload)
 
     job_id = response.get("id", "")
     if job_id:
         poll_job_status(adapter, job_id)
+    elif response.get("job_url"):
+        log_info(f"Job URL: {response['job_url']}")
+        log_warn("Gangway returned no execution ID; --status is unavailable for this response.")
+    else:
+        log_warn(
+            "Gangway returned no execution ID or URL; verification is incomplete. "
+            "Inspect Prow job history before submitting another job."
+        )
 
 
 if __name__ == "__main__":

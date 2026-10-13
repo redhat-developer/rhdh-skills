@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 CATALOG_PATH = Path("skills/meta/setup-rhdh-skills/assets/catalog.json")
-PROMOTED_CATEGORIES = ("jira", "plugins", "ci", "release", "reference", "meta")
+PROMOTED_CATEGORIES = ("jira", "plugins", "ci", "release", "refinement", "reference", "meta")
 # A cited skill, as `/name`. It must follow a space, a line start, or an opening
 # bracket or backtick, never another path segment, so `~/rhdh-local-setup` and
 # `redhat-developer/rhdh-plugin-catalog` stay paths. Matching only the rhdh-

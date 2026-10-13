@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Release Fix Versions"
+  short_description: "Sync Jira fix versions across RHIDP, RHDHPLAN, RHDHBUGS"

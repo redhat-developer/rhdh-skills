@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+spec:
+  tasks:
+  - name: good
+    taskRef:
+      params:
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-good:0.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: successor
+    taskRef:
+      params:
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-successor:0.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  - name: expiring
+    taskRef:
+      params:
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-expiring:0.1@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  - name: dead
+    taskRef:
+      params:
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-dead:0.1@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  - name: missing
+    taskRef:
+      params:
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-missing:0.2@sha256:1111111111111111111111111111111111111111111111111111111111111111

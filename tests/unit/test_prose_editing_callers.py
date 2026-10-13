@@ -173,6 +173,7 @@ def _assert_static_template(report: dict[str, object]) -> None:
         ("skills/jira/rhdh-jira-update/workflows/update-issue.md", "flavored", 1),
         ("skills/jira/rhdh-jira-refine/workflows/refine-issues.md", "flavored", 1),
         ("skills/release/rhdh-release-announce/workflows/freeze-announcement.md", "voiced", 1),
+        ("skills/release/rhdh-release-sos/workflows/sos-report.md", "flavored", 0),
         ("skills/release/rhdh-test-plan-review/workflows/review-test-plan.md", "flavored", 1),
         ("skills/plugins/rhdh-pr-create/workflows/create-pull-request.md", "flavored", 1),
         ("skills/jira/rhdh-jira-link/SKILL.md", "flavored", 1),

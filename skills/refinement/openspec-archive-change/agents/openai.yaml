@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Archive Change"
+  short_description: "Archive a completed OpenSpec change, syncing delta specs first if needed"

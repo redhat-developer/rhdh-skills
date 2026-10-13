@@ -14,17 +14,28 @@ import argparse
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
 # ---------------------------------------------------------------------------
 # GitHub URLs
 # ---------------------------------------------------------------------------
-_CONTENTS_URL = (
-    "https://api.github.com/repos/redhat-developer/rhdh-plugin-export-overlays"
-    "/contents/catalog-entities/extensions/plugins"
-)
-_RAW_BASE = "https://raw.githubusercontent.com/redhat-developer/rhdh-plugin-export-overlays/main"
+_API_REPO_BASE = "https://api.github.com/repos/redhat-developer/rhdh-plugin-export-overlays"
+_RAW_REPO_BASE = "https://raw.githubusercontent.com/redhat-developer/rhdh-plugin-export-overlays"
+
+
+def _contents_url(path: str, branch: str) -> str:
+    """Build a GitHub Contents API URL pinned to the requested branch."""
+    encoded_branch = urllib.parse.quote(branch, safe="")
+    return f"{_API_REPO_BASE}/contents/{path}?ref={encoded_branch}"
+
+
+def _raw_url(path: str, branch: str) -> str:
+    """Build a raw.githubusercontent URL pinned to the requested branch."""
+    encoded_branch = urllib.parse.quote(branch, safe="")
+    return f"{_RAW_REPO_BASE}/{encoded_branch}/{path}"
+
 
 # ANSI helpers
 _RED = "\033[0;31m"
@@ -311,9 +322,9 @@ def _fetch_yaml(url: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def list_plugins() -> list[str]:
+def list_plugins(branch: str = "main") -> list[str]:
     """Return sorted list of available plugin names."""
-    entries = _fetch_json(_CONTENTS_URL)
+    entries = _fetch_json(_contents_url("catalog-entities/extensions/plugins", branch))
     names: list[str] = []
     for entry in entries:
         name = entry.get("name", "")
@@ -333,15 +344,12 @@ def _get(d: dict, *keys: str, default: Any = None) -> Any:
     return cur
 
 
-def _list_workspace_metadata(workspace: str) -> list[str]:
+def _list_workspace_metadata(workspace: str, branch: str = "main") -> list[str]:
     """List metadata file names (without .yaml) in a workspace.
 
     Returns an empty list if the workspace or metadata dir doesn't exist.
     """
-    url = (
-        f"https://api.github.com/repos/redhat-developer/"
-        f"rhdh-plugin-export-overlays/contents/workspaces/{workspace}/metadata"
-    )
+    url = _contents_url(f"workspaces/{workspace}/metadata", branch)
     try:
         entries = _fetch_json(url)
     except urllib.error.HTTPError:
@@ -423,13 +431,13 @@ def _find_metadata_file(
     return None
 
 
-def fetch_plugin_metadata(plugin_name: str) -> dict[str, Any]:
+def fetch_plugin_metadata(plugin_name: str, branch: str = "main") -> dict[str, Any]:
     """Fetch plugin definition + per-package metadata.
 
     Returns a structured dict with plugin info and package details.
     """
     # Step 1: plugin definition
-    plugin_url = f"{_RAW_BASE}/catalog-entities/extensions/plugins/{plugin_name}.yaml"
+    plugin_url = _raw_url(f"catalog-entities/extensions/plugins/{plugin_name}.yaml", branch)
     try:
         plugin_def = _fetch_yaml(plugin_url)
     except urllib.error.HTTPError as exc:
@@ -453,7 +461,7 @@ def fetch_plugin_metadata(plugin_name: str) -> dict[str, Any]:
 
     # Step 2: per-package metadata
     # Pre-fetch the workspace metadata directory listing for the primary workspace
-    primary_available = _list_workspace_metadata(plugin_name)
+    primary_available = _list_workspace_metadata(plugin_name, branch)
 
     package_results: list[dict[str, Any]] = []
     for pkg in packages:
@@ -473,25 +481,28 @@ def fetch_plugin_metadata(plugin_name: str) -> dict[str, Any]:
             if "backstage" not in (plugin_name, alt_ws):
                 fallback_workspaces.append("backstage")
             for ws in fallback_workspaces:
-                alt_available = _list_workspace_metadata(ws)
+                alt_available = _list_workspace_metadata(ws, branch)
                 match = _find_metadata_file(pkg_name, ws, alt_available)
                 if match is not None:
                     break
 
         if match is not None:
             ws, file_name = match
-            pkg_url = f"{_RAW_BASE}/workspaces/{ws}/metadata/{file_name}.yaml"
+            pkg_url = _raw_url(f"workspaces/{ws}/metadata/{file_name}.yaml", branch)
             try:
                 pkg_def = _fetch_yaml(pkg_url)
             except urllib.error.HTTPError:
                 pkg_def = {}
 
+        version = _get(pkg_def, "spec", "version", default=None)
         dynamic_artifact = _get(pkg_def, "spec", "dynamicArtifact", default=None)
         role = _get(pkg_def, "spec", "backstage", "role", default=None)
         app_config_examples = _get(pkg_def, "spec", "appConfigExamples", default=None)
         part_of = _get(pkg_def, "spec", "partOf", default=None)
 
         pkg_result: dict[str, Any] = {"name": pkg_name}
+        if version:
+            pkg_result["version"] = str(version)
         if dynamic_artifact:
             pkg_result["dynamicArtifact"] = dynamic_artifact
         if role:
@@ -505,6 +516,7 @@ def fetch_plugin_metadata(plugin_name: str) -> dict[str, Any]:
 
     return {
         "plugin": metadata_name,
+        "branch": branch,
         "categories": categories,
         "preInstalled": pre_installed,
         "packages": package_results,
@@ -562,6 +574,8 @@ def _print_human_metadata(data: dict[str, Any]) -> None:
         return
 
     print(f"{_BOLD}Plugin:{_NC} {data['plugin']}")
+    if data.get("branch"):
+        print(f"{_BOLD}Branch:{_NC} {data['branch']}")
     if data.get("categories"):
         cats = data["categories"]
         if isinstance(cats, list):
@@ -578,6 +592,9 @@ def _print_human_metadata(data: dict[str, Any]) -> None:
         role_color = _BLUE if "frontend" in str(role) else _GREEN
         print(f"\n  {_BOLD}{pkg['name']}{_NC}")
         print(f"    Role: {role_color}{role}{_NC}")
+        version = pkg.get("version")
+        if version:
+            print(f"    Version: {version}")
         artifact = pkg.get("dynamicArtifact")
         if artifact:
             print(f"    Artifact: {artifact}")
@@ -603,8 +620,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Fetch RHDH plugin metadata from the plugin-export-overlays "
             "repository. Lists available plugins or retrieves detailed "
-            "metadata (OCI artifacts, roles, config examples) for a "
-            "specific plugin."
+            "metadata (versions, OCI artifacts, roles, config examples) "
+            "for a specific plugin."
         ),
     )
     parser.add_argument(
@@ -626,6 +643,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="List all available plugins",
     )
+    parser.add_argument(
+        "--branch",
+        default="main",
+        help="Overlay repository branch or ref to read from (default: main)",
+    )
     return parser
 
 
@@ -635,7 +657,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list_plugins:
         try:
-            plugins = list_plugins()
+            plugins = list_plugins(branch=args.branch)
         except (urllib.error.URLError, OSError) as exc:
             if args.json_output:
                 print(json.dumps({"success": False, "error": str(exc)}, indent=2))
@@ -644,7 +666,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         if args.json_output:
-            print(json.dumps({"success": True, "plugins": plugins}, indent=2))
+            print(
+                json.dumps({"success": True, "branch": args.branch, "plugins": plugins}, indent=2)
+            )
         else:
             _print_human_list(plugins)
         return 0
@@ -654,7 +678,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2  # argparse exits on error, but be explicit
 
     try:
-        data = fetch_plugin_metadata(args.plugin)
+        data = fetch_plugin_metadata(args.plugin, branch=args.branch)
     except (urllib.error.URLError, OSError) as exc:
         if args.json_output:
             print(json.dumps({"success": False, "error": str(exc)}, indent=2))

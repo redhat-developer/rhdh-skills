@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Release SoS"
+  short_description: "Timeline-aware SoS release check-in report for team leads"

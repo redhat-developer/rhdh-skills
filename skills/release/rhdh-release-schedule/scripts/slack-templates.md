@@ -19,7 +19,7 @@ Templates for release milestone announcements. Each template uses `{{PLACEHOLDER
 ```slack
 :announcement: *RHDH {{RELEASE_VERSION}} [Feature Freeze](https://docs.google.com/document/d/1IjMH985f3XUhXl_6drfUKopLxTBoY0VMJ2Zpr_62K2g/edit?tab=t.0#bookmark=id.5a1n60q199qh) Update* :announcement:
 
-Feature Freeze is coming up and its target date is *{{FEATURE_FREEZE_DATE}}*. To check on the Feature Freeze status, you can use the [RHDH Release Tracking dashboard](https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12363303) and set fixversion to the current release.
+Feature Freeze is coming up and its target date is *{{FEATURE_FREEZE_DATE}}*. To check on the Feature Freeze status, you can use the [RHDH Release Tracking dashboard](https://redhat.atlassian.net/jira/dashboards/21028) and set fixversion to the current release.
 
 Here's what's outstanding for Feature Freeze. Please review and share if there are any risks to meet this milestone.
 
@@ -45,13 +45,13 @@ cc @rhdh-release
 ```slack
 :rotating_light: *RHDH {{RELEASE_VERSION}} [Feature Freeze](https://docs.google.com/document/d/1IjMH985f3XUhXl_6drfUKopLxTBoY0VMJ2Zpr_62K2g/edit?tab=t.0#bookmark=id.5a1n60q199qh)* :rotating_light:
 
-Its Feature Freeze! To see the latest status use the [RHDH Release Tracking dashboard](https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12363303) and set fixversion to the current release.
+Its Feature Freeze! To see the latest status use the [RHDH Release Tracking dashboard](https://redhat.atlassian.net/jira/dashboards/21028) and set fixversion to the current release.
 :one: The release branch is created, and any work intended for the release must be cherry-picked into this branch.
 :two: Release and test pipelines are being set up for the release branch.
 :three: The Test Plan is approved, and any required manual testing is identified.
 :four: [{{EPIC_ISSUE_COUNT}}]({{JIRA_LINK}}) Engineering EPICs that are outstanding.
 :five: [{{CVE_ISSUE_COUNT}}]({{JIRA_LINK}}) CVEs on target to be fixed before code freeze.
-:six: [{{OUTSTANDING_RELEASE_NOTES_ISSUE_COUNT}}]({{JIRA_LINK}}) Release Notes to be updated before Release Notes date. Refer to [Release Notes Dashboard](https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12382090) for more details.
+:six: [{{OUTSTANDING_RELEASE_NOTES_ISSUE_COUNT}}]({{JIRA_LINK}}) Release Notes to be updated before Release Notes date. Refer to [Release Notes Dashboard](https://redhat.atlassian.net/jira/dashboards/21418) for more details.
 :seven: Reminder to start verifying Features and creating Feature Demos.
 
 Please adhere to these rules so we can keep the release stable and on track. Let me know if you have any questions.
@@ -76,7 +76,7 @@ cc @rhdh-release
 ```slack
 :announcement: *RHDH {{RELEASE_VERSION}} [Code Freeze](https://docs.google.com/document/d/1IjMH985f3XUhXl_6drfUKopLxTBoY0VMJ2Zpr_62K2g/edit?tab=t.0#bookmark=id.ecpldu1g74vj) Update* :announcement:
 
-Code Freeze is coming up and its target date is *{{CODE_FREEZE_DATE}}*. To check on the Code Freeze status, you can use the [RHDH Release Tracking dashboard](https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12363303) and set fixversion to the current release.
+Code Freeze is coming up and its target date is *{{CODE_FREEZE_DATE}}*. To check on the Code Freeze status, you can use the [RHDH Release Tracking dashboard](https://redhat.atlassian.net/jira/dashboards/21028) and set fixversion to the current release.
 
 :one: Here's what's outstanding for Code Freeze. Please review and share if there are any risks to meet this milestone or retriage to future release if applicable.
 
@@ -105,7 +105,7 @@ cc @rhdh-release
 :one: No cherry-picks into the release {{RELEASE_VERSION}} branch are allowed without explicit approval from both the @rhdh-release-manager
 :two: [{{BLOCKER_BUG_ISSUE_COUNT}}]({{JIRA_LINK}}) Blocker bugs outstanding.
 :three: Regarding CVEs: Only critical severity CVEs will be considered for inclusion before GA, and these will follow the same approval process (Release Manager). All other CVEs will be handled in the next z stream release
-:four: Review and update [Release Notes and Known Issues](https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12382090#)
+:four: Review and update [Release Notes and Known Issues](https://redhat.atlassian.net/jira/dashboards/21418#)
 :five: [Feature Demos](https://docs.google.com/document/d/1IjMH985f3XUhXl_6drfUKopLxTBoY0VMJ2Zpr_62K2g/edit?tab=t.0#bookmark=id.l8izl2mswrfb): [{{FEATURE_DEMO_ISSUE_COUNT}}]({{JIRA_LINK}}) Features are tagged for demos. Add your demos and update the RHDH Release Features Slide in the {{RELEASE_VERSION}} [folder](https://drive.google.com/drive/folders/1QKf2hgOxCo6cmWkJ0b78o1Byx8uxgK_E?q=title:%3C1.9.0%3E)
 :six: [{{TEST_DAY_FEATURE_ISSUE_COUNT}}]({{JIRA_LINK}}) Features are tagged for Testday. Please review they are ready for Testday.
 :seven: [{{OPEN_ISSUE_COUNT}}]({{JIRA_LINK}}) issues set to {{RELEASE_VERSION}} and not closed. Please review and move to the next release as appropriate and can be fixed in main branch ONLY.

@@ -1,0 +1,323 @@
+name: rhdh-spec-driven
+version: 1
+description: Default OpenSpec workflow - proposal → {specs, design} → tasks
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Initial proposal document outlining the change
+    template: proposal.md
+    instruction: >
+      Create the proposal document that establishes WHY this change is needed.
+
+
+      Sections:
+
+      - **Why**: 1-2 sentences on the problem or opportunity. What problem does
+      this solve? Why now?
+
+      - **What Changes**: Bullet list of changes. Be specific about new
+      capabilities, modifications, or removals. Mark breaking changes with
+      **BREAKING**.
+
+      - **Capabilities**: Identify which specs will be created or modified:
+        - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<name>/spec.md`. Use kebab-case names (e.g., `user-auth`, `data-export`).
+        - **Modified Capabilities**: List existing capabilities whose REQUIREMENTS are changing. Only include if spec-level behavior changes (not just implementation details). Each needs a delta spec file. Check `openspec/specs/` for existing spec names. Leave empty if no requirement changes.
+      - **Impact**: Affected code, APIs, dependencies, or systems.
+
+
+      IMPORTANT: The Capabilities section is critical. It creates the contract
+      between
+
+      proposal and specs phases. Research existing specs before filling this in.
+
+      Each capability listed here will need a corresponding spec file.
+
+
+      Keep it concise (1-2 pages). Focus on the "why" not the "how" -
+
+      implementation details belong in design.md.
+
+
+      This is the foundation - specs, design, and tasks all build on this.
+
+      REQUIRED (repo rule): Include a `Canonical Touchpoints` section naming every
+      affected PRD/ADR file under `specifications/` and every affected long-lived
+      feature/domain spec under `openspec/specs/`, or explicitly state `None`.
+      Also state the change type: product | architecture | feature-spec |
+      migration | workflow-only | docs-only.
+    requires: []
+  - id: specs
+    generates: specs/**/*.md
+    description: Detailed specifications for the change
+    template: spec.md
+    instruction: >
+      Create specification files that define WHAT the system should do.
+
+
+      Create one spec file per capability listed in the proposal's Capabilities
+      section.
+
+      - New capabilities: use the exact kebab-case name from the proposal
+      (specs/<capability>/spec.md).
+
+      - Modified capabilities: use the existing spec folder name from
+      openspec/specs/<capability>/ when creating the delta spec at
+      specs/<capability>/spec.md.
+
+
+      Delta operations (use ## headers):
+
+      - **ADDED Requirements**: New capabilities
+
+      - **MODIFIED Requirements**: Changed behavior - MUST include full updated
+      content
+
+      - **REMOVED Requirements**: Deprecated features - MUST include **Reason**
+      and **Migration**
+
+      - **RENAMED Requirements**: Name changes only - use FROM:/TO: format
+
+
+      Format requirements:
+
+      - Each requirement: `### Requirement: <name>` followed by description
+
+      - Use SHALL/MUST for normative requirements (avoid should/may)
+
+      - Each scenario: `#### Scenario: <name>` with WHEN/THEN format
+
+      - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3
+      hashtags or bullets will fail silently.
+
+      - Every requirement MUST have at least one scenario.
+
+
+      MODIFIED requirements workflow:
+
+      1. Locate the existing requirement in openspec/specs/<capability>/spec.md
+
+      2. Copy the ENTIRE requirement block (from `### Requirement:` through all
+      scenarios)
+
+      3. Paste under `## MODIFIED Requirements` and edit to reflect new behavior
+
+      4. Ensure header text matches exactly (whitespace-insensitive)
+
+
+      Common pitfall: Using MODIFIED with partial content loses detail at
+      archive time.
+
+      If adding new concerns without changing existing behavior, use ADDED
+      instead.
+
+
+      Example:
+
+      ```
+
+      ## ADDED Requirements
+
+
+      ### Requirement: User can export data
+
+      The system SHALL allow users to export their data in CSV format.
+
+
+      #### Scenario: Successful export
+
+      - **WHEN** user clicks "Export" button
+
+      - **THEN** system downloads a CSV file with all user data
+
+
+      ## REMOVED Requirements
+
+
+      ### Requirement: Legacy export
+
+      **Reason**: Replaced by new export system
+
+      **Migration**: Use new export endpoint at /api/v2/export
+
+      ```
+
+
+      Specs should be testable - each scenario is a potential test case.
+    requires:
+      - proposal
+  - id: design
+    generates: design.md
+    description: Technical design document with implementation details
+    template: design.md
+    instruction: >
+      Create the design document that explains HOW to implement the change.
+
+
+      When to include design.md (create only if any apply):
+
+      - Cross-cutting change (multiple services/modules) or new architectural
+      pattern
+
+      - New external dependency or significant data model changes
+
+      - Security, performance, or migration complexity
+
+      - Ambiguity that benefits from technical decisions before coding
+
+
+      Sections:
+
+      - **Context**: Background, current state, constraints, stakeholders
+
+      - **Goals / Non-Goals**: What this design achieves and explicitly excludes
+
+      - **Decisions**: Key technical choices with rationale (why X over Y?).
+      Include alternatives considered for each decision.
+
+      - **Risks / Trade-offs**: Known limitations, things that could go wrong.
+      Format: [Risk] → Mitigation
+
+      - **Migration Plan**: Steps to deploy, rollback strategy (if applicable)
+
+      - **Open Questions**: Outstanding decisions or unknowns to resolve
+
+
+      Focus on architecture and approach, not line-by-line implementation.
+
+      Reference the proposal for motivation and specs for requirements.
+
+
+      Good design docs explain the "why" behind technical decisions.
+
+      REQUIRED (repo rule): `design.md` remains part of the artifact
+      flow. If none of the above apply, keep the file brief and explicitly state
+      `No design changes` under Decisions.
+
+      REQUIRED (repo rule): Carry forward the `Canonical Touchpoints` from the
+      proposal. For each touched canonical document/spec, explain how it will
+      change, or state `No canonical document updates`.
+    requires:
+      - proposal
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist with trackable tasks
+    template: tasks.md
+    instruction: >
+      Create the task list that breaks down the implementation work.
+
+
+      **IMPORTANT: Follow the template below exactly.** The apply phase parses
+
+      checkbox format to track progress. Tasks not using `- [ ]` won't be
+      tracked.
+
+
+      Guidelines:
+
+      - Group related tasks under ## numbered headings
+
+      - Each task MUST be a checkbox: `- [ ] X.Y Task description`
+
+      - Tasks should be small enough to complete in one session
+
+      - Order tasks by dependency (what must be done first?)
+
+
+      Example:
+
+      ```
+
+      ## 1. Setup
+
+
+      - [ ] 1.1 Create new module structure
+
+      - [ ] 1.2 Add dependencies to package.json
+
+
+      ## 2. Core Implementation
+
+
+      - [ ] 2.1 Implement data export function
+
+      - [ ] 2.2 Add CSV formatting utilities
+
+      ```
+
+
+      Reference specs for what needs to be built, design for how to build it.
+
+      Each task should be verifiable - you know when it's done.
+
+      REQUIRED (repo rules):
+      - Prepend the task list with a comment that after each completed task we
+        shall commit the changes.
+      - Add explicit tasks for direct updates to `specifications/prd/`,
+        `specifications/adr/`, and/or `openspec/specs/` whenever those
+        touchpoints are listed in the proposal.
+      - When a task changes behavior, include appropriate verification work
+        following tests and repository guidance.
+    requires:
+      - specs
+      - design
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    Read context files and all pending tasks before editing.
+
+    Before implementation starts, choose one execution mode for this apply run:
+    - Direct mode: implement tasks in the lead context and self-check against
+      specs, design, tests, and relevant ADRs before marking tasks complete.
+    - Team mode: orchestrate implementer + verifier subagents for the run. The
+      verifier must be independent of implementer reasoning and re-run checks
+      before tasks are marked complete.
+
+    Choose team mode when the pending work has semantic complexity, ADR-bound
+    constraints, broad cross-layer changes, or high risk of single-context
+    drift. Choose direct mode for mechanical scaffolding, docs/config-only work,
+    and narrow low-risk changes.
+
+    Announce the chosen mode and rationale before making changes. Use that mode
+    for the run. If the selected mode becomes inappropriate, pause and explain
+    the mismatch instead of silently switching.
+
+    In team mode:
+    - Partition pending tasks into one or more bounded assignments. Prefer a
+      short contiguous task range when tasks build on each other.
+    - Pass the implementer the assigned scope, change artifacts, relevant
+      repository guidance, affected paths if known, and verifier feedback on fix
+      rounds.
+    - Pass the verifier the same scope, artifacts, and repository guidance plus
+      the implementer's changed-file list, verification summary, and checks run.
+      Do not pass implementer reasoning as proof.
+    - Mark tasks complete only after verifier `pass`; for `concerns`, decide
+      explicitly whether to accept or pause; for `fail`, run a bounded fix round
+      or pause.
+
+    Work through pending tasks, mark complete as you go, and pause if you hit
+    blockers or need clarification.
+
+    Journal: emit interaction events through the `/openspec-journal` skill at
+    these points:
+      - `mode.chosen` once at apply start (mode + 1-sentence rationale +
+        optional `agents=<int>` for the run).
+      - `task.start` / `task.complete` per task (or per assigned task range
+        in team mode).
+      - `verifier.result` per verifier verdict in team mode (pass/concerns/
+        fail; the verifier writes the line, not the implementer).
+      - `task.blocked` whenever you pause for clarification.
+      - `decision` for any load-bearing call not covered above.
+      - `skill.invoked` when a user-invoked skill (e.g., `/showboat`,
+        `/retro`) runs against this change.
+      - `agent.spawned` when a fan-out subagent group is launched
+        (e.g., `team:debate`); record `count=<int>` and `kind=<label>`.
+      - `handoff` as the last line before stopping a session, and the first
+        line on resume.
+    `context.compacted` is normally emitted by the OpenSpec journal's
+    PreCompact hook, not by skills directly.
+
+    `input`/`output` are rejected if longer than the helper's hard limit;
+    move long content to design.md or an ADR and reference it from the
+    journal entry. See `/openspec-journal` for the full contract.

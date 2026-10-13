@@ -24,6 +24,7 @@
     "plugins",
     "ci",
     "release",
+    "refinement",
     "reference",
     "meta"
   ],
@@ -91,6 +92,15 @@
       "requiresSkills": [
         "rhdh-jira-api",
         "mutation-gate",
+        "prose-editing"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-feature-docs",
+      "category": "jira",
+      "invocation": "model",
+      "requiresSkills": [
         "prose-editing"
       ],
       "requiresExternalSkills": []
@@ -190,6 +200,13 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-playwright",
+      "category": "plugins",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-pr-create",
       "category": "plugins",
       "invocation": "model",
@@ -230,11 +247,21 @@
       ]
     },
     {
+      "name": "rhdh-backport",
+      "category": "plugins",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-base-images",
       "category": "ci",
       "invocation": "model",
       "requiresSkills": [
-        "mutation-gate"
+        "mutation-gate",
+        "rhdh-pr-mr"
       ],
       "requiresExternalSkills": []
     },
@@ -243,7 +270,8 @@
       "category": "ci",
       "invocation": "model",
       "requiresSkills": [
-        "mutation-gate"
+        "mutation-gate",
+        "rhdh-pr-mr"
       ],
       "requiresExternalSkills": []
     },
@@ -283,10 +311,22 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-pr-mr",
+      "category": "ci",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "rhdh-jira-link"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-yarn-bump",
       "category": "ci",
       "invocation": "model",
-      "requiresSkills": [],
+      "requiresSkills": [
+        "rhdh-pr-mr"
+      ],
       "requiresExternalSkills": []
     },
     {
@@ -313,6 +353,17 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-release-capacity-plan",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api",
+        "rhdh-release-teams",
+        "rhdh-release-schedule"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-release-schedule",
       "category": "release",
       "invocation": "model",
@@ -331,6 +382,54 @@
       "category": "release",
       "invocation": "model",
       "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-release-fixversions",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api",
+        "rhdh-release-schedule",
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-release-sos",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-release-schedule",
+        "rhdh-release-status"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-smoke-tests",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-translation-upload",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-translation-deploy",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
       "requiresExternalSkills": []
     },
     {
@@ -394,6 +493,116 @@
       "invocation": "model",
       "requiresSkills": [
         "prose-editing"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-journal",
+      "category": "reference",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-spec-driven-schema",
+      "category": "reference",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-new-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-spec-driven-schema"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-continue-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-spec-driven-schema"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-ff-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-spec-driven-schema"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-apply-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-spec-driven-schema",
+        "openspec-journal"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-archive-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [],
+      "optionalSkills": [
+        "openspec-sync-specs"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-bulk-archive-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-explore",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-onboard",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-spec-driven-schema"
+      ],
+      "requiresExternalSkills": [
+        "grilling"
+      ]
+    },
+    {
+      "name": "openspec-sync-specs",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-verify-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "openspec-audit-change",
+      "category": "refinement",
+      "invocation": "model",
+      "requiresSkills": [],
+      "optionalSkills": [
+        "rhdh-spec-driven-schema"
       ],
       "requiresExternalSkills": []
     },

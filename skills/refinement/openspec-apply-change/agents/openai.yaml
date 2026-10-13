@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Apply Change"
+  short_description: "Implement an OpenSpec change's pending tasks against its artifacts"

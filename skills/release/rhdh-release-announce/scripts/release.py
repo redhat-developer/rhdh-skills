@@ -836,7 +836,7 @@ def cmd_notes(args: argparse.Namespace, fmt: OutputFormatter) -> None:
         jql, url = jql_mod.render_with_url(template_name, version=version)
         lifecycle[stage] = {"count": _acli_count(jql, fmt), "jira_url": url}
 
-    dashboard_url = "https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12382090"
+    dashboard_url = "https://redhat.atlassian.net/jira/dashboards/21418"
 
     fmt.header(f"RHDH {version} — Release Notes")
     for stage, data in lifecycle.items():

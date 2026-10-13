@@ -17,7 +17,7 @@ capability status only.
 3. Start browser-mediated authorization for the account and required services:
 
    ```bash
-   gog auth add <account> --services sheets,docs,drive
+   gog auth add <account> --services sheets,docs,drive,calendar
    ```
 
 4. Verify access with the consuming release workflow's read-only `gog sheets metadata ... --json`

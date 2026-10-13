@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Sync Specs"
+  short_description: "Merge a change's delta specs into the long-lived main specs"

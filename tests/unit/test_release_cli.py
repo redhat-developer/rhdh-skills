@@ -101,7 +101,7 @@ class TestJqlUrl:
     def test_url_encoding(self):
         jql_str = "project = RHIDP AND status != closed"
         url = jql.jira_url(jql_str)
-        assert url.startswith("https://issues.redhat.com/issues/?jql=")
+        assert url.startswith("https://redhat.atlassian.net/issues/?jql=")
         assert "%20" in url or "+" in url
         assert "project" not in url.split("jql=")[1].split("%")[0] or quote(jql_str, safe="") in url
 
@@ -116,7 +116,7 @@ class TestJqlUrl:
     def test_render_with_url(self):
         rendered, url = jql.render_with_url("open_issues", version="1.9.0")
         assert '"1.9.0"' in rendered
-        assert url.startswith("https://issues.redhat.com/issues/?jql=")
+        assert url.startswith("https://redhat.atlassian.net/issues/?jql=")
         assert quote(rendered, safe="") in url
 
 
@@ -474,6 +474,131 @@ class TestExtractMilestoneDates:
         assert dates["feature_freeze"] == "2025-05-01"
         assert dates["code_freeze"] == "2025-05-15"
         assert dates["ga_announce"] == "TBD"
+
+    @staticmethod
+    def _text_row(label, text, marks=None):
+        text_node = {"type": "text", "text": text}
+        if marks:
+            text_node["marks"] = marks
+        return {
+            "type": "tableRow",
+            "content": [
+                {
+                    "type": "tableCell",
+                    "content": [
+                        {"type": "paragraph", "content": [{"type": "text", "text": label}]}
+                    ],
+                },
+                {
+                    "type": "tableCell",
+                    "content": [{"type": "paragraph", "content": [text_node]}],
+                },
+            ],
+        }
+
+    def test_extracts_natural_language_dates_from_adf_table(self):
+        from datetime import datetime
+
+        year = datetime.now().year
+        description = {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "table",
+                    "content": [
+                        self._text_row("Code Freeze", "August 24 (done)"),
+                        self._text_row("Go/No Go & Push", "September 2"),
+                        self._text_row("GA Announce", "September 2"),
+                    ],
+                }
+            ],
+        }
+
+        dates = release._extract_milestone_dates(description)
+
+        assert dates["code_freeze"] == f"{year}-08-24"
+        assert dates["go_no_go"] == f"{year}-09-02"
+        assert dates["ga_announce"] == f"{year}-09-02"
+        assert dates["feature_freeze"] == "TBD"
+
+    def test_skips_strikethrough_text_in_adf(self):
+        from datetime import datetime
+
+        year = datetime.now().year
+        description = {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "table",
+                    "content": [
+                        {
+                            "type": "tableRow",
+                            "content": [
+                                {
+                                    "type": "tableCell",
+                                    "content": [
+                                        {
+                                            "type": "paragraph",
+                                            "content": [{"type": "text", "text": "Code Freeze"}],
+                                        }
+                                    ],
+                                },
+                                {
+                                    "type": "tableCell",
+                                    "content": [
+                                        {
+                                            "type": "paragraph",
+                                            "content": [
+                                                {"type": "text", "text": "August "},
+                                                {
+                                                    "type": "text",
+                                                    "text": "27",
+                                                    "marks": [{"type": "strike"}],
+                                                },
+                                                {"type": "text", "text": " 31 "},
+                                            ],
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        dates = release._extract_milestone_dates(description)
+
+        assert dates["code_freeze"] == f"{year}-08-31"
+
+
+class TestParseNaturalDate:
+    def test_full_month_day(self):
+        from datetime import datetime
+
+        year = datetime.now().year
+        assert release._parse_natural_date("August 24") == f"{year}-08-24"
+
+    def test_strips_done_annotation(self):
+        from datetime import datetime
+
+        year = datetime.now().year
+        assert release._parse_natural_date("August 24 (done)") == f"{year}-08-24"
+
+    def test_abbreviated_month(self):
+        from datetime import datetime
+
+        year = datetime.now().year
+        assert release._parse_natural_date("Sep 2") == f"{year}-09-02"
+
+    def test_full_date_with_year(self):
+        assert release._parse_natural_date("August 24, 2025") == "2025-08-24"
+
+    def test_unparseable(self):
+        assert release._parse_natural_date("TBD") is None
+
+    def test_empty(self):
+        assert release._parse_natural_date("") is None
 
 
 class TestFindScheduleTab:

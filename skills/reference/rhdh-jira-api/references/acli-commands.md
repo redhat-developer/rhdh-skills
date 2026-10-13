@@ -6,7 +6,7 @@ Cheat sheet for `acli jira` commands. For full flag details, run `acli jira <sub
 
 1. **`view` takes a positional arg.** Everything else uses `--key`.
 2. **Always pass `--yes`** on mutating commands (`edit`, `transition`, `assign`, `link create`) to skip interactive prompts.
-3. **Use `--json`** when you need fields beyond `key`, `summary`, `status`, `assignee`, `issuetype`, `priority`, `description`. The `--fields` flag rejects `components`, `sprint`, `labels`, `fixVersions`.
+3. **Use `--json`** when you need fields beyond `key`, `summary`, `status`, `assignee`, `issuetype`, `priority`, `description`. The `--fields` flag rejects `components`, `sprint`, `labels`, `fixVersions`, `storypoints`, and `parent`. Custom fields such as Story Points (`customfield_10028`) and Sprint (`customfield_10020`) are not on that allowlist — search with allowed fields, then enrich with `view --fields '*all'` or `parse_issues.py --enrich`.
 4. **Use `--csv`** for search results you want to pipe or parse.
 5. **Use `--paginate`** to fetch all results beyond the default page size.
 
@@ -59,13 +59,29 @@ acli jira workitem view RHIDP-123 --web
 > Create the issue first, then set priority, components, size (`customfield_10795`), and parent
 > link (`customfield_10018`) in one update through the authenticated adapter in
 > [rest-api-fallback.md](rest-api-fallback.md).
+>
+> **RHDHBUGS Bug exception:** Affects Version is required at create (see [fields.md](fields.md)).
+> There is no `--version` flag. Put `versions` (and the ADF `description`) inside a `--from-json`
+> payload — do **not** combine `--from-json` with `--description-file` on the same create.
+> `acli jira workitem create --generate-json` prints a starter shape. Create without `versions`
+> fails with `Affects versions is required`.
+>
+> **Private issue exception:** On public projects (RHIDP, RHDHPLAN, RHDHBUGS),
+> put `security` on create when the issue must stay private
+> ([fields.md](fields.md) — Private issues). RHDHSUPP: optional. No `--security`
+> flag — use `--from-json` `additionalAttributes.security` (plus `versions` on
+> RHDHBUGS Bugs), or MCP `additional_fields.security`. Never create-then-restrict.
+> Verify with `view KEY --fields '*all' --json` (defaults omit `security`).
 
 ```bash
 # Basic creation
 acli jira workitem create --project RHIDP --type Story --summary "Implement auth plugin" --description "As a user..." --assignee "@me"
 
-# With labels
-acli jira workitem create --project RHDHBUGS --type Bug --summary "Login fails" --label "RHDH-Customer,ci-fail"
+# RHDHBUGS Bug — single --from-json file (versions + ADF description inside JSON)
+acli jira workitem create --from-json bug-create.json
+
+# Private issue — security on create (never create-then-restrict)
+acli jira workitem create --from-json private-create.json
 
 # With parent (sub-task or child of epic)
 acli jira workitem create --project RHIDP --type Task --summary "Write tests" --parent RHIDP-12968
@@ -76,8 +92,24 @@ acli jira workitem create --from-json workitem.json --project RHIDP --type Epic
 # Generate JSON template
 acli jira workitem create --generate-json
 
-# From description file
+# From description file (Stories/Features/etc. — not for RHDHBUGS Bug when versions are required,
+# and not for private issues that need security on create)
 acli jira workitem create --project RHIDP --type Story --summary "New feature" --description-file story.txt
+```
+
+Minimal private-create `--from-json` shape (ADF `description` from wiki→ADF;
+scaffold with `--generate-json` if unsure):
+
+```json
+{
+  "projectKey": "RHIDP",
+  "type": "Story",
+  "summary": "Private summary",
+  "description": { "type": "doc", "version": 1, "content": [] },
+  "additionalAttributes": {
+    "security": { "name": "Red Hat Employee" }
+  }
+}
 ```
 
 ### Edit
@@ -248,11 +280,13 @@ acli jira filter get --id 10001
 
 ### Formatted descriptions need ADF
 
-Jira Cloud's editor is ADF-native. Plain text and Jira wiki markup (`h1.`, `*bold*`) both render as
-literal characters in the UI, so a description file written in wiki markup ships broken. Fill a wiki
-markup template, convert it with `scripts/jira-wiki-to-adf.py <input.txt> <output.json>`, then pass
-the result via `--description-file`. Both `create` and `edit` accept ADF JSON that way. When
-reading, `--json` returns ADF too — don't try to round-trip it.
+Jira Cloud's editor is ADF-native. Plain text, Markdown, and Jira wiki markup (`h1.`, `*bold*`)
+all render as literal characters when placed inside ADF text nodes — including a hand-built ADF
+doc that only wraps Markdown paragraphs. Fill a wiki markup template, convert it with
+`scripts/jira-wiki-to-adf.py <input.txt> <output.json>`. For ordinary creates/edits, pass that ADF
+via `--description-file`. For **RHDHBUGS Bug** create, embed the same ADF object as the JSON
+`description` field and use `--from-json` alone (Affects Version must be in that file). Do not
+invent ADF from Markdown. When reading, `--json` returns ADF too — don't try to round-trip it.
 
 ## Custom Fields and `--enrich`
 

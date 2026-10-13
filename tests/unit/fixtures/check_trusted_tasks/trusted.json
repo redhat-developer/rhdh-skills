@@ -1,0 +1,29 @@
+{
+  "trusted_tasks": {
+    "oci://quay.io/konflux-ci/tekton-catalog/task-good:0.1": [
+      {"ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    ],
+    "oci://quay.io/konflux-ci/tekton-catalog/task-successor:0.2": [
+      {"ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+      {
+        "ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expires_on": "2026-08-22T00:00:00Z"
+      }
+    ],
+    "oci://quay.io/konflux-ci/tekton-catalog/task-expiring:0.1": [
+      {
+        "ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "expires_on": "2026-09-05T00:00:00Z"
+      }
+    ],
+    "oci://quay.io/konflux-ci/tekton-catalog/task-dead:0.1": [
+      {
+        "ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "expires_on": "2026-08-01T00:00:00Z"
+      }
+    ],
+    "oci://quay.io/konflux-ci/tekton-catalog/task-missing:0.3": [
+      {"ref": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+    ]
+  }
+}

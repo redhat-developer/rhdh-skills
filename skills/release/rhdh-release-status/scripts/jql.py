@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
-JIRA_SEARCH_BASE = "https://issues.redhat.com/issues/?jql="
+JIRA_SEARCH_BASE = "https://redhat.atlassian.net/issues/?jql="
 
 _DATA_DIR = Path(__file__).resolve().parent
 _JQL_FILE = _DATA_DIR / "jql-release.md"

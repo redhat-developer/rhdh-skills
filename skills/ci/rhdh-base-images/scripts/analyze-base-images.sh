@@ -240,7 +240,7 @@ for cf in "${FILES[@]}"; do
 	while IFS= read -r fromline; do
 		[[ "$fromline" =~ ^[[:space:]]*FROM[[:space:]]+([^[:space:]]+) ]] || continue
 		ref="${BASH_REMATCH[1]}"
-		[[ "$ref" =~ ubi[89] ]] || continue
+		[[ "$ref" =~ ubi(9|10) ]] || continue
 		tag="${ref%%@*}"; tag="${tag##*:}"
 		[[ "$tag" =~ ^([0-9]+\.[0-9]+) ]] && ubi_versions+=("${BASH_REMATCH[1]}")
 	done < <(grep -iE '^[[:space:]]*FROM[[:space:]]+' "$cf" || true)

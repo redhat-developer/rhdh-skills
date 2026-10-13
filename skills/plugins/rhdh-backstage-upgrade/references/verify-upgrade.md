@@ -4,16 +4,29 @@ Run these checks in order. Stop and fix any failures before continuing.
 
 ## Build checks
 
+Run the scripts the checkout defines for type checking, build, lint, formatting,
+and monorepo consistency. The common baseline is:
+
 ```bash
-# Type check
 yarn tsc
-
-# Build
 yarn build
-
-# Lint (if configured)
 yarn lint
 ```
+
+For `redhat-developer/rhdh`, use this full sequence instead of the baseline and
+test command below:
+
+```bash
+yarn build
+yarn test
+yarn lint:check
+yarn prettier:check
+yarn monorepo:check
+yarn build:dockerfile
+```
+
+For that checkout, include changes from `yarn build:dockerfile` in the upgrade
+diff.
 
 ## Test suite
 
@@ -46,7 +59,10 @@ Verify all `@backstage/*` packages are on the same release:
 cat package.json | grep '@backstage/' | sort
 ```
 
-All versions should correspond to the target release. If any are out of sync, re-run `versions:bump`.
+All versions should correspond to the target release and retain the dependency
+range style recorded before the bump. If any are out of sync, re-run
+`versions:bump`; if the range style drifted, normalize it and refresh the
+lockfile.
 
 ## Runtime check (if a dev app exists)
 

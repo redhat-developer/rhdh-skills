@@ -125,7 +125,7 @@ needed later.
 
 Work is complete when the selected branch's review checklist passes, every
 referenced resource resolves, no behavior remains duplicated under an old skill
-name, and the applicable harness thresholds pass. If agent-eval-harness cannot
-run, leave harness-native evaluation assets, report the exact blocker, and label
-the behavior unevaluated instead of substituting repository tests or prose
-review.
+name, every changed `.py` file passes the host linter, and the applicable harness
+thresholds pass. If agent-eval-harness cannot run, leave harness-native evaluation
+assets, report the exact blocker, and label the behavior unevaluated instead of
+substituting repository tests or prose review.

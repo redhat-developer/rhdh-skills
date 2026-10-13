@@ -70,7 +70,7 @@ New → Refinement → Backlog → In Progress → Review → Release Pending �
 
 | Status | Required Fields Before Entry |
 |--------|----------------------------|
-| New | Description, Acceptance Criteria, Story Points |
+| New | Description, Acceptance Criteria, Story Points, Affects Version (required at create) |
 | Refinement | Acceptance Criteria, Story Points, Team, Priority |
 | Backlog | Assignee |
 | In Progress | Work has started |

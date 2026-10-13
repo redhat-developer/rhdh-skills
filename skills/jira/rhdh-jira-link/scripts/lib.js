@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const MERGED_PREFIX = '[x] merged: ';
+const CLOSED_PREFIX = '[!] closed: ';
 const MOVEABLE_RHDHPLAN_TYPES = new Set(['Epic', 'Story', 'Task']);
 const RHDHPLAN_PROJECT = 'RHDHPLAN';
 const RHIDP_PROJECT = 'RHIDP';
@@ -78,22 +79,63 @@ function detectHost(url, explicit) {
   return 'gitlab';
 }
 
-function stripMergedPrefix(title) {
+function stripOutcomePrefix(title) {
   return String(title || '')
     .replace(/^\[x\]\s*merged:\s*/i, '')
+    .replace(/^\[!\]\s*closed:\s*/i, '')
     .replace(/^merged:\s*/i, '')
+    .replace(/^closed:\s*/i, '')
     .trim();
 }
 
-function withMergedPrefix(title) {
-  return `${MERGED_PREFIX}${stripMergedPrefix(title)}`;
+function stripMergedPrefix(title) {
+  return stripOutcomePrefix(title);
 }
 
-/** Human title from linker title `repo #N: <title>` (optional `[x] merged: ` prefix). */
+function withMergedPrefix(title) {
+  return `${MERGED_PREFIX}${stripOutcomePrefix(title)}`;
+}
+
+function withClosedPrefix(title) {
+  return `${CLOSED_PREFIX}${stripOutcomePrefix(title)}`;
+}
+
+/**
+ * Classify a GitHub PR or GitLab MR from API fields.
+ * Merged wins over closed (`state: closed` is also used for merged GitHub PRs).
+ * @returns {'merged'|'closed'|'open'}
+ */
+function classifyPrMrState({ merged, state, mergedAt } = {}) {
+  if (merged === true || merged === 'true') {
+    return 'merged';
+  }
+  if (mergedAt) {
+    return 'merged';
+  }
+  const s = String(state || '').toLowerCase();
+  if (s === 'merged') {
+    return 'merged';
+  }
+  if (s === 'closed') {
+    return 'closed';
+  }
+  return 'open';
+}
+
+function prefixForPrMrState(prMrState, title) {
+  if (prMrState === 'merged') {
+    return withMergedPrefix(title);
+  }
+  if (prMrState === 'closed') {
+    return withClosedPrefix(title);
+  }
+  return String(title || '').trim();
+}
+
+/** Human title from linker title `repo #N: <title>` (optional merged/closed prefix). */
 function displayTitleFromLinkTitle(title) {
   return (
-    String(title || '')
-      .replace(/^\[x\]\s*merged:\s*/i, '')
+    stripOutcomePrefix(title)
       .replace(/^[^#\n]+#\d+:\s*/, '')
       .trim() || String(title || '').trim()
   );
@@ -336,6 +378,7 @@ function parseArgs(argv, { booleanFlags = [], onHelp } = {}) {
 
 module.exports = {
   ADJUSTED_FIELD_LABELS,
+  CLOSED_PREFIX,
   DEFAULT_JIRA_SERVER,
   MERGED_PREFIX,
   MOVEABLE_RHDHPLAN_TYPES,
@@ -343,6 +386,7 @@ module.exports = {
   RHDHPLAN_PROJECT,
   RHIDP_PROJECT,
   buildBulkMovePayload,
+  classifyPrMrState,
   collectAdjustedFieldLines,
   detectHost,
   displayTitleFromLinkTitle,
@@ -355,10 +399,13 @@ module.exports = {
   parseEmailToken,
   parsePrMrUrl,
   pickDefined,
+  prefixForPrMrState,
   resolveJiraAuth,
   shouldAppendJiraRef,
   shouldMoveRhdhplanDeliveryIssue,
   shouldSkipTeamAndSprint,
   stripMergedPrefix,
+  stripOutcomePrefix,
+  withClosedPrefix,
   withMergedPrefix,
 };

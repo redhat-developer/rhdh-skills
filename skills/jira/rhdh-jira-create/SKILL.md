@@ -54,6 +54,11 @@ comment go into the same stated set so a single approval covers them.
 Afterwards, read the issue back. A create that succeeded followed by a field
 update that silently failed is a half-created issue, not a success.
 
+**Private issues are not "set after create."** On public projects (RHIDP,
+RHDHPLAN, RHDHBUGS), put `security` on the create payload
+(`/rhdh-jira-api` — Private issues). RHDHSUPP is project-private; level optional.
+Never create-then-restrict. If `security` cannot be set when required, stop.
+
 ## Boundary with the neighbouring skills
 
 - Judging whether an existing issue is ready is `/rhdh-jira-refine`.

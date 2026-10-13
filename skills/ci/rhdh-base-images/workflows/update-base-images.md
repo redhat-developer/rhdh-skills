@@ -4,15 +4,17 @@ Before any non-analysis run, follow the write gate in [SKILL.md](../SKILL.md): s
 
 ## Goal
 
-Refresh **base images** and **RPM lockfiles** in the three upstream GitHub repos:
+Refresh **base images** and **RPM lockfiles** in the GitHub hub/operator/must-gather repos, then pin **plugin-catalog** Node and **overlays** `versions.json` when those checkouts are named:
 
 | Repo | Node / Go source | RPM containerfile |
 |------|------------------|-------------------|
 | rhdh | `build/containerfiles/Containerfile` or `docker/Dockerfile` (release-1.9) | `build/containerfiles/Containerfile` or `.rhdh/docker/Dockerfile` |
-| rhdh-operator | `go.mod` aligned with `ubi9/go-toolset` on **main** only | `.rhdh/docker/Dockerfile` |
+| rhdh-operator | `go.mod` aligned with `ubi10/go-toolset` on **main** only | root `Dockerfile` (main, release-2.*, later); `.rhdh/docker/Dockerfile` on release-1.* |
 | rhdh-must-gather | — | `Containerfile` |
+| rhdh-plugin-catalog | `builder.Containerfile` FROM + `.nvm/` + `konflux.additional-tags` `node-v*` | none |
+| rhdh-plugin-export-overlays | `versions.json` `node` | none |
 
-Upstream helper scripts live in GitLab midstream [rhidp/rhdh](https://gitlab.cee.redhat.com/rhidp/rhdh) on branch `rhdh-1-rhel-9` (see [updateBaseImages.sh](https://gitlab.cee.redhat.com/rhidp/rhdh/-/blob/rhdh-1-rhel-9/build/scripts/updateBaseImages.sh)).
+Upstream helper scripts live in GitLab midstream [rhidp/rhdh](https://gitlab.cee.redhat.com/rhidp/rhdh). For RHDH 1.y, branch is `rhdh-<stream>-rhel-9`; for RHDH 2.y, branch is either `main` or `release-2.y`. 
 
 ## Prerequisites
 
@@ -34,10 +36,11 @@ On Fedora/RHEL hosts, `dnf install podman skopeo python3-dnf` may also be requir
 
 Accepted `-b` values: `main` or any `release-*` branch (e.g. `release-1.9`, `release-1.10`, `release-2.1`).
 
-| GitHub branch (`-b`) | GitLab scripts branch (`-sb` for `updateBaseImages.sh`) |
-|----------------------|---------------------------------------------------------|
-| `main` | `rhdh-1-rhel-9` |
-| `release-X.Y` | `rhdh-X.Y-rhel-9` |
+| GitHub branch (`-b`) | GitLab scripts branch (`-sb` for `updateBaseImages.sh`) | plugin-catalog GitLab branch |
+|----------------------|---------------------------------------------------------|------------------------------|
+| `main` | `main` | `main` |
+| `release-2.Y` | `release-2.Y` | `release-2.Y` |
+| `release-1.Y` | `rhdh-1.Y-rhel-9` | `rhdh-1.Y-rhel-9` |
 
 Verify the target branch exists in each repo before running.
 
@@ -51,6 +54,9 @@ chmod +x "${SKILL}/scripts/base-images-and-rpms.sh"
 
 # All three repos under a parent directory
 "${SKILL}/scripts/base-images-and-rpms.sh" -b release-1.10 --parent-dir ~/RHDH
+
+# A RHEL 10-based stream
+"${SKILL}/scripts/base-images-and-rpms.sh" -b release-2.1 --parent-dir ~/RHDH
 
 # Explicit paths and on-disk tools
 "${SKILL}/scripts/base-images-and-rpms.sh" -b main \
@@ -104,8 +110,8 @@ The analyzer reports **current vs latest** per `FROM` line, flags malformed tags
 Each registry `FROM` needs a comment URL on the line above:
 
 ```containerfile
-# https://registry.access.redhat.com/ubi9/nodejs-24
-FROM registry.access.redhat.com/ubi9/nodejs-24:9.8-...@sha256:... AS skeleton
+# https://registry.access.redhat.com/ubi10/nodejs-24
+FROM registry.access.redhat.com/ubi10/nodejs-24:10.0-...@sha256:... AS skeleton
 ```
 
 For **rhdh**, paths under `e2e-tests/` and `.ci/` are excluded from scans.
@@ -127,7 +133,7 @@ must not invoke an editor during an automation run.
 
 ### Base images (`updateBaseImages.sh`)
 
-Mirrors [weekly-maintenance.sh](https://gitlab.cee.redhat.com/rhidp/rhdh/-/blob/rhdh-1-rhel-9/build/ci/weekly-maintenance.sh) upstream section:
+Mirrors [weekly-maintenance.sh](https://gitlab.cee.redhat.com/rhidp/rhdh/-/blob/main/build/ci/weekly-maintenance.sh) upstream section:
 
 ```bash
 updateBaseImages.sh -w REPO_ROOT -b BRANCH -sb SCRIPTS_BRANCH -maxdepth 5 --pr
@@ -142,8 +148,10 @@ updateBaseImages.sh -w REPO_ROOT -b BRANCH -sb SCRIPTS_BRANCH -maxdepth 5 --pr
 Matches each repo's GitHub Action, then commits and pushes to the automation PR:
 
 ```bash
+# Bump rotating OpenShift clients N-el9-beta URLs in rpms.in.yaml first
+# (4.21-el9-beta 404s once 4.22-el9-beta is published).
 rpm-lockfile-prototype -f CONTAINERFILE rpms.in.yaml
-git add rpms.lock.yaml
+git add rpms.in.yaml rpms.lock.yaml
 git commit -s -m "chore: update rpms.lock.yaml [skip-build]"
 git push origin <chore/automated-update-base-images-*>   # same PR as base images
 ```
@@ -152,20 +160,31 @@ When no base-images PR exists (e.g. `--skip-base`), the script uses `chore/autom
 
 `rpm-lockfile-prototype` often logs `No sources found for <pkg>` when the matching source RPM is unpublished (commonly `kernel-headers` and `efi-srpm-macros`). The bundled script drops those lines. Never list them as remaining risks; Konflux still consumes the binary lockfile.
 
-### Node headers (rhdh only)
+### Node headers (rhdh, then catalog and overlays)
 
-When the `ubi9/nodejs-*` builder image in `build/containerfiles/Containerfile` ships a different Node version than `.nvmrc` / `.nvm/releases/`, the script:
+When the UBI Node builder image (`ubi9/nodejs-*` today; `ubi10/nodejs-*` when
+that line ships) in `build/containerfiles/Containerfile` (or `docker/Dockerfile`
+on release-1.9) ships a different Node version than `.nvmrc` / `.nvm/releases/`,
+the script:
 
 1. Reads `node --version` from the updated builder image (`podman`/`docker`)
 2. Downloads `https://nodejs.org/dist/<version>/node-<version>-headers.tar.gz` into `.nvm/releases/`
 3. Updates `.nvmrc` (version without `v` prefix) and `.nvm/releases/README.adoc` (date + version)
 4. Removes stale `node-v*-headers.tar.gz` files and pushes to the same automation PR
+5. When a plugin-catalog checkout is in the same run, pins
+   `builder.Containerfile` FROM to the rhdh UBI Node image and rewrites
+   `konflux.additional-tags` `node-v*` (no `[skip-build]`). Headers are the
+   image `node --version`, or the newer `nodejs` RPM from `dnf repoquery`
+   inside that image when the Containerfile `dnf`-installs `nodejs` before the
+   headers `RUN`. Copy rhdh `.nvm/` only when it is at least that version.
+6. When an overlays checkout is in the same run, sets `versions.json` `node` to
+   that `.nvmrc` value
 
 See [rhdh `.nvm/releases/README.adoc`](https://github.com/redhat-developer/rhdh/blob/main/.nvm/releases/README.adoc). On **release-1.9**, headers come from `docker/Dockerfile` (`ubi9/nodejs-22`), not Node 24.
 
 ### Go toolchain (rhdh-operator, main only)
 
-On **main** only (not `release-*`), after base image bumps, reads `go version` from the `ubi9/go-toolset` image in `.rhdh/docker/Dockerfile` and updates `go.mod` **only when that version is newer** than the current `go` / `toolchain` lines:
+On **main** only (not `release-*`), after base image bumps, reads `go version` from the `ubi9/go-toolset` or `ubi10/go-toolset` image in `.rhdh/docker/Dockerfile` and updates `go.mod` **only when that version is newer** than the current `go` / `toolchain` lines:
 
 ```text
 go 1.26.0
@@ -177,11 +196,17 @@ Do not downgrade. If `go.mod` already pins a newer toolchain (for example `go1.2
 ## Anti-patterns
 
 - Pushing without human review.
-- Running on a branch that does not exist in one of the three repos.
+- Running on a branch that does not exist in one of the in-scope repos.
 - Omitting `registry.redhat.io` login before base image updates.
 - Committing `rpms.lock.yaml` without checking the base image minor (e.g. UBI `9.8`) still matches `rpms.in.yaml` repo URLs.
+- Regenerating `rpms.lock.yaml` while `rpms.in.yaml` still points at a vanished OpenShift `N-el9-beta` directory (hermeto FetchError on `openshift-clients`).
 - Treating `rpm-lockfile-prototype` `No sources found for` / "no matching sources" warnings as a failure or remaining risk. The source RPM is often unpublished; the lockfile is still valid.
-- Lowering `go.mod` `toolchain` (or `go`) to match an older `ubi9/go-toolset` image. Keep the newer pin.
+- Lowering `go.mod` `toolchain` (or `go`) to match an older UBI Go toolset image. Keep the newer pin.
+- Copying plugin-catalog `.nvm/` headers while leaving `builder.Containerfile` FROM on an older UBI Node tag, or leaving a stale `node-v*` in `konflux.additional-tags`.
+- Setting catalog headers from the UBI image `node --version` when `builder.Containerfile` `dnf`-installs a newer `nodejs` RPM before the headers `RUN`. That is the 1.10 failure mode: image v24.19.0, module RPM 24.21.0, missing `node-v24.21.0-headers.tar.gz`.
+- Copying an older rhdh `.nvm/` onto a catalog builder whose `dnf` nodejs RPM is newer.
+- Handing catalog FROM / overlays `versions.json` to `/rhdh-konflux-tasks`. That skill invokes this one; it does not pin those files.
+- Claiming Node headers / `.nvmrc` are done while plugin-catalog still advertises an old `node-v*` in `konflux.additional-tags`. Name the catalog (and overlays) checkout outcome or that it was out of scope.
 
 ## Additional resources
 

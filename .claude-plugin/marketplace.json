@@ -22,6 +22,26 @@
       ]
     },
     {
+      "name": "refinement",
+      "source": "./",
+      "description": "Refinement skills from the RHDH pack",
+      "skills": [
+        "./skills/refinement/openspec-new-change",
+        "./skills/reference/rhdh-spec-driven-schema",
+        "./skills/refinement/openspec-continue-change",
+        "./skills/refinement/openspec-ff-change",
+        "./skills/refinement/openspec-apply-change",
+        "./skills/reference/openspec-journal",
+        "./skills/refinement/openspec-archive-change",
+        "./skills/refinement/openspec-bulk-archive-change",
+        "./skills/refinement/openspec-explore",
+        "./skills/refinement/openspec-onboard",
+        "./skills/refinement/openspec-sync-specs",
+        "./skills/refinement/openspec-verify-change",
+        "./skills/refinement/openspec-audit-change"
+      ]
+    },
+    {
       "name": "release",
       "source": "./",
       "description": "Release skills from the RHDH pack",
@@ -30,9 +50,17 @@
         "./skills/release/rhdh-platform-lifecycle",
         "./skills/release/rhdh-release-announce",
         "./skills/reference/prose-editing",
+        "./skills/release/rhdh-release-capacity-plan",
+        "./skills/reference/rhdh-jira-api",
         "./skills/release/rhdh-release-schedule",
         "./skills/release/rhdh-release-status",
         "./skills/release/rhdh-release-teams",
+        "./skills/release/rhdh-release-fixversions",
+        "./skills/reference/mutation-gate",
+        "./skills/release/rhdh-release-sos",
+        "./skills/release/rhdh-smoke-tests",
+        "./skills/release/rhdh-translation-upload",
+        "./skills/release/rhdh-translation-deploy",
         "./skills/release/rhdh-test-plan-review"
       ]
     },
@@ -43,13 +71,14 @@
       "skills": [
         "./skills/ci/rhdh-base-images",
         "./skills/reference/mutation-gate",
+        "./skills/reference/prose-editing",
         "./skills/ci/rhdh-konflux-tasks",
         "./skills/ci/rhdh-konflux-rpa",
         "./skills/reference/rhdh-forge",
         "./skills/ci/rhdh-prow-jobs",
         "./skills/ci/rhdh-prow-release-branch",
-        "./skills/reference/prose-editing",
         "./skills/ci/rhdh-prow-trigger",
+        "./skills/ci/rhdh-pr-mr",
         "./skills/ci/rhdh-yarn-bump"
       ]
     },
@@ -72,9 +101,11 @@
         "./skills/plugins/rhdh-plugin-midstream-propagate",
         "./skills/plugins/rhdh-plugin-nfs-migration",
         "./skills/plugins/rhdh-plugin-wiring",
+        "./skills/plugins/rhdh-playwright",
         "./skills/plugins/rhdh-pr-create",
         "./skills/plugins/rhdh-pr-review",
-        "./skills/plugins/rhdh-test-placement"
+        "./skills/plugins/rhdh-test-placement",
+        "./skills/plugins/rhdh-backport"
       ]
     },
     {
@@ -91,7 +122,8 @@
         "./skills/jira/rhdh-jira-refine",
         "./skills/jira/rhdh-jira-sprint-plan",
         "./skills/jira/rhdh-jira-sprint-report",
-        "./skills/jira/rhdh-jira-update"
+        "./skills/jira/rhdh-jira-update",
+        "./skills/jira/rhdh-feature-docs"
       ]
     }
   ]

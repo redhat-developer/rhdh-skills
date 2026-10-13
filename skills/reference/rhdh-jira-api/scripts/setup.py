@@ -7,7 +7,9 @@
 
 import argparse
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +34,48 @@ def find_acli():
         if candidate.is_file():
             return str(candidate)
     return None
+
+
+def find_token_file(acli_path=None):
+    """Return the token path if the file exists. Never return its contents."""
+    override = os.environ.get("JIRA_TOKEN_FILE")
+    if override:
+        path = Path(override)
+        return path if path.is_file() else None
+    if not acli_path:
+        acli_path = shutil.which("acli")
+    if not acli_path:
+        return None
+    token_path = Path(acli_path).resolve().parent / ".jira-token"
+    return token_path if token_path.is_file() else None
+
+
+def check_token_file(acli_path=None):
+    """Validate .jira-token next to acli (or JIRA_TOKEN_FILE). Never print contents."""
+    token_path = find_token_file(acli_path)
+    if token_path is None:
+        return None, "not found", []
+    warnings = []
+    try:
+        content = token_path.read_text(encoding="utf-8").strip()
+        if "\n" in content:
+            warnings.append("file contains multiple lines — should be a single line")
+        first_line = content.splitlines()[0] if content else ""
+        if ":" not in first_line:
+            return (
+                str(token_path),
+                "missing email prefix (expected email:token format)",
+                warnings,
+            )
+        if sys.platform != "win32":
+            mode = token_path.stat().st_mode
+            if mode & (stat.S_IRGRP | stat.S_IROTH):
+                warnings.append(
+                    "file is readable by group/others — keep chmod 600, do not chmod 644"
+                )
+        return str(token_path), "valid", warnings
+    except OSError as e:
+        return None, f"read error: {e}", warnings
 
 
 def smoke_test(acli_path):
@@ -94,6 +138,10 @@ def main(argv=None):
         "acli_found": False,
         "acli_path": None,
         "adapters": [],
+        "token_file_found": False,
+        "token_file_path": None,
+        "token_file_status": None,
+        "token_file_warnings": [],
         "connectivity": False,
         "connectivity_detail": None,
         "projects_accessible": [],
@@ -111,7 +159,15 @@ def main(argv=None):
         _output(results, args.json)
         sys.exit(1)
 
-    # The smoke test is the credential-store boundary. Do not inspect acli's store.
+    token_path, token_status, token_warnings = check_token_file(acli_path)
+    if token_path:
+        results["token_file_found"] = True
+        results["token_file_path"] = token_path
+    results["token_file_status"] = token_status
+    results["token_file_warnings"] = token_warnings
+
+    # The smoke test is the credential-store boundary for acli. Token-file
+    # status is reported without printing file contents.
     ok, detail = smoke_test(acli_path)
     results["connectivity"] = ok
     results["connectivity_detail"] = detail
@@ -158,6 +214,16 @@ def _output(results, as_json):
     else:
         print(f"  [FAIL] Jira connectivity failed: {results['connectivity_detail']}")
         return
+
+    token_status = results.get("token_file_status")
+    if results.get("token_file_found") and token_status == "valid":
+        print(f"  [PASS] token file found (contents not shown): {results['token_file_path']}")
+    elif results.get("token_file_found"):
+        print(f"  [WARN] token file: {token_status}")
+    else:
+        print("  [WARN] token file not found — Greenhopper REST unavailable")
+    for warning in results.get("token_file_warnings") or []:
+        print(f"  [WARN] token file: {warning}")
 
     # Projects
     if results["projects_accessible"]:

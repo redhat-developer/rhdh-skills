@@ -1,0 +1,76 @@
+schema: rhdh-spec-driven
+
+context: |
+  Domain: Red Hat Developer Hub (RHDH) — enterprise Backstage distribution
+  Tech stack: TypeScript, React, Node.js (Backstage framework)
+  We use conventional commits
+
+  RHDH uses a split canonical model.
+
+  Canonical long-lived documents in `specifications/`:
+  - `specifications/prd/` for the product canon
+  - `specifications/adr/` for architecture decisions
+
+  Canonical long-lived feature and domain specs in `openspec/specs/`:
+  - capability specs that describe enduring system behavior
+  - the long-term destination for feature-level implementation canon
+
+  Change-local OpenSpec workspaces live in `openspec/changes/<change-name>/`.
+
+  ## Journal obligation (all phases)
+
+  Every change has an append-only `journal.jsonl`. Emit interaction events
+  through the `/openspec-journal` skill whenever something load-bearing
+  happens in the change — not only during apply.
+
+  ### Turn bookending (default discipline, every prompt)
+
+  When the active CWD is inside an OpenSpec change, bookend every user
+  turn with two writes:
+
+  1. **Before starting work**, log a `turn.start` event with
+     `input="<paraphrase of the user's ask, <=200 chars>"`.
+  2. **After finishing**, log a `turn.end` event with
+     `output="<what changed, was decided, or was answered>"`.
+
+  This holds for *every* prompt — including pure Q&A turns where no file
+  changes. Writing the input *before* doing the work is a commitment
+  device that prevents post-hoc rationalization. The journal becomes a
+  per-turn session log, not just an artifact log.
+
+  ### Other events (alongside bookending, not instead of it)
+
+  - `change.created` — once, after `openspec new change` succeeds.
+  - `artifact.added` / `artifact.revised` — after writing or editing
+    `proposal.md`, `design.md`, `specs/**/*.md`, `tasks.md`.
+  - `decision` — for a load-bearing call within a turn (still bookended
+    by `turn.start` / `turn.end`).
+  - `skill.invoked` — when a user-invoked skill runs against this change.
+  - `handoff` — last line before stopping a session; first line on resume.
+
+  Apply-phase additions (`mode.chosen`, `task.start`, `task.complete`,
+  `task.blocked`, `verifier.result`, `agent.spawned`) are spelled out in
+  the schema's apply-phase block. `context.compacted` is emitted by the
+  PreCompact hook, not by skills.
+
+  `input` and `output` are rejected if they exceed the helper's hard
+  limit; move long content to `design.md` or an ADR and reference it from
+  the journal entry. See `/openspec-journal` for the full contract and the
+  authoritative event-name → required-field table (consult before emitting
+  an event type for the first time in a session).
+
+rules:
+  proposal:
+    - Keep proposals under 500 words
+    - Always include a "Non-goals" section
+    - Reference existing PRDs in specifications/prd/ when relevant
+    - Follow the project-local `rhdh-spec-driven` schema's canonical touchpoint requirements.
+  specs:
+    - Follow the project-local `rhdh-spec-driven` schema's capability spec.
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - When the change adds or materially edits a long-lived spec under `openspec/specs/<capability>/spec.md`
+    - Follow the project-local `rhdh-spec-driven` schema's task checklist, verification, canonical update requirements.
+  design:
+    - Reference existing ADRs in specifications/adr/ for prior decisions
+    - Follow the project-local `rhdh-spec-driven` schema's lightweight design and canonical touchpoint requirements.

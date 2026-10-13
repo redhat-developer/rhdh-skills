@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Onboard"
+  short_description: "Guided, hands-on walkthrough of a full OpenSpec cycle on a real task"

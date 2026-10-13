@@ -225,7 +225,7 @@ literal token is the strongest routing anchor available.
 
 ## Phase 4: Scripts
 
-Read `scripts-guide.md` for the full guide.
+Read `scripts-guide.md` for shebangs, portability, and the host-linter gate.
 
 **Bias toward scripts.** Every deterministic operation should be a script, not an instruction. Scripts are cheaper (no LLM tokens), faster (no reasoning), and more reliable (no hallucination).
 
@@ -304,6 +304,8 @@ Before presenting the final skill, run the evaluation protocol in
 ### Scripts
 
 - [ ] Scripts (if any) have shebangs, structured output, and `--help`
+- [ ] Changed Python passes the host formatter and linter (`ruff format` and
+      `ruff check` when the host uses ruff)
 - [ ] Context loader returns JSON, handles missing files, resolves fallback paths
 - [ ] Scripts are cross-platform (pathlib, tempfile, no hardcoded paths)
 - [ ] Scripts are idempotent — safe to re-run

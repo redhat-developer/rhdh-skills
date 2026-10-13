@@ -11,7 +11,8 @@ prompt to a grouped tree (select a category header to toggle every skill in
 it).
 
 This repository groups promoted skills into editorial categories in
-`catalog.json` (`jira`, `plugins`, `ci`, `release`, `reference`, `meta`).
+`catalog.json` (`jira`, `plugins`, `ci`, `release`, `refinement`, `reference`,
+`meta`).
 Folders remain editorial for readers of the repo — skills still flatten into
 host skill directories at install. The installer UI should follow the same
 membership, with one exception: `reference` is a shared support layer other
@@ -51,9 +52,9 @@ removed as "leftover marketplace" scaffolding.
 
 ## Consequences
 
-- `npx skills add redhat-developer/rhdh-skills` shows five collapsible groups
-  (Jira, Plugins, CI, Release, Meta). Selecting a group lists that domain's
-  skills plus the reference skills they require.
+- `npx skills add redhat-developer/rhdh-skills` shows six collapsible groups
+  (Jira, Plugins, CI, Release, Refinement, Meta). Selecting a group lists that
+  domain's skills plus the reference skills they require.
 - The `reference/` folder and catalog category remain for authors and
   validators; they are not an installer group.
 - The skills CLI assigns each skill path one `pluginName` (last plugin that

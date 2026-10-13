@@ -24,6 +24,13 @@ source of truth for the promoted skill set and its three required external depen
 3. Report every operation's outcome, including any reported as skipped after a failure.
 4. Run `uv run scripts/setup.py doctor --json`. Repair only the skills still reported missing.
 5. Ask the user to restart or rescan the agent so newly installed descriptions are loaded.
+6. **Seed OpenSpec into the current product repo (when applicable).** If the
+   working directory is a product checkout that will use OpenSpec changes, and
+   either `openspec/config.yaml` or `openspec/schemas/rhdh-spec-driven/` is
+   missing, invoke `/rhdh-spec-driven-schema` and run its project-install step.
+   Take the copy through `/mutation-gate`. Skip when both already exist, or
+   when the user is only installing skills globally with no product repo in
+   scope — the openspec-* skills also check and install at startup when needed.
 
 The script validates every operation before running the first one and executes argument arrays
 directly without a command shell. If validation fails, no installation operation runs.

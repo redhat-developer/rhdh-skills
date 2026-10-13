@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Bulk Archive"
+  short_description: "Archive multiple completed OpenSpec changes at once, resolving spec conflicts"

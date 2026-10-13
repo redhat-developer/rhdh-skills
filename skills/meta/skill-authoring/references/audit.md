@@ -95,6 +95,8 @@ misfires or bloats.
 - [ ] No interactive prompts — all input via flags, env, or stdin
 - [ ] Cross-platform paths (`pathlib`, no hardcoded separators)
 - [ ] Error messages explain what went wrong and what to do
+- [ ] Changed Python passes the host formatter and linter (`ruff format` and
+      `ruff check` when the host uses ruff)
 
 **Evaluations:**
 

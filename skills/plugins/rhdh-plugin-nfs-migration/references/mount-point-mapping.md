@@ -368,7 +368,7 @@ RHDH's global header plugin is being migrated to extension blueprints in `rhdh-p
 
 | Plugin | Mount points used | NFS blueprints | PR |
 |--------|------------------|----------------|-----|
-| lightspeed | `application/listener`, `application/internal/drawer-content` | `AppRootWrapperBlueprint` (FAB), `AppDrawerContentBlueprint`, `PageBlueprint` | [#2721](https://github.com/redhat-developer/rhdh-plugins/pull/2721) |
+| intelligent-assistant | `application/listener`, `application/internal/drawer-content` | `AppRootWrapperBlueprint` (FAB), `AppDrawerContentBlueprint`, `PageBlueprint` | [#2721](https://github.com/redhat-developer/rhdh-plugins/pull/2721) |
 | quickstart | `application/provider`, `application/internal/drawer-state`, `global.header/help` | `AppDrawerContentBlueprint`, `GlobalHeaderMenuItemBlueprint`, `AppRootElementBlueprint` | [#2842](https://github.com/redhat-developer/rhdh-plugins/pull/2842) |
 | homepage | `home.page/cards` | `HomePageWidgetBlueprint` | [#2423](https://github.com/redhat-developer/rhdh-plugins/pull/2423) |
 | orchestrator | `entity.page.workflows/cards` | `EntityContentBlueprint` | [#2526](https://github.com/redhat-developer/rhdh-plugins/pull/2526) |

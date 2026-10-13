@@ -127,6 +127,22 @@ order-preserving YAML round-tripping with `ruamel.yaml`, which stdlib cannot do:
 Run with `uv run --script scripts/update_yaml.py`. Do not add other PEP 723 dependencies without a
 recorded decision that moves the portability boundary for the whole collection.
 
+## Host linter
+
+Leave bundled Python in the style the host repository already enforces. Run that
+formatter and linter on every changed `.py` file before the skill is complete,
+before a commit, and before a pull request. A lint `check` passing is not enough
+when the host also formats.
+
+When the host uses ruff via uv:
+
+```bash
+uv run ruff format path/to/changed.py
+uv run ruff check path/to/changed.py
+```
+
+Do not invent a private quote or import style that the formatter will rewrite.
+
 ## Designing for Agents
 
 Scripts invoked by agents should follow these patterns:

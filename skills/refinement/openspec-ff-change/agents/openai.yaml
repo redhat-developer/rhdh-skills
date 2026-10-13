@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec Fast-Forward"
+  short_description: "Generate every artifact an OpenSpec change needs before implementation, in one pass"

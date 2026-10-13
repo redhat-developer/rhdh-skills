@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH PR / MR"
+  short_description: "Push a topic branch and open a GitHub PR or GitLab CEE MR; link Jira when known"

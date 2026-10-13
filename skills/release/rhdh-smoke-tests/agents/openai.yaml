@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Smoke Tests"
+  short_description: "Catalog-index OCI first, then Helm and Operator RC/GA smoke"

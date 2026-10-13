@@ -1,0 +1,3 @@
+interface:
+  display_name: "OpenSpec New Change"
+  short_description: "Scaffold a new OpenSpec change and show its first artifact template"

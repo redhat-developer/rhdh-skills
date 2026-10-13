@@ -34,6 +34,7 @@ depend on another installed skill's files or CLI.
 | Onboard a plugin | `workflows/onboard-plugin.md` |
 | Update source version or commit | `workflows/update-plugin.md` |
 | Diagnose an export or publish failure | `workflows/fix-build.md` |
+| Look up a plugin version or installation artifact at a branch or tag | Follow the metadata lookup below |
 | Check workspace status | `references/overlay-repo.md`, then inspect workspace files and recent `gh` runs |
 | Triage the open PR backlog | `workflows/triage-prs.md`; use `scripts/triage-prs.py` for deterministic classification |
 | Analyze one overlay PR | `workflows/analyze-pr.md`; use `scripts/analyze-pr.py` |
@@ -42,6 +43,16 @@ depend on another installed skill's files or CLI.
 
 Infer a clear route. Ask only for a missing plugin, workspace, source ref, or PR
 number that cannot be discovered from the checkout.
+
+## Metadata lookup
+
+Use the requested overlay branch or tag, defaulting to `main`, for every read.
+Read `catalog-entities/extensions/plugins/<plugin-name>.yaml` at that ref,
+resolve `spec.packages`, then locate each Package entity in the workspace's
+`metadata/` directory at the same ref. Report `spec.packageName`, `spec.version`,
+and `spec.dynamicArtifact` from those entities. Use `git show <ref>:<path>` in
+the overlay checkout; report a missing ref or metadata instead of falling back
+to `main`. Read `references/metadata-format.md` for the entity fields.
 
 ## Invariants
 

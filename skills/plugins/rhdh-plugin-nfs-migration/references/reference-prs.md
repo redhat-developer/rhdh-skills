@@ -8,7 +8,7 @@ Real-world NFS migration PRs from the `rhdh-plugins` repository. Use these as pa
 | bulk-import | [#2247](https://github.com/redhat-developer/rhdh-plugins/pull/2247) | Page + Nav + permission-based access patterns | Low-Medium — adds permission handling |
 | scorecard | [#2487](https://github.com/redhat-developer/rhdh-plugins/pull/2487) | EntityContent + HomePageWidget blueprints | Medium — multi-extension-type migration |
 | orchestrator | [#2526](https://github.com/redhat-developer/rhdh-plugins/pull/2526) | EntityContent + multiple routes/pages | Medium — complex routing with entity integration |
-| lightspeed | [#2721](https://github.com/redhat-developer/rhdh-plugins/pull/2721) | Drawer + FAB using RHDH-specific blueprints | Medium — RHDH-specific extensions (AppDrawerContent + AppRootElement) |
+| intelligent-assistant | [#2721](https://github.com/redhat-developer/rhdh-plugins/pull/2721) | Drawer + FAB using RHDH-specific blueprints | Medium — RHDH-specific extensions (AppDrawerContent + AppRootElement) |
 | extensions | [#2527](https://github.com/redhat-developer/rhdh-plugins/pull/2527) | `compatWrapper` usage for legacy components | Medium — bridging legacy and NFS |
 | homepage | [#2423](https://github.com/redhat-developer/rhdh-plugins/pull/2423) | HomePageWidgets + compatWrapper | Medium — homepage integration with legacy compat |
 | quickstart | [#2842](https://github.com/redhat-developer/rhdh-plugins/pull/2842) | Drawer + GlobalHeaderMenuItem | Medium-High — RHDH drawer + header menu integration |

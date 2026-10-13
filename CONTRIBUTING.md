@@ -8,8 +8,14 @@ interfaces or breaking distribution.
 ```bash
 uv sync --extra dev
 git config core.hooksPath .githooks
+uv run ruff check .
+uv run ruff format --check .
 uv run pytest
 ```
+
+`.githooks/pre-commit` runs the ruff hooks in `.pre-commit-config.yaml`. Set
+`core.hooksPath` as above so those hooks fire; a Red Hat `rh-pre-commit` hook in
+`.git/hooks/` does not format Python.
 
 For end-to-end skill use, install the complete pack documented in
 [README.md](README.md), including `/grilling`, `/code-review`, and `/handoff`.
@@ -23,6 +29,7 @@ are editorial and are stripped at install:
 - `skills/plugins/`
 - `skills/ci/`
 - `skills/release/`
+- `skills/refinement/`
 - `skills/reference/`
 - `skills/meta/`
 
@@ -69,7 +76,8 @@ root. Retired history belongs under `internal/deprecated/`. Neither ships.
    marketplace product — see [ADR-0009](docs/adr/0009-skills-cli-plugin-manifest.md).
 8. Update `README.md` if membership or naming changed.
 9. Add script, adapter, and catalog contract tests as applicable.
-10. Run `uv run pytest`.
+10. Run `uv run ruff format` and `uv run ruff check` on every changed `.py`
+    file, then `uv run pytest`.
 
 ### Rules the validator and reviewers enforce
 

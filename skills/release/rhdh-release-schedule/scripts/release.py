@@ -22,18 +22,24 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 _scripts_dir = Path(__file__).resolve().parent
 if str(_scripts_dir) not in sys.path:
     sys.path.insert(0, str(_scripts_dir))
 
+# Shared ADF milestone parsing lives in rhdh-jira-api (requiresSkills dependency).
+_jira_api_scripts = Path(__file__).resolve().parents[3] / "reference" / "rhdh-jira-api" / "scripts"
+if str(_jira_api_scripts) not in sys.path:
+    sys.path.insert(0, str(_jira_api_scripts))
+
 import _jira as jira_mod  # noqa: E402
 import jql as jql_mod  # noqa: E402
 import rich_filter as rf_mod  # noqa: E402
 import slack_templates as slack_mod  # noqa: E402
 from _support import OutputFormatter, find_acli  # noqa: E402
+from adf_milestones import extract_milestone_dates as _extract_milestone_dates  # noqa: E402
 
 JIRA_BASE = "https://issues.redhat.com"
 SCHEDULE_SHEET_ID = "1knVzlMW0l0X4c7gkoiuaGql1zuFgEGwHHBsj-ygUTnc"
@@ -183,59 +189,6 @@ def _parse_date(raw: str) -> str | None:
         except ValueError:
             continue
     return None
-
-
-_MILESTONE_LABELS = {
-    "feature_freeze": r"\bFeature Freeze\b",
-    "code_freeze": r"\bCode Freeze\b",
-    "doc_freeze": r"\bDocs? Freeze\b",
-    "go_no_go": r"\bGo/No Go\b",
-    "ga_announce": r"\bGA Announce\b",
-}
-
-
-def _adf_text(node: dict) -> str:
-    """Render the text and date values from an Atlassian Document Format node."""
-    if node.get("type") == "text":
-        return node.get("text", "")
-    if node.get("type") == "date":
-        try:
-            timestamp = int(node.get("attrs", {}).get("timestamp"))
-            return datetime.fromtimestamp(timestamp / 1000, timezone.utc).date().isoformat()
-        except (TypeError, ValueError, OverflowError):
-            return ""
-    return " ".join(filter(None, (_adf_text(child) for child in node.get("content", []))))
-
-
-def _adf_table_rows(node: dict) -> list[str]:
-    """Return rendered rows from an ADF document's tables."""
-    rows = []
-    if node.get("type") == "tableRow":
-        rows.append(" | ".join(_adf_text(cell).strip() for cell in node.get("content", [])))
-    for child in node.get("content", []):
-        rows.extend(_adf_table_rows(child))
-    return rows
-
-
-def _extract_milestone_dates(description: dict | str | None) -> dict[str, str]:
-    """Extract release milestone dates from ADF table rows or legacy plain text."""
-    dates = {key: "TBD" for key in _MILESTONE_LABELS}
-    if isinstance(description, dict):
-        lines = _adf_table_rows(description)
-    elif isinstance(description, str):
-        lines = description.splitlines()
-    else:
-        return dates
-
-    for line in lines:
-        parsed_date = re.search(r"\b\d{4}-\d{2}-\d{2}\b", line)
-        if not parsed_date:
-            continue
-        for key, label_pattern in _MILESTONE_LABELS.items():
-            if re.search(label_pattern, line, re.IGNORECASE):
-                dates[key] = parsed_date.group(0)
-                break
-    return dates
 
 
 def _row_date(cells: list[str]) -> str | None:
@@ -836,7 +789,7 @@ def cmd_notes(args: argparse.Namespace, fmt: OutputFormatter) -> None:
         jql, url = jql_mod.render_with_url(template_name, version=version)
         lifecycle[stage] = {"count": _acli_count(jql, fmt), "jira_url": url}
 
-    dashboard_url = "https://issues.redhat.com/secure/Dashboard.jspa?selectPageId=12382090"
+    dashboard_url = "https://redhat.atlassian.net/jira/dashboards/21418"
 
     fmt.header(f"RHDH {version} — Release Notes")
     for stage, data in lifecycle.items():

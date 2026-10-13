@@ -27,6 +27,11 @@ For each breaking change in the changelogs:
 | Removed API | `import { removedFn }` | Replace with recommended alternative from changelog |
 | Changed signature | Type errors on function calls | Update call site per changelog |
 | New required field | Missing property errors | Add the new field |
+| New or renamed service factory | Missing backend service errors | Compare `@backstage/backend-defaults` exports and update the checkout's default service factory registration |
+
+When a failure points to an `@red-hat-developer-hub/*` package, inspect its peer
+ranges and release metadata. Choose the smallest published version compatible
+with the target Backstage release rather than upgrading to latest by default.
 
 ## Per-package changelogs
 
