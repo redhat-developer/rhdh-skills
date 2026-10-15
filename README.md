@@ -48,7 +48,7 @@ one. It performs no work itself.
 and the single source of truth for membership. This file does not restate it.
 
 Three skills are human-invoked and never selected automatically: `/ask-rhdh`,
-`/setup-rhdh-skills`, and `/clean-prose`. The other 60 are model-invoked, and can
+`/setup-rhdh-skills`, and `/clean-prose`. The other 63 are model-invoked, and can
 also be called by name.
 
 Skills are grouped into seven folders:
