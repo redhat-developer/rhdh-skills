@@ -101,6 +101,13 @@ If `dry_run` is true in the script output, or the user requested a dry run:
 
 3. Stop. Do not invoke `/mutation-gate` or execute any operations.
 
+## Step 4b — Verify CI
+
+Re-check CI status live on every PR whose decision depends on it (approve+merge,
+skip-for-CI-failure, or any decision that would change if CI flipped). Run
+`gh pr checks` for each and compare against the script snapshot. Update the
+decision table for any PR whose CI status has changed before proceeding.
+
 ## Step 5 — Approve plan
 
 Skipped in dry-run mode.

@@ -132,3 +132,7 @@ All PR merges use the **squash** strategy (`gh pr merge --squash`).
 
 All required checks must be green. Skip `tide` when evaluating CI status on
 repos that use Prow — `tide` is a merge gate, not a quality signal.
+
+CI status must be verified live (`gh pr checks`) before executing any decision
+that depends on it. The status returned by the listing script is a snapshot that
+can go stale within minutes — never treat it as authoritative for execution.
