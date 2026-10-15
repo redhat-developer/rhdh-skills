@@ -1,0 +1,87 @@
+name: skill-authoring-behavior
+description: Evaluate create, audit, and consolidate behavior after explicit skill invocation.
+
+execution:
+  mode: case
+  skill: skill-authoring
+  arguments: "{{ input.prompt }}"
+  timeout: 1800
+  parallelism: 1
+
+runner:
+  type: codex
+  effort: high
+
+models:
+  skill: gpt-5.6-luna
+  judge: gpt-5.6-luna
+
+dataset:
+  path: dataset/cases
+  schema: |
+    Each case contains input.yaml with the complete request, annotations.yaml
+    with workflow and a case-specific semantic rubric, and a fixture/ directory
+    copied into the isolated workspace. The agent must write its final artifact
+    or report beneath output/.
+  workspace:
+    files:
+      - fixture/
+
+outputs:
+  - path: output
+    schema: |
+      The completed skill directory, audit report, or consolidation decision
+      requested by the case. Files must be self-contained and portable.
+
+traces:
+  stdout: true
+  stderr: true
+  events: true
+  metrics: true
+
+judges:
+  - name: produced_output
+    description: Every workflow leaves a non-empty reviewable artifact under output/.
+    check: |
+      content = str(outputs.get("output_content", ""))
+      if content.strip():
+          return True, "output/ contains a collected artifact"
+      return False, "output/ is empty or missing"
+
+  - name: behavior_quality
+    description: Score the result against the case-specific observable rubric.
+    feedback_type: int
+    score_range: [1, 5]
+    samples: 3
+    model: gpt-5.6-luna
+    prompt: |
+      Evaluate only observable output and visible process evidence. Do not infer
+      hidden reasoning. Use the case rubric in annotations. Score 5 only when all
+      requirements are satisfied, 3 when the core task succeeds with material
+      omissions, and 1 when the workflow or result is fundamentally wrong.
+
+      Case input:
+      {{ inputs }}
+
+      Case annotations:
+      {{ annotations }}
+
+      Agent response:
+      {{ conversation }}
+
+      Collected artifacts:
+      {{ outputs }}
+    agent:
+      runner:
+        type: codex
+        effort: high
+      allowed_tools: [Read, Grep, Glob]
+      inputs: [output]
+
+thresholds:
+  produced_output:
+    min_pass_rate: 1.0
+    max_error_rate: 0.0
+  behavior_quality:
+    min_mean: 3.5
+    max_error_rate: 0.0

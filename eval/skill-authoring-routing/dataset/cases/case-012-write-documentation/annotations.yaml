@@ -1,0 +1,3 @@
+should_trigger: false
+category: negative-documentation
+rationale: Ordinary documentation authoring does not create, audit, or consolidate an Agent Skill.

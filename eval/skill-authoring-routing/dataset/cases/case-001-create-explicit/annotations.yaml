@@ -1,0 +1,3 @@
+should_trigger: true
+category: explicit-create
+rationale: Explicitly requests creation of an Agent Skill.

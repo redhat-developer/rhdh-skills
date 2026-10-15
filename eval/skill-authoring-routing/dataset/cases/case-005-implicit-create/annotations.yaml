@@ -1,0 +1,3 @@
+should_trigger: true
+category: implicit-create
+rationale: Describes creating a reusable agent capability without naming SKILL.md.

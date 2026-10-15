@@ -1,0 +1,5 @@
+prompt: |
+  Consolidate fixture/draft-runbook and fixture/create-runbook into one deeper
+  portable Agent Skill under output/runbook-create. Preserve supported behavior,
+  remove obsolete names from the result, and include a reviewer-facing summary
+  in output/decision.md. The two fixture skills are the complete scope.

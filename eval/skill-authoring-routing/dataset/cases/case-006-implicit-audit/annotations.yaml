@@ -1,0 +1,3 @@
+should_trigger: true
+category: implicit-audit
+rationale: Describes under-triggering and requests repair without using the formal file name.
