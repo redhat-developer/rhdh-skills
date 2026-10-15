@@ -24,7 +24,10 @@ Main is a development branch — major version bumps are allowed.
 
 ## Release branch (release-x.y)
 
-Look up the release state for the corresponding RHDH minor version.
+Look up the release state for the corresponding RHDH minor version by invoking
+`/rhdh-release-schedule`. Unless told otherwise, never guess release dates or rely on persisted memory —
+release states may change frequently and a stale assumption can destabilize an
+imminent GA. Always use the live result.
 
 | Condition | Decision | Reason |
 |-----------|----------|--------|
