@@ -90,10 +90,17 @@ Go binary. Currently:
 
 When `go_directive_bumped` or `go_toolchain_bumped` is true in a PR from one of
 these repos on a release branch, close it per the rules above — unless the PR
-also carries a `[security]` label, in which case skip it and leave a comment
-flagging it for human review. The security fix may need to land via a manual
-patch that does not bump the directive. On main, Go directive and toolchain
-bumps are allowed and follow normal main-branch rules.
+also carries a `[security]` label, in which case flag it for human review
+instead of closing. The security fix may need to land via a manual patch that
+does not bump the directive.
+
+To avoid spamming on repeated triage runs, only post a new flag comment when the
+PR has had new commits or review activity since the last flag comment. If a
+previous triage run already left a flag comment and nothing has changed since,
+skip the PR silently.
+
+On main, Go directive and toolchain bumps are allowed and follow normal
+main-branch rules.
 
 ## Chart repo special rules
 
