@@ -262,8 +262,8 @@ def test_shared_adf_parser_keeps_the_current_milestone_date():
     dates = milestones.extract_milestone_dates(description)
     assert dates["code_freeze"] == f"{datetime.now().year}-08-31"
     assert dates["feature_freeze"] == "TBD"
-    assert milestones.parse_natural_date("Sep 2, 2025") == "2025-09-02"
-    assert milestones.parse_natural_date("TBD") is None
+    assert milestones._parse_natural_date("Sep 2, 2025") == "2025-09-02"
+    assert milestones._parse_natural_date("TBD") is None
 
 
 def test_plugin_metadata_reads_every_file_at_the_requested_ref(monkeypatch):
