@@ -30,7 +30,9 @@ Look up the release state for the corresponding RHDH minor version.
 |-----------|----------|--------|
 | RHDH x.y is EOL | close | Closing — RHDH x.y is end of life |
 | Major version bump | close | No major bumps on release branches |
+| Go repo: `go` directive bumped in go.mod, PR has `[security]` label | flag | Human review — security + go directive bump |
 | Go repo: `go` directive bumped in go.mod | close | Go directive frozen on release branches |
+| Go repo: `toolchain` non-patch bump, PR has `[security]` label | flag | Human review — security + toolchain bump |
 | Go repo: `toolchain` non-patch bump | close | Only toolchain patch bumps on release branches |
 | Release state is TBD or unknown | unknown | Cannot determine CF/FF/GA state for x.y.z — report as undecidable |
 | At CF or FF | hold | /hold until x.y.z is out |
@@ -87,8 +89,11 @@ Go binary. Currently:
   no `go.mod`)
 
 When `go_directive_bumped` or `go_toolchain_bumped` is true in a PR from one of
-these repos on a release branch, close it per the rules above. On main, Go
-directive and toolchain bumps are allowed and follow normal main-branch rules.
+these repos on a release branch, close it per the rules above — unless the PR
+also carries a `[security]` label, in which case skip it and leave a comment
+flagging it for human review. The security fix may need to land via a manual
+patch that does not bump the directive. On main, Go directive and toolchain
+bumps are allowed and follow normal main-branch rules.
 
 ## Chart repo special rules
 
