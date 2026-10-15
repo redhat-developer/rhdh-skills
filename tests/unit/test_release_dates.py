@@ -246,3 +246,186 @@ def test_versions_absent_from_the_source_are_left_alone(mod):
     mod.render_github(source, gh_doc)
 
     assert gh_entry(gh_doc, "2.1.0")["feature-freeze"] == "2026-09-22"
+
+
+# ---------------------------------------------------------------------------
+# A supplied date that is not YYYY-MM-DD is never written
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_date", ["next Tuesday", "2026-13-45", "09/22/2026"])
+def test_a_non_date_value_is_reported_invalid_not_rendered(mod, bad_date):
+    gh_doc = load(GITHUB_FILE)
+    gl_doc = load(GITLAB_FILE)
+    source = {"2.2.0": {**COMPLETE_2_1, "feature_freeze": bad_date}}
+
+    assert states(mod.diff_github(source, load(GITHUB_FILE))) == {"2.2.0": "invalid"}
+    assert states(mod.diff_gitlab(source, load(GITLAB_FILE))) == {"2.2.0": "invalid"}
+
+    gh_changed, gh_skipped = mod.render_github(source, gh_doc)
+    gl_changed, gl_skipped = mod.render_gitlab(source, gl_doc)
+
+    assert gh_changed is False and gl_changed is False
+    assert gh_entry(gh_doc, "2.2.0") is None
+    assert "2.2.0" not in gl_doc["releases"]
+    assert gh_skipped[0]["reason"] == "invalid-date"
+    assert gl_skipped[0]["reason"] == "invalid-date"
+
+
+def test_trailing_whitespace_on_tbd_is_still_treated_as_tbd(mod):
+    source = {"2.2.0": {**COMPLETE_2_1, "feature_freeze": "TBD "}}
+
+    assert states(mod.diff_github(source, load(GITHUB_FILE))) == {"2.2.0": "skipped-tbd"}
+
+
+def test_a_valid_iso_date_still_renders(mod):
+    gh_doc = load(GITHUB_FILE)
+    source = {"2.2.0": {**COMPLETE_2_1, "feature_freeze": "2027-01-05"}}
+
+    changed, skipped = mod.render_github(source, gh_doc)
+
+    assert changed is True
+    assert skipped == []
+    assert gh_entry(gh_doc, "2.2.0")["feature-freeze"] == "2027-01-05"
+
+
+def test_an_existing_entrys_invalid_update_is_not_written(mod):
+    gh_doc = load(GITHUB_FILE)
+    source = {"2.1.0": {**COMPLETE_2_1, "feature_freeze": "not-a-date"}}
+
+    changed, skipped = mod.render_github(source, gh_doc)
+
+    assert changed is False
+    assert skipped[0]["reason"] == "invalid-date"
+    assert gh_entry(gh_doc, "2.1.0")["feature-freeze"] == "2026-09-22"
+
+
+# ---------------------------------------------------------------------------
+# A bare x.y (what the planned-release spreadsheet path normalizes to) is a
+# transcription bug, not an out-of-scope z-stream
+# ---------------------------------------------------------------------------
+
+
+def test_a_bare_major_minor_version_is_reported_invalid(mod):
+    source = {"2.2": {**COMPLETE_2_1}}
+
+    report = mod.diff_github(source, load(GITHUB_FILE))
+
+    assert report[0]["state"] == "invalid"
+    assert "x.y.0" in report[0]["error"]
+
+
+def test_a_genuine_zstream_is_still_skipped_not_invalid(mod):
+    source = {"1.10.5": {**COMPLETE_2_1}}
+
+    assert states(mod.diff_github(source, load(GITHUB_FILE))) == {"1.10.5": "skipped-zstream"}
+
+
+def _forbid_subprocess_calls(*_args, **_kwargs):
+    raise AssertionError("no subprocess call should happen")
+
+
+# ---------------------------------------------------------------------------
+# apply refuses to write to a protected or misconfigured base branch
+# ---------------------------------------------------------------------------
+
+
+def test_apply_github_refuses_the_configured_base_branch(mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(mod, "BRANCH_NAME", mod.GITHUB_BASE_BRANCH)
+    monkeypatch.setattr(mod, "_run", _forbid_subprocess_calls)
+
+    result = mod.apply_github(tmp_path / "rendered.yaml")
+
+    assert result == {
+        "target": "github",
+        "ok": False,
+        "error": (
+            f"refusing to apply: RELEASE_DATE_UPDATE_BRANCH='{mod.GITHUB_BASE_BRANCH}' is a "
+            "protected branch, not an update branch"
+        ),
+    }
+
+
+@pytest.mark.parametrize("protected", ["main", "master", "develop", "release-1.10"])
+def test_apply_github_refuses_well_known_protected_names(mod, monkeypatch, tmp_path, protected):
+    monkeypatch.setattr(mod, "BRANCH_NAME", protected)
+    monkeypatch.setattr(mod, "_run", _forbid_subprocess_calls)
+
+    result = mod.apply_github(tmp_path / "rendered.yaml")
+
+    assert result["ok"] is False
+    assert "protected branch" in result["error"]
+
+
+def test_apply_gitlab_refuses_the_configured_base_branch(mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(mod, "BRANCH_NAME", mod.GITLAB_BASE_BRANCH)
+    monkeypatch.setattr(mod, "_run", _forbid_subprocess_calls)
+
+    result = mod.apply_gitlab(tmp_path / "rendered.yaml")
+
+    assert result["ok"] is False
+    assert "protected branch" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# apply refuses when the base file moved since render ran
+# ---------------------------------------------------------------------------
+
+
+def test_refuse_source_drift_is_silent_when_nothing_expected(mod):
+    assert mod._refuse_source_drift("github", None, "sha-current") is None
+
+
+def test_refuse_source_drift_is_silent_when_revision_matches(mod):
+    assert mod._refuse_source_drift("github", "sha-same", "sha-same") is None
+
+
+def test_refuse_source_drift_flags_a_mismatch(mod):
+    result = mod._refuse_source_drift("github", "sha-old", "sha-new")
+
+    assert result["ok"] is False
+    assert "sha-old" in result["error"]
+    assert "sha-new" in result["error"]
+
+
+def test_apply_github_refuses_on_source_drift_before_any_write(mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(mod, "fetch_github_file", lambda ref=None: ("content", "sha-current"))
+    monkeypatch.setattr(mod, "_run", _forbid_subprocess_calls)
+
+    result = mod.apply_github(tmp_path / "rendered.yaml", expect_revision="sha-old")
+
+    assert result["ok"] is False
+    assert "sha-old" in result["error"]
+    assert "sha-current" in result["error"]
+
+
+def test_apply_gitlab_refuses_on_source_drift_before_any_write(mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(mod, "fetch_gitlab_file", lambda ref=None: ("content", "commit-current"))
+    monkeypatch.setattr(mod, "_run", _forbid_subprocess_calls)
+
+    result = mod.apply_gitlab(tmp_path / "rendered.yaml", expect_revision="commit-old")
+
+    assert result["ok"] is False
+    assert "commit-old" in result["error"]
+    assert "commit-current" in result["error"]
+
+
+def test_apply_github_proceeds_past_the_drift_check_on_a_matching_revision(
+    mod, monkeypatch, tmp_path
+):
+    """A matching --expect-source-revision must not be refused.
+
+    Rather than mock the whole gh/glab call chain for a full success path,
+    let the next subprocess call raise a distinguishable marker — reaching it
+    proves the drift check passed silently, which is `_refuse_source_drift`'s
+    documented behaviour on a match.
+    """
+    monkeypatch.setattr(mod, "fetch_github_file", lambda ref=None: ("content", "sha-same"))
+
+    def _marker(*_args, **_kwargs):
+        raise RuntimeError("past the drift check")
+
+    monkeypatch.setattr(mod, "_run", _marker)
+
+    with pytest.raises(RuntimeError, match="past the drift check"):
+        mod.apply_github(tmp_path / "rendered.yaml", expect_revision="sha-same")

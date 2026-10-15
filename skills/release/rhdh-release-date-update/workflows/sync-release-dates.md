@@ -1,12 +1,24 @@
 # Sync release dates — full run
 
 Run every command from **this skill's directory** (the folder containing
-`SKILL.md`), not the rhdh-skills repository root.
+`SKILL.md`), not the rhdh-skills repository root. Every `scripts/release_dates.py`
+invocation uses `uv run --script` — the script declares `ruamel.yaml` through
+PEP 723, and only `uv run --script` resolves that dependency without the
+repository's own dev environment, per ADR-0002's YAML exception. A bare
+`scripts/release_dates.py ...` relies on the shebang, which cannot work on
+Windows, where the skill also runs.
+
+Create one working directory for the run and use its path throughout — never a
+literal `/tmp` path, which does not exist on Windows:
+
+```bash
+WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/rhdh-release-dates.XXXXXX")  # Windows: %TEMP% or tempfile.mkdtemp()
+```
 
 ## 1. Capability gate
 
 ```bash
-uv run scripts/release_dates.py check
+uv run --script scripts/release_dates.py check
 ```
 
 Fails closed if `gh auth status` or `glab auth status --hostname
@@ -16,20 +28,32 @@ missing capability.
 
 ## 2. Get source-of-truth dates
 
-Invoke `/rhdh-release-schedule` for every RHDH version it reports as active
-or planned (or the single version the human named, if the request scoped one).
-Transcribe its answer — including which source produced each date — into the
-source-JSON shape in `references/target-schemas.md`, and write it to a temp
-file, e.g. `/tmp/rhdh-release-dates.json`.
+Invoke `/rhdh-release-schedule` for every RHDH version **currently active**
+(its `dates` path enumerates these on its own), plus any **planned** version
+the human explicitly named in the request. Transcribe the answer — including
+which source produced each date — into the source-JSON shape in
+`references/target-schemas.md`, and write it to `$WORKDIR/source.json`.
+
+Planned releases cannot be enumerated: `/rhdh-release-schedule`'s planned path,
+`future-dates {{VERSION}}`, requires a version from the caller, and that
+skill's own workflow says not to answer for every release at once. A planned
+release the human never named is outside this run's scope — say so in the
+final report rather than reporting a false clean, and do not guess at which
+planned versions might exist.
 
 This step is not scriptable: `/rhdh-release-schedule` itself reads Jira and a
 spreadsheet through an agent, not a fixed API call. Everything after this
 step is deterministic.
 
-Three things go wrong here if you transcribe on autopilot. The field mapping is
+Four things go wrong here if you transcribe on autopilot. The field mapping is
 in `references/target-schemas.md` — read it before building the JSON:
 
 - `ga_push` is the **GA announce** date, not Go/No Go & Push.
+- The planned-release path normalizes the version to `x.y` (for example
+  `"2.2"`) and names the GA field `ga_date`. Restore the patch component —
+  `x.y.0` — and rename `ga_date` to `ga_push` when building the source JSON.
+  Passed through unchanged, the version is reported `invalid` and `ga_push` is
+  reported missing.
 - `backstage_version` is **not** something `/rhdh-release-schedule` reports.
   Read it from the target file's existing entry, or ask the human for a release
   being added. Omit the field rather than guessing — the script preserves what
@@ -40,7 +64,7 @@ in `references/target-schemas.md` — read it before building the JSON:
 ## 3. Diff
 
 ```bash
-uv run scripts/release_dates.py diff --source-json /tmp/rhdh-release-dates.json
+uv run --script scripts/release_dates.py diff --source-json "$WORKDIR/source.json"
 ```
 
 Read the JSON report. Each target (`github`, `gitlab`) lists one entry per
@@ -52,13 +76,14 @@ version with `state`:
 | `stale` | Fix it — `desired` holds the corrected fields |
 | `missing` | Add it — absent from the file and fully specified |
 | `incomplete` | Absent, but the source lacks `missing_fields`. Do not write a partial entry: ask the human for those values and re-run, or report it as needing a human |
+| `invalid` | A supplied date is not `YYYY-MM-DD`, or the version is not `x.y.0` — `invalid_fields` or `error` names the problem. Fix the transcription and re-run; never force a value through |
 | `skipped-tbd` | Feature Freeze undecided upstream — leave alone |
 | `skipped-zstream` | Not an `x.y.0` release; neither file tracks it |
 
 Every state is named in the final report, including the skipped ones.
 
 If no entry across both targets is `stale` or `missing`, skip to step 7 and
-report a clean run — still naming any `incomplete` entries and the
+report a clean run — still naming any `incomplete` or `invalid` entries and the
 pinned-issue gap.
 
 ## 4. Render
@@ -66,15 +91,19 @@ pinned-issue gap.
 For each target with at least one `stale` or `missing` entry:
 
 ```bash
-uv run scripts/release_dates.py render --target github \
-  --source-json /tmp/rhdh-release-dates.json --output /tmp/rendered-github.yaml
-uv run scripts/release_dates.py render --target gitlab \
-  --source-json /tmp/rhdh-release-dates.json --output /tmp/rendered-gitlab.yaml
+uv run --script scripts/release_dates.py render --target github \
+  --source-json "$WORKDIR/source.json" --output "$WORKDIR/rendered-github.yaml"
+uv run --script scripts/release_dates.py render --target gitlab \
+  --source-json "$WORKDIR/source.json" --output "$WORKDIR/rendered-gitlab.yaml"
 ```
 
 `render` regenerates the whole file from source-of-truth every time — never a
 partial patch — so re-running this workflow is always safe. It never touches
 a version absent from the source JSON, so historical entries are untouched.
+
+Each render's JSON output includes `source_revision` — the exact base-file
+revision it read. Hold on to it per target; step 6's `apply` command needs it
+to detect whether the base file moved before the push actually happens.
 
 ## 5. Get the PR / MR creation command from `/rhdh-forge`
 
@@ -97,19 +126,22 @@ open PR/MR without a separate "update" call.
 
 ## 6. Build one bundled plan and get approval
 
-Invoke `/mutation-gate` and follow it. State every operation as one set:
+Invoke `/mutation-gate` and follow it. State every operation as one set —
+`{source-revision}` below is the value step 4 captured for that target:
 
 | Target | Operation | Command | Precondition | On failure |
 |---|---|---|---|---|
-| GitHub | Push rendered file to branch | `scripts/release_dates.py apply --target github --github-rendered /tmp/rendered-github.yaml --confirm` | Branch `rhdh-release-date-update` created or already exists at `redhat-developer/rhdh-plugin-export-overlays` | Report the API error; nothing on `main` is touched |
+| GitHub | Push rendered file to branch | `uv run --script scripts/release_dates.py apply --target github --github-rendered "$WORKDIR/rendered-github.yaml" --github-expect-revision {source-revision} --confirm` | Branch `rhdh-release-date-update` created or already exists at `redhat-developer/rhdh-plugin-export-overlays` | Report the API error, or a source-drift error if the base file moved since render; nothing on `main` is touched either way |
 | GitHub | Open PR (skip if one is already open) | the exact `gh pr create` command from `/rhdh-forge` | Branch push above succeeded | Branch exists unopened; re-run this workflow to retry |
-| GitLab | Push rendered file to branch | `scripts/release_dates.py apply --target gitlab --gitlab-rendered /tmp/rendered-gitlab.yaml --confirm` | Branch `rhdh-release-date-update` created or already exists at `rhidp/rhdh-jira-lint` | Report the API error; nothing on `main` is touched |
+| GitLab | Push rendered file to branch | `uv run --script scripts/release_dates.py apply --target gitlab --gitlab-rendered "$WORKDIR/rendered-gitlab.yaml" --gitlab-expect-revision {source-revision} --confirm` | Branch `rhdh-release-date-update` created or already exists at `rhidp/rhdh-jira-lint` | Report the API error, or a source-drift error if the base file moved since render; nothing on `main` is touched either way |
 | GitLab | Open MR (skip if one is already open) | the exact command from `/rhdh-forge` | Branch push above succeeded | Branch exists unopened; re-run this workflow to retry |
 
-Show the rendered-file diff (old content vs. `/tmp/rendered-*.yaml`) as the
+Show the rendered-file diff (old content vs. `$WORKDIR/rendered-*.yaml`) as the
 preview for each push operation. Recovery for every operation here is the
 same: close the PR/MR and/or delete the `rhdh-release-date-update` branch —
-nothing lands on `main` without a separate human-reviewed merge.
+nothing lands on `main` without a separate human-reviewed merge. A source-drift
+refusal means someone else changed the base file during this run — re-run from
+step 3 rather than retrying the same `apply` command.
 
 Always add one more row to the table that is a **report-only note, not an
 operation requiring approval**: the pinned "RHDH x.y Release Information"
@@ -123,13 +155,15 @@ After approval, run the approved `apply` command(s), then the approved
 `gh pr create` / MR-creation command(s) for any target that did not already
 have one open. Report one outcome per operation, including:
 
-- Every version's final `diff` state, skipped ones included: `match`,
-  `skipped-tbd`, and `skipped-zstream`
+- Every version's final `diff` state, skipped and invalid ones included:
+  `match`, `invalid`, `skipped-tbd`, and `skipped-zstream`
 - Every `incomplete` entry by version, naming its `missing_fields` and what
   the human has to supply for it to be written on a later run
 - Any field `render` reported as skipped because the source did not supply it —
   the file kept its current value, which is correct, but say so rather than
   letting it look like a full rewrite
+- Any planned release that exists but was not named in the request, and so was
+  not checked this run
 - The branch and, if opened or already open, the PR/MR URL for each forge
 - The pinned-issue checklist note, always, regardless of whether the YAML
   files needed changes this run

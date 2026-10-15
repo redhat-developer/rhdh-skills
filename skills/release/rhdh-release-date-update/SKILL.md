@@ -2,17 +2,16 @@
 name: rhdh-release-date-update
 description: >-
   Diffs RHDH milestone dates (Feature Freeze, Code Freeze, GA, targeted
-  Backstage version) from /rhdh-release-schedule against release-schedule.yaml
-  in redhat-developer/rhdh-plugin-export-overlays and release_calendar.yaml in
+  Backstage version) from the RHDHPLAN release Feature in Jira and the RHDH
+  release schedule spreadsheet against release-schedule.yaml in
+  redhat-developer/rhdh-plugin-export-overlays and release_calendar.yaml in
   rhidp/rhdh-jira-lint (GitLab CEE), then opens a pull/merge request that
   corrects stale dates and adds missing release entries. Use for "sync the
   release date files", "update release-schedule.yaml", "update
   release_calendar.yaml", "the RHDH schedule changed, propagate it", "check
   release-schedule.yaml is current", "keep plugin-owner release dates in
   sync", or a downstream reminder or announcement that landed with the wrong
-  freeze date. Never edits chat announcements or the pinned release-information
-  issue — it reports drift in those and leaves the fix to their owning
-  workflow.
+  freeze date.
 ---
 
 # RHDH release date update

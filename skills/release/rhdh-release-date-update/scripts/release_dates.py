@@ -30,6 +30,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -55,6 +56,12 @@ BRANCH_NAME = os.environ.get("RELEASE_DATE_UPDATE_BRANCH", "rhdh-release-date-up
 
 TBD_VALUES = {None, "", "TBD", "tbd"}
 
+# Protected branch names refused as an apply target regardless of how
+# BRANCH_NAME is configured. RELEASE_DATE_UPDATE_BRANCH is documented as a
+# testing-only override; a misconfiguration here must never turn into a direct
+# commit to a base branch that skips PR/MR review.
+PROTECTED_BRANCH_RE = re.compile(r"^(main|master|develop|release-.*)$")
+
 # Fields that must be present in the source JSON before a version absent from a
 # target file can be created there. Every existing entry in both live files
 # carries all of these, so a partial entry would be malformed. A field missing
@@ -65,23 +72,98 @@ REQUIRED_FIELDS = {
     "gitlab": ("feature_freeze", "code_freeze", "ga_push", "backstage_version"),
 }
 
+# The three fields that are dates rather than version strings. Each target only
+# cares about the subset it writes — see REQUIRED_FIELDS — so validation is
+# scoped per target rather than checking every date in every source entry.
+DATE_FIELDS = {"feature_freeze", "code_freeze", "ga_push"}
+
 # Both target files track minor releases only — every entry in each is x.y.0.
-# The active-release JQL also returns z-streams, so they are filtered here
-# rather than relying on the caller to leave them out of the source JSON.
+# The active-release JQL also returns z-streams, and the planned-release
+# spreadsheet path normalizes to a bare x.y, so both forms are distinguished
+# from genuine garbage: a z-stream is silently out of scope, but "2.2" is a
+# transcription bug worth surfacing rather than another silent skip.
 MINOR_RELEASE_RE = re.compile(r"^\d+\.\d+\.0$")
+MAJOR_MINOR_ONLY_RE = re.compile(r"^\d+\.\d+$")
+ZSTREAM_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def _supplied(value: Any) -> bool:
     """True when the source actually carries a value for a field."""
+    if isinstance(value, str):
+        value = value.strip()
     return value not in TBD_VALUES
 
 
-def _is_minor_release(version: str) -> bool:
-    return bool(MINOR_RELEASE_RE.match(str(version)))
+def _version_form(version: str) -> str:
+    v = str(version)
+    if MINOR_RELEASE_RE.match(v):
+        return "minor"
+    if ZSTREAM_RE.match(v):
+        return "zstream"
+    if MAJOR_MINOR_ONLY_RE.match(v):
+        return "major-minor"
+    return "unrecognized"
+
+
+def _is_iso_date(value: Any) -> bool:
+    try:
+        datetime.strptime(str(value), "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def _invalid_date_fields(info: dict[str, Any], target: str) -> dict[str, Any]:
+    """Supplied values in this target's date fields that are not YYYY-MM-DD.
+
+    The GitLab consumer parses every feature_freeze with exactly this format
+    and crashes on its next scheduled run otherwise — a value this function
+    would reject is one that function would reject too.
+    """
+    relevant = DATE_FIELDS & set(REQUIRED_FIELDS[target])
+    return {
+        field: info.get(field)
+        for field in relevant
+        if _supplied(info.get(field)) and not _is_iso_date(info.get(field))
+    }
 
 
 def _missing_fields(info: dict[str, Any], target: str) -> list[str]:
     return [field for field in REQUIRED_FIELDS[target] if not _supplied(info.get(field))]
+
+
+def _version_gate(version: str) -> dict[str, Any] | None:
+    """A `diff` report entry for a version outside this script's scope, else None.
+
+    A z-stream is silently out of scope — neither target file has ever tracked
+    one. A bare x.y (what the planned-release spreadsheet path normalizes to)
+    or anything else unrecognized is a transcription bug, not an out-of-scope
+    version, so it is reported rather than silently dropped.
+    """
+    form = _version_form(version)
+    if form == "zstream":
+        return {"version": version, "state": "skipped-zstream"}
+    if form in ("major-minor", "unrecognized"):
+        return {
+            "version": version,
+            "state": "invalid",
+            "error": f"version must be of the form x.y.0; got {version!r}",
+        }
+    return None
+
+
+def _version_skip(version: str) -> dict[str, Any] | None:
+    """The `render` equivalent of `_version_gate`, in the skip-record shape."""
+    form = _version_form(version)
+    if form == "zstream":
+        return {"version": version, "reason": "zstream"}
+    if form in ("major-minor", "unrecognized"):
+        return {
+            "version": version,
+            "reason": "invalid-version",
+            "error": f"version must be of the form x.y.0; got {version!r}",
+        }
+    return None
 
 
 def _run_json(cmd: list[str]) -> Any:
@@ -97,13 +179,6 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 def gh_api(path: str, method: str = "GET", fields: dict[str, str] | None = None) -> Any:
     cmd = ["gh", "api", path, "--method", method]
-    for key, value in (fields or {}).items():
-        cmd += ["-f", f"{key}={value}"]
-    return _run_json(cmd)
-
-
-def glab_api(path: str, method: str = "GET", fields: dict[str, str] | None = None) -> Any:
-    cmd = ["glab", "api", "--hostname", GITLAB_HOST, path, "--method", method]
     for key, value in (fields or {}).items():
         cmd += ["-f", f"{key}={value}"]
     return _run_json(cmd)
@@ -149,20 +224,26 @@ def fetch_github_file(ref: str = GITHUB_BASE_BRANCH) -> tuple[str, str]:
     return content, data["sha"]
 
 
-def fetch_gitlab_file(ref: str = GITLAB_BASE_BRANCH) -> str:
-    """Return content for GITLAB_FILE_PATH at ref."""
+def fetch_gitlab_file(ref: str = GITLAB_BASE_BRANCH) -> tuple[str, str]:
+    """Return (content, last_commit_id) for GITLAB_FILE_PATH at ref.
+
+    Uses the file-metadata endpoint rather than /raw so the caller gets a
+    revision to compare later — /raw returns bytes with no revision metadata
+    at all, which is what let render and apply drift silently in the first
+    place.
+    """
     encoded_path = GITLAB_FILE_PATH.replace("/", "%2F")
-    cmd = [
-        "glab",
-        "api",
-        "--hostname",
-        GITLAB_HOST,
-        f"projects/{_gitlab_project_encoded()}/repository/files/{encoded_path}/raw?ref={ref}",
-    ]
-    result = _run(cmd)
-    if result.returncode != 0:
-        raise RuntimeError(f"glab fetch failed: {result.stderr.strip()}")
-    return result.stdout
+    data = _run_json(
+        [
+            "glab",
+            "api",
+            "--hostname",
+            GITLAB_HOST,
+            f"projects/{_gitlab_project_encoded()}/repository/files/{encoded_path}?ref={ref}",
+        ]
+    )
+    content = base64.b64decode(data["content"]).decode("utf-8")
+    return content, data["last_commit_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -186,12 +267,17 @@ def diff_github(source: dict[str, dict[str, Any]], doc: CommentedMap) -> list[di
     existing = _github_releases(doc)
     report = []
     for version, info in source.items():
-        if not _is_minor_release(version):
-            report.append({"version": version, "state": "skipped-zstream"})
+        gate = _version_gate(version)
+        if gate:
+            report.append(gate)
             continue
         ff = info.get("feature_freeze")
         if not _supplied(ff):
             report.append({"version": version, "state": "skipped-tbd"})
+            continue
+        invalid = _invalid_date_fields(info, "github")
+        if invalid:
+            report.append({"version": version, "state": "invalid", "invalid_fields": invalid})
             continue
         current = existing.get(version)
         if current is None:
@@ -238,12 +324,17 @@ def diff_gitlab(source: dict[str, dict[str, Any]], doc: CommentedMap) -> list[di
     existing = doc.get("releases", CommentedMap()) or {}
     report = []
     for version, info in source.items():
-        if not _is_minor_release(version):
-            report.append({"version": version, "state": "skipped-zstream"})
+        gate = _version_gate(version)
+        if gate:
+            report.append(gate)
             continue
         ff = info.get("feature_freeze")
         if not _supplied(ff):
             report.append({"version": version, "state": "skipped-tbd"})
+            continue
+        invalid = _invalid_date_fields(info, "gitlab")
+        if invalid:
+            report.append({"version": version, "state": "invalid", "invalid_fields": invalid})
             continue
         current = existing.get(version)
         if current is None:
@@ -285,7 +376,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
     yaml.preserve_quotes = True
 
     github_content, _ = fetch_github_file()
-    gitlab_content = fetch_gitlab_file()
+    gitlab_content, _ = fetch_gitlab_file()
 
     github_doc = yaml.load(github_content)
     gitlab_doc = yaml.load(gitlab_content)
@@ -319,12 +410,17 @@ def render_github(
     skipped: list[dict[str, Any]] = []
     releases = doc.setdefault("releases", [])
     for version, info in source.items():
-        if not _is_minor_release(version):
-            skipped.append({"version": version, "reason": "zstream"})
+        skip = _version_skip(version)
+        if skip:
+            skipped.append(skip)
             continue
         ff = info.get("feature_freeze")
         if not _supplied(ff):
             skipped.append({"version": version, "reason": "tbd"})
+            continue
+        invalid = _invalid_date_fields(info, "github")
+        if invalid:
+            skipped.append({"version": version, "reason": "invalid-date", "fields": invalid})
             continue
         entry = existing.get(version)
         if entry is None:
@@ -369,12 +465,17 @@ def render_gitlab(
     changed = False
     skipped: list[dict[str, Any]] = []
     for version, info in source.items():
-        if not _is_minor_release(version):
-            skipped.append({"version": version, "reason": "zstream"})
+        skip = _version_skip(version)
+        if skip:
+            skipped.append(skip)
             continue
         ff = info.get("feature_freeze")
         if not _supplied(ff):
             skipped.append({"version": version, "reason": "tbd"})
+            continue
+        invalid = _invalid_date_fields(info, "gitlab")
+        if invalid:
+            skipped.append({"version": version, "reason": "invalid-date", "fields": invalid})
             continue
         entry = releases.get(version)
         if entry is None:
@@ -415,11 +516,11 @@ def cmd_render(args: argparse.Namespace) -> int:
     yaml.indent(mapping=2, sequence=4, offset=2)
 
     if args.target == "github":
-        content, _ = fetch_github_file()
+        content, source_revision = fetch_github_file()
         doc = yaml.load(content)
         changed, skipped = render_github(source, doc)
     else:
-        content = fetch_gitlab_file()
+        content, source_revision = fetch_gitlab_file()
         doc = yaml.load(content)
         changed, skipped = render_gitlab(source, doc)
 
@@ -434,6 +535,7 @@ def cmd_render(args: argparse.Namespace) -> int:
                 "changed": changed,
                 "output": str(out_path),
                 "skipped": skipped,
+                "source_revision": source_revision,
             }
         )
     )
@@ -445,7 +547,67 @@ def cmd_render(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def apply_github(rendered_path: Path) -> dict[str, Any]:
+def _refuse_protected_branch(target: str, base_branch: str) -> dict[str, Any] | None:
+    """Refuse to let BRANCH_NAME collide with the branch apply would commit on top of.
+
+    BRANCH_NAME is RELEASE_DATE_UPDATE_BRANCH, documented as a testing-only
+    override. If it is ever misconfigured to equal the base branch, the
+    "Reference already exists" fallback below reads that as "the update branch
+    already exists" and proceeds to PUT straight onto the base branch,
+    bypassing the PR/MR review this whole workflow depends on. Checked before
+    any API call, so a bad configuration touches nothing.
+    """
+    if BRANCH_NAME == base_branch or PROTECTED_BRANCH_RE.match(BRANCH_NAME):
+        return {
+            "target": target,
+            "ok": False,
+            "error": (
+                f"refusing to apply: RELEASE_DATE_UPDATE_BRANCH={BRANCH_NAME!r} is a "
+                "protected branch, not an update branch"
+            ),
+        }
+    return None
+
+
+def _refuse_source_drift(target: str, expected: str | None, current: str) -> dict[str, Any] | None:
+    """Refuse when the base file has moved since render ran.
+
+    `render` only ever wrote a blob sha / last_commit_id into its JSON output;
+    it never stopped `apply` from pushing stale bytes with it. Without this,
+    a base-file change made during human review between render and apply is
+    silently reverted by the push, and what lands does not match what was
+    approved.
+    """
+    if expected is not None and expected != current:
+        return {
+            "target": target,
+            "ok": False,
+            "error": (
+                f"refusing to apply: source moved from {expected!r} to {current!r} "
+                "since render ran; re-run render and get the new diff re-approved"
+            ),
+        }
+    return None
+
+
+def apply_github(rendered_path: Path, expect_revision: str | None = None) -> dict[str, Any]:
+    refused = _refuse_protected_branch("github", GITHUB_BASE_BRANCH)
+    if refused:
+        return refused
+
+    if expect_revision is not None:
+        try:
+            _, current_revision = fetch_github_file(ref=GITHUB_BASE_BRANCH)
+        except Exception as exc:
+            return {
+                "target": "github",
+                "ok": False,
+                "error": f"could not verify source revision: {exc}",
+            }
+        drift = _refuse_source_drift("github", expect_revision, current_revision)
+        if drift:
+            return drift
+
     ref_resp = _run(["gh", "api", f"repos/{GITHUB_REPO}/git/ref/heads/{GITHUB_BASE_BRANCH}"])
     if ref_resp.returncode != 0:
         return {"target": "github", "ok": False, "error": ref_resp.stderr.strip()}
@@ -519,7 +681,24 @@ def apply_github(rendered_path: Path) -> dict[str, Any]:
     }
 
 
-def apply_gitlab(rendered_path: Path) -> dict[str, Any]:
+def apply_gitlab(rendered_path: Path, expect_revision: str | None = None) -> dict[str, Any]:
+    refused = _refuse_protected_branch("gitlab", GITLAB_BASE_BRANCH)
+    if refused:
+        return refused
+
+    if expect_revision is not None:
+        try:
+            _, current_revision = fetch_gitlab_file(ref=GITLAB_BASE_BRANCH)
+        except RuntimeError as exc:
+            return {
+                "target": "gitlab",
+                "ok": False,
+                "error": f"could not verify source revision: {exc}",
+            }
+        drift = _refuse_source_drift("gitlab", expect_revision, current_revision)
+        if drift:
+            return drift
+
     project = _gitlab_project_encoded()
     create_branch = _run(
         [
@@ -543,6 +722,26 @@ def apply_gitlab(rendered_path: Path) -> dict[str, Any]:
     encoded_path = GITLAB_FILE_PATH.replace("/", "%2F")
     content = rendered_path.read_text()
 
+    # Branch-level last_commit_id (falls back to None for a brand-new branch,
+    # which has nothing to race against yet). GitLab rejects the PUT below if
+    # this has moved, the same optimistic lock GitHub gets from the blob sha
+    # it sends in apply_github.
+    try:
+        _, branch_last_commit_id = fetch_gitlab_file(ref=BRANCH_NAME)
+    except RuntimeError:
+        branch_last_commit_id = None
+
+    put_fields = [
+        "-f",
+        f"branch={BRANCH_NAME}",
+        "-f",
+        "commit_message=Update RHDH release schedule dates",
+        "-f",
+        f"content={content}",
+    ]
+    if branch_last_commit_id:
+        put_fields += ["-f", f"last_commit_id={branch_last_commit_id}"]
+
     # GITLAB_FILE_PATH is release_calendar.yaml, which already exists on every
     # branch — this is always an update (PUT), never a create (POST).
     update = _run(
@@ -554,12 +753,7 @@ def apply_gitlab(rendered_path: Path) -> dict[str, Any]:
             f"projects/{project}/repository/files/{encoded_path}",
             "--method",
             "PUT",
-            "-f",
-            f"branch={BRANCH_NAME}",
-            "-f",
-            "commit_message=Update RHDH release schedule dates",
-            "-f",
-            f"content={content}",
+            *put_fields,
         ]
     )
     if update.returncode != 0:
@@ -596,14 +790,14 @@ def cmd_apply(args: argparse.Namespace) -> int:
                 {"target": "github", "ok": False, "error": "--github-rendered is required"}
             )
         else:
-            results.append(apply_github(Path(args.github_rendered)))
+            results.append(apply_github(Path(args.github_rendered), args.github_expect_revision))
     if args.target in ("gitlab", "all"):
         if not args.gitlab_rendered:
             results.append(
                 {"target": "gitlab", "ok": False, "error": "--gitlab-rendered is required"}
             )
         else:
-            results.append(apply_gitlab(Path(args.gitlab_rendered)))
+            results.append(apply_gitlab(Path(args.gitlab_rendered), args.gitlab_expect_revision))
 
     ok = all(r.get("ok") for r in results)
     print(json.dumps({"ok": ok, "results": results}, indent=2))
@@ -633,6 +827,14 @@ def main(argv: list[str] | None = None) -> int:
     apply_p.add_argument("--target", choices=["github", "gitlab", "all"], default="all")
     apply_p.add_argument("--github-rendered")
     apply_p.add_argument("--gitlab-rendered")
+    apply_p.add_argument(
+        "--github-expect-revision",
+        help="Base-branch blob sha render_github was built from; refuse if it has since moved",
+    )
+    apply_p.add_argument(
+        "--gitlab-expect-revision",
+        help="Base-branch last_commit_id render_gitlab was built from; refuse if it has since moved",
+    )
     apply_p.add_argument("--confirm", action="store_true")
 
     args = parser.parse_args(argv)

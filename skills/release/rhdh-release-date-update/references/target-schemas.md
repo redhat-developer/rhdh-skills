@@ -32,8 +32,11 @@ the plan's preview text; it is never written into either target file.
 
 ### Where each field comes from
 
-`/rhdh-release-schedule` does not use these key names, and it does not carry
-the Backstage version at all. Map its answer deliberately:
+`/rhdh-release-schedule` reads two sources with different shapes, and neither
+one carries the Backstage version. Map whichever one answered deliberately.
+
+**Active releases** (`/rhdh-release-schedule`'s `dates` path, reading the
+RHDHPLAN release Feature in Jira):
 
 | `/rhdh-release-schedule` reports | Source-JSON key |
 |---|---|
@@ -48,9 +51,24 @@ says so in its own header comment: `ga_push = GA announce date (public GA)`.
 Picking Go/No Go here puts a wrong date into the file that drives the Slack
 posts.
 
-`backstage_version` has no source in `/rhdh-release-schedule`. Get it from the
-target file's existing entry for a release already listed, or ask the human for
-a release being added. Never infer it from the version number and never guess:
+**Planned releases** (`/rhdh-release-schedule`'s `future-dates {{VERSION}}`
+path, reading the RHDH release schedule spreadsheet):
+
+| `/rhdh-release-schedule` reports | Source-JSON key |
+|---|---|
+| `version` (normalized to `x.y`, e.g. `"2.2"`) | `x.y.0`, e.g. `"2.2.0"` — restore the patch component |
+| `feature_freeze` | `feature_freeze` |
+| `code_freeze` | `code_freeze` |
+| `ga_date` | `ga_push` — same field, different name on this path |
+
+Transcribed unchanged, a planned release's bare `x.y` version is reported
+`invalid` rather than silently treated as a z-stream, and its `ga_date` key is
+simply absent from `REQUIRED_FIELDS`, so a new GitLab entry is reported
+`incomplete` for a field that was in fact supplied, just under the wrong name.
+
+`backstage_version` has no source on either path. Get it from the target
+file's existing entry for a release already listed, or ask the human for a
+release being added. Never infer it from the version number and never guess:
 the value reaches third-party plugin owners as the version they are told to
 target.
 
@@ -63,12 +81,28 @@ when every field that file requires is supplied — `backstage_version` and
 `feature_freeze` for GitHub, all four for GitLab. Otherwise `diff` reports it
 as `incomplete` with the missing field names and writes nothing.
 
+### Every supplied date must be `YYYY-MM-DD`
+
+`feature_freeze`, `code_freeze`, and `ga_push` are parsed downstream — most
+pointedly by `rhdh_jira_lint.py`'s `datetime.strptime(value, "%Y-%m-%d")` — so
+`scripts/release_dates.py` validates each one it is asked to write with the
+exact same call. A string such as `"next Tuesday"` or a malformed `"2026-13-45"`
+is "supplied" (it is not one of the TBD sentinels) but is not a date, so it is
+reported `invalid` rather than written. This is the same never-invent
+philosophy as an unsupplied field, just for a field that was supplied wrong
+rather than not supplied at all.
+
 ### Versions the target files do not track
 
 Both files track minor releases only — every entry is `x.y.0`. The active
 release query also returns z-streams such as `1.10.5`; the script reports those
 as `skipped-zstream` and never writes them. Do not add z-stream versions to the
 source JSON.
+
+A bare `x.y`, such as what the planned-release path returns before its patch
+component is restored (see above), is a different problem — not a z-stream,
+but a transcription bug — and is reported `invalid` rather than `skipped-zstream`
+so it does not read as merely out of scope.
 
 ### `diff` states
 
@@ -78,6 +112,7 @@ source JSON.
 | `stale` | A supplied field differs; the fix is in `desired` |
 | `missing` | Absent from the file and fully specified, so it can be added |
 | `incomplete` | Absent from the file but the source lacks `missing_fields` |
+| `invalid` | A supplied date is not `YYYY-MM-DD`, or the version is not `x.y.0` or a z-stream |
 | `skipped-tbd` | Feature Freeze is not yet decided upstream |
 | `skipped-zstream` | Not an `x.y.0` release, so neither file tracks it |
 
