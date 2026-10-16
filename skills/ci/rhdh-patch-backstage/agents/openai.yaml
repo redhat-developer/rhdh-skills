@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Patch Backstage"
+  short_description: "Yarn-patch Backstage fixes from the backstage.json tag into RHDH"

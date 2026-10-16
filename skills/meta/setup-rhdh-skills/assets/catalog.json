@@ -286,6 +286,15 @@
       "requiresExternalSkills": []
     },
     {
+      "name": "rhdh-patch-backstage",
+      "category": "ci",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-prow-jobs",
       "category": "ci",
       "invocation": "model",

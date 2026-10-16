@@ -75,6 +75,7 @@
         "./skills/ci/rhdh-konflux-tasks",
         "./skills/ci/rhdh-konflux-rpa",
         "./skills/reference/rhdh-forge",
+        "./skills/ci/rhdh-patch-backstage",
         "./skills/ci/rhdh-prow-jobs",
         "./skills/ci/rhdh-prow-release-branch",
         "./skills/ci/rhdh-prow-trigger",
