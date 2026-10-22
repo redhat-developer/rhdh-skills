@@ -616,6 +616,12 @@ def apply_github(rendered_path: Path, expect_revision: str | None = None) -> dic
         return {"target": "github", "ok": False, "error": ref_resp.stderr.strip()}
     base_sha = json.loads(ref_resp.stdout)["object"]["sha"]
 
+    # Finish reading local input before the first write (branch creation).
+    try:
+        content_b64 = base64.b64encode(rendered_path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        return {"target": "github", "ok": False, "error": f"could not read rendered file: {exc}"}
+
     create_branch = _run(
         [
             "gh",
@@ -646,7 +652,6 @@ def apply_github(rendered_path: Path, expect_revision: str | None = None) -> dic
             "error": "update branch differs from the rendered baseline; reconcile its PR before re-rendering",
         }
 
-    content_b64 = base64.b64encode(rendered_path.read_bytes()).decode("ascii")
     fields = {
         "message": "Update RHDH release schedule dates",
         "content": content_b64,
@@ -711,6 +716,11 @@ def apply_gitlab(rendered_path: Path, expect_revision: str | None = None) -> dic
         if drift:
             return drift
 
+    try:
+        content = rendered_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return {"target": "gitlab", "ok": False, "error": f"could not read rendered file: {exc}"}
+
     project = _gitlab_project_encoded()
     create_branch = _run(
         [
@@ -732,8 +742,6 @@ def apply_gitlab(rendered_path: Path, expect_revision: str | None = None) -> dic
         return {"target": "gitlab", "ok": False, "error": create_branch.stderr.strip()}
 
     encoded_path = GITLAB_FILE_PATH.replace("/", "%2F")
-    content = rendered_path.read_text()
-
     # Check against render, then lock the write against any later branch edit.
     # A failed read must not turn off optimistic locking.
     try:
@@ -798,21 +806,44 @@ def cmd_apply(args: argparse.Namespace) -> int:
         print(json.dumps({"ok": False, "error": "refusing to apply without --confirm"}))
         return 1
 
+    targets = ("github", "gitlab") if args.target == "all" else (args.target,)
+    errors = {}
+    for target in targets:
+        rendered = getattr(args, f"{target}_rendered")
+        revision = getattr(args, f"{target}_expect_revision")
+        if not rendered:
+            errors[target] = f"--{target}-rendered is required"
+        elif not revision:
+            errors[target] = f"--{target}-expect-revision is required"
+        else:
+            try:
+                Path(rendered).read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                errors[target] = f"could not read rendered file: {exc}"
+
     results = []
-    if args.target in ("github", "all"):
-        if not args.github_rendered:
-            results.append(
-                {"target": "github", "ok": False, "error": "--github-rendered is required"}
-            )
+    failed = False
+    for target in targets:
+        if target in errors:
+            result = {"target": target, "ok": False, "error": errors[target]}
+        elif errors or failed:
+            result = {
+                "target": target,
+                "ok": False,
+                "skipped": True,
+                "error": "not attempted because another target failed",
+            }
         else:
-            results.append(apply_github(Path(args.github_rendered), args.github_expect_revision))
-    if args.target in ("gitlab", "all"):
-        if not args.gitlab_rendered:
-            results.append(
-                {"target": "gitlab", "ok": False, "error": "--gitlab-rendered is required"}
-            )
-        else:
-            results.append(apply_gitlab(Path(args.gitlab_rendered), args.gitlab_expect_revision))
+            apply = {"github": apply_github, "gitlab": apply_gitlab}[target]
+            try:
+                result = apply(
+                    Path(getattr(args, f"{target}_rendered")),
+                    getattr(args, f"{target}_expect_revision"),
+                )
+            except (OSError, RuntimeError, ValueError) as exc:
+                result = {"target": target, "ok": False, "error": str(exc)}
+        results.append(result)
+        failed = failed or not result.get("ok")
 
     ok = all(r.get("ok") for r in results)
     print(json.dumps({"ok": ok, "results": results}, indent=2))

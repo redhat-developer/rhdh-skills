@@ -35,10 +35,10 @@ Out of scope, reported as a checklist item instead of fixed:
   `rhdh-plugin-export-overlays`. Its body carries hand-written sections this
   skill has no source for, so it reports the issue's drift as a checklist item
   and leaves the edit to a human.
-- Slack messages in `#forum-rhdh-releases` / `#rhdh-plugins-ecosystem`. The
-  `rhdh-jira-lint` bot posts these automatically, driven entirely by
-  `release_calendar.yaml`'s contents on its own weekly schedule — once that
-  file is correct, the messages follow without further action.
+- Existing pinned Slack messages in `#forum-rhdh-releases` /
+  `#rhdh-plugins-ecosystem`. Compare their dates with the source and report
+  stale messages for a human to edit. Correcting `release_calendar.yaml`
+  updates future scheduled bot posts, not messages already posted or pinned.
 - Any release whose Feature Freeze date is not yet decided (`TBD` upstream).
   Leave it untouched and report it, never write a placeholder — both target
   files are parsed with `datetime.strptime(..., "%Y-%m-%d")` downstream, and a
@@ -67,6 +67,8 @@ target file and the source-JSON shape `scripts/release_dates.py` expects.
   constructs a PR/MR command itself.
 - Every write — branch push and PR/MR creation alike — goes through
   `/mutation-gate` as one bundled plan per run, approved once.
+- Final PR/MR prose goes through `/prose-editing` once in the `flavored`
+  register before the forge payload is constructed or shown for approval.
 - Drafting the Slack message that announces a freeze is
   `/rhdh-release-announce`; this skill never drafts or posts one.
 
@@ -78,8 +80,8 @@ plan, the plan was approved before any push happened, and every operation in
 the plan — branch push, and PR/MR creation once `/rhdh-forge`'s command was
 executed — has a reported outcome. A version skipped as `TBD` or as a z-stream
 is named as skipped, never silently omitted from the report. The pinned-issue
-gap is always named in the report, even on a run where both YAML files
-already matched.
+and pinned-message checklist states what was checked, what is stale, and what
+a human still needs to inspect, even when both YAML files already matched.
 
 No value is ever invented. A field `/rhdh-release-schedule` does not report —
 `backstage_version` above all, which it never reports — is omitted from the

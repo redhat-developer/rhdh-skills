@@ -112,6 +112,10 @@ An unreadable destination also stops the write; it never disables the lock.
 
 ## 5. Get the PR / MR creation command from `/rhdh-forge`
 
+Compose the title and body for each required PR/MR. Invoke `/prose-editing`
+once on the final prose in the `flavored` register before showing it or
+passing it to `/rhdh-forge`. Use the edited text unchanged in the payload.
+
 For each target with drift, invoke `/rhdh-forge` by name to construct:
 
 - GitHub: a `gh pr create` payload for `redhat-developer/rhdh-plugin-export-overlays`,
@@ -137,9 +141,9 @@ Invoke `/mutation-gate` and follow it. State every operation as one set —
 | Target | Operation | Command | Precondition | On failure |
 |---|---|---|---|---|
 | GitHub | Push rendered file to branch | `uv run --script scripts/release_dates.py apply --target github --github-rendered "$WORKDIR/rendered-github.yaml" --github-expect-revision {source-revision} --confirm` | Branch `rhdh-release-date-update` created or already exists at `redhat-developer/rhdh-plugin-export-overlays` | Report the API error, or a source-drift error if the base file moved since render; nothing on `main` is touched either way |
-| GitHub | Open PR (skip if one is already open) | the exact `gh pr create` command from `/rhdh-forge` | Branch push above succeeded | Branch exists unopened; re-run this workflow to retry |
+| GitHub | Open PR (skip if one is already open) | the exact `gh pr create` command from `/rhdh-forge` | Branch push above succeeded | Preserve the push result and follow the creation-only recovery below |
 | GitLab | Push rendered file to branch | `uv run --script scripts/release_dates.py apply --target gitlab --gitlab-rendered "$WORKDIR/rendered-gitlab.yaml" --gitlab-expect-revision {source-revision} --confirm` | Branch `rhdh-release-date-update` created or already exists at `rhidp/rhdh-jira-lint` | Report the API error, or a source-drift error if the base file moved since render; nothing on `main` is touched either way |
-| GitLab | Open MR (skip if one is already open) | the exact command from `/rhdh-forge` | Branch push above succeeded | Branch exists unopened; re-run this workflow to retry |
+| GitLab | Open MR (skip if one is already open) | the exact command from `/rhdh-forge` | Branch push above succeeded | Preserve the push result and follow the creation-only recovery below |
 
 Show the rendered-file diff (old content vs. `$WORKDIR/rendered-*.yaml`) as the
 preview for each push operation. Recovery for every operation here is the
@@ -151,11 +155,25 @@ refusal requires human reconciliation of the existing PR/MR before re-rendering.
 If branch creation succeeded before a later refusal, report that the branch
 may now exist but its file was not updated.
 
-Always add one more row to the table that is a **report-only note, not an
-operation requiring approval**: the pinned "RHDH x.y Release Information"
-GitHub issue's current drift state (compare its table manually against the
-source JSON). This skill does not edit that issue; it reports the drift so a
-human can.
+If the file push succeeded but PR/MR creation failed, resume at step 5 rather
+than repeating `apply`. Use `/rhdh-forge` to check whether creation succeeded
+despite the reported error, and compare the branch's file with the approved
+rendered file. If no PR/MR exists and the bytes still match, get approval
+through `/mutation-gate` for a creation-only retry. Keep the original edited
+prose and report the earlier push as already completed. If the branch differs
+or cannot be checked, stop for human reconciliation; do not overwrite it.
+
+Always add these **report-only notes, not operations requiring approval**:
+
+- Compare the pinned "RHDH x.y Release Information" GitHub issue's table
+  against the source JSON. Report its drift for a human to edit.
+- Check existing pinned messages in `#forum-rhdh-releases` and
+  `#rhdh-plugins-ecosystem` against the source dates. List stale message links
+  and the dates a human needs to correct. If Slack access or message links
+  are unavailable, explicitly report this check as not performed and ask the
+  human to inspect the pins. Future bot posts do not repair existing pins.
+
+Perform these checks even on the no-YAML-change path from step 3.
 
 ## 7. Execute and report
 
@@ -173,5 +191,5 @@ have one open. Report one outcome per operation, including:
 - The scope limitation: planned releases not named in the request were not
   checked or enumerated; do not claim to know which ones exist
 - The branch and, if opened or already open, the PR/MR URL for each forge
-- The pinned-issue checklist note, always, regardless of whether the YAML
-  files needed changes this run
+- The pinned-issue and pinned-message checklist notes, including checks not
+  performed, regardless of whether the YAML files needed changes this run
