@@ -21,7 +21,9 @@ JQL patterns, and the board/team table.
    | RHDH Cope | 11374 | COPE |
    | RHDH Documentation Sprint | 10851 | Documentation |
 
-2. **Fix version** — e.g. `2.1.0`. Required.
+2. **Fix version(s)** — one or more versions, e.g. `2.1.0` or
+   `all 2.1.x and 2.2.0`. Required. Teams often refine across multiple
+   streams, so accept a list.
 
 ## Step 1 — Resolve the team ID
 
@@ -42,9 +44,13 @@ the team UUID directly as an argument.
 
 ```bash
 acli jira workitem search \
-  --jql 'project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint in openSprints() AND "Team[Team]" = TEAM_ID AND status in (New, Refinement, "To Do") AND fixVersion = "VERSION"' \
+  --jql 'project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint in openSprints() AND "Team[Team]" = TEAM_ID AND status in (New, Refinement, "To Do") AND fixVersion in ("V1", "V2", ...)' \
   --paginate --json
 ```
+
+Build the `fixVersion in (...)` clause from the list of versions the user
+provided. When they say "all 2.1.x", expand to the known patch versions
+(e.g. `"2.1.0", "2.1.1", "2.1.2"`).
 
 ## Step 3 — Resolve release milestones
 
