@@ -2,9 +2,10 @@
 
 ## Source-JSON (what you build from /rhdh-release-schedule's answer)
 
-Invoke `/rhdh-release-schedule` for every version that is currently active or
-planned. Transcribe its answer into this shape and write it to a temp file —
-`scripts/release_dates.py diff --source-json <path>` reads it:
+Invoke `/rhdh-release-schedule` for all currently active releases and only the
+planned versions explicitly named by the human. Transcribe its answer into this
+shape and write it to a temp file —
+`uv run --script scripts/release_dates.py diff --source-json <path>` reads it:
 
 ```json
 {

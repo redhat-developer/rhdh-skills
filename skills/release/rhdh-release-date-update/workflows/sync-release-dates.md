@@ -4,7 +4,7 @@ Run every command from **this skill's directory** (the folder containing
 `SKILL.md`), not the rhdh-skills repository root. Every `scripts/release_dates.py`
 invocation uses `uv run --script` — the script declares `ruamel.yaml` through
 PEP 723, and only `uv run --script` resolves that dependency without the
-repository's own dev environment, per ADR-0002's YAML exception. A bare
+repository's own dev environment. A bare
 `scripts/release_dates.py ...` relies on the shebang, which cannot work on
 Windows, where the skill also runs.
 
@@ -82,9 +82,9 @@ version with `state`:
 
 Every state is named in the final report, including the skipped ones.
 
-If no entry across both targets is `stale` or `missing`, skip to step 7 and
-report a clean run — still naming any `incomplete` or `invalid` entries and the
-pinned-issue gap.
+If no entry across both targets is `stale` or `missing`, skip to step 7.
+Report a clean run only when there are no `incomplete` or `invalid` entries;
+otherwise report those unresolved entries along with the pinned-issue gap.
 
 ## 4. Render
 
@@ -104,6 +104,11 @@ a version absent from the source JSON, so historical entries are untouched.
 Each render's JSON output includes `source_revision` — the exact base-file
 revision it read. Hold on to it per target; step 6's `apply` command needs it
 to detect whether the base file moved before the push actually happens.
+`apply` requires this revision and also checks the update branch's file against
+it. If that branch already contains changes (including an earlier run's
+unmerged update), stop and ask the human to merge or reconcile that PR/MR
+first. Re-rendering from unchanged `main` alone cannot resolve branch drift.
+An unreadable destination also stops the write; it never disables the lock.
 
 ## 5. Get the PR / MR creation command from `/rhdh-forge`
 
@@ -120,9 +125,9 @@ For each target with drift, invoke `/rhdh-forge` by name to construct:
 `/rhdh-forge` also hands back a read-only check (`gh pr list` / an MR list
 call) for whether a PR/MR already targets `rhdh-release-date-update`. Run it
 now — read-only needs no gate. If one is already open, drop the "open a new
-PR/MR" operation from the plan; pushing to the branch in step 7 updates it in
-place automatically, since both forges reflect a branch's current head on its
-open PR/MR without a separate "update" call.
+PR/MR" operation from the plan. Step 6's push updates it in place only if its
+target file still matches the rendered baseline; otherwise the drift guard
+refuses the push and the existing changes stay intact.
 
 ## 6. Build one bundled plan and get approval
 
@@ -140,8 +145,11 @@ Show the rendered-file diff (old content vs. `$WORKDIR/rendered-*.yaml`) as the
 preview for each push operation. Recovery for every operation here is the
 same: close the PR/MR and/or delete the `rhdh-release-date-update` branch —
 nothing lands on `main` without a separate human-reviewed merge. A source-drift
-refusal means someone else changed the base file during this run — re-run from
-step 3 rather than retrying the same `apply` command.
+refusal on the base means someone else changed it during this run — re-run
+from step 3 rather than retrying the same `apply` command. A destination-drift
+refusal requires human reconciliation of the existing PR/MR before re-rendering.
+If branch creation succeeded before a later refusal, report that the branch
+may now exist but its file was not updated.
 
 Always add one more row to the table that is a **report-only note, not an
 operation requiring approval**: the pinned "RHDH x.y Release Information"
@@ -162,8 +170,8 @@ have one open. Report one outcome per operation, including:
 - Any field `render` reported as skipped because the source did not supply it —
   the file kept its current value, which is correct, but say so rather than
   letting it look like a full rewrite
-- Any planned release that exists but was not named in the request, and so was
-  not checked this run
+- The scope limitation: planned releases not named in the request were not
+  checked or enumerated; do not claim to know which ones exist
 - The branch and, if opened or already open, the PR/MR URL for each forge
 - The pinned-issue checklist note, always, regardless of whether the YAML
   files needed changes this run

@@ -1,15 +1,11 @@
-"""Unit tests for rhdh-release-date-update diff and render logic.
-
-The four functions under test are pure: they take the source-JSON dict and an
-already-loaded YAML document, and touch no network. Everything that talks to
-gh/glab lives in separate functions and is not exercised here.
-"""
+"""Unit tests for release-date transformations and mocked forge write guards."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
 from pathlib import Path
+from subprocess import CompletedProcess
 
 import pytest
 
@@ -429,3 +425,66 @@ def test_apply_github_proceeds_past_the_drift_check_on_a_matching_revision(
 
     with pytest.raises(RuntimeError, match="past the drift check"):
         mod.apply_github(tmp_path / "rendered.yaml", expect_revision="sha-same")
+
+
+@pytest.mark.parametrize("target", ["github", "gitlab"])
+def test_apply_requires_a_render_time_revision(mod, monkeypatch, tmp_path, target):
+    monkeypatch.setattr(mod, "_run", _forbid_subprocess_calls)
+    result = getattr(mod, f"apply_{target}")(tmp_path / "rendered.yaml")
+    assert result["ok"] is False
+    assert "revision is required" in result["error"]
+
+
+@pytest.mark.parametrize("target", ["github", "gitlab"])
+@pytest.mark.parametrize("branch_exists", [False, True])
+@pytest.mark.parametrize("branch_revision", ["render-revision", "edited-revision", None])
+def test_apply_checks_destination_before_put(
+    mod, monkeypatch, tmp_path, target, branch_exists, branch_revision
+):
+    """Neither an existing branch edit nor a creation-time race may be overwritten."""
+    rendered = tmp_path / "rendered.yaml"
+    rendered.write_text("approved YAML")
+    calls = []
+
+    def fetch(ref=None):
+        if ref == mod.BRANCH_NAME:
+            if branch_revision is None:
+                raise RuntimeError("could not read update branch")
+            return "branch content", branch_revision
+        return "base content", "render-revision"
+
+    def run(argv):
+        calls.append(argv)
+        if "git/ref/heads/" in argv[2]:
+            return CompletedProcess(argv, 0, '{"object":{"sha":"base-head"}}', "")
+        if "POST" in argv:
+            error = "Reference already exists" if target == "github" else "already exists"
+            return CompletedProcess(argv, 1 if branch_exists else 0, "{}", error)
+        if "PUT" in argv or "merge_requests?" in argv[-1]:
+            return CompletedProcess(argv, 0, "[]", "")
+        raise AssertionError(f"unexpected command: {argv}")
+
+    monkeypatch.setattr(mod, f"fetch_{target}_file", fetch)
+    monkeypatch.setattr(mod, "_run", run)
+    monkeypatch.setattr(mod, "_run_json", lambda argv: [])
+    writes = []
+
+    def gh_api(endpoint, method, fields):
+        writes.append(fields)
+        return {"commit": {"sha": "new-commit"}}
+
+    monkeypatch.setattr(mod, "gh_api", gh_api)
+    result = getattr(mod, f"apply_{target}")(rendered, expect_revision="render-revision")
+
+    if branch_revision != "render-revision":
+        assert result["ok"] is False
+        assert "update branch" in result["error"]
+        assert writes == []
+        assert not any("PUT" in argv for argv in calls)
+    else:
+        assert result["ok"] is True
+        if target == "github":
+            assert writes[0]["sha"] == "render-revision"
+        else:
+            put = next(argv for argv in calls if "PUT" in argv)
+            assert "last_commit_id=render-revision" in put

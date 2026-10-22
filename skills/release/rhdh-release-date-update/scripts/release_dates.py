@@ -595,6 +595,9 @@ def apply_github(rendered_path: Path, expect_revision: str | None = None) -> dic
     if refused:
         return refused
 
+    if not expect_revision:
+        return {"target": "github", "ok": False, "error": "render-time revision is required"}
+
     if expect_revision is not None:
         try:
             _, current_revision = fetch_github_file(ref=GITHUB_BASE_BRANCH)
@@ -630,11 +633,18 @@ def apply_github(rendered_path: Path, expect_revision: str | None = None) -> dic
     if not branch_created and "Reference already exists" not in create_branch.stderr:
         return {"target": "github", "ok": False, "error": create_branch.stderr.strip()}
 
-    # File sha on the branch (falls back to base sha for a brand-new branch).
+    # The destination must still match the approved render's baseline. Using
+    # its latest SHA without this check would bless and overwrite branch edits.
     try:
         _, file_sha = fetch_github_file(ref=BRANCH_NAME)
-    except Exception:
-        file_sha = None
+    except RuntimeError as exc:
+        return {"target": "github", "ok": False, "error": f"could not verify update branch: {exc}"}
+    if file_sha != expect_revision:
+        return {
+            "target": "github",
+            "ok": False,
+            "error": "update branch differs from the rendered baseline; reconcile its PR before re-rendering",
+        }
 
     content_b64 = base64.b64encode(rendered_path.read_bytes()).decode("ascii")
     fields = {
@@ -642,8 +652,7 @@ def apply_github(rendered_path: Path, expect_revision: str | None = None) -> dic
         "content": content_b64,
         "branch": BRANCH_NAME,
     }
-    if file_sha:
-        fields["sha"] = file_sha
+    fields["sha"] = file_sha
     try:
         put_result = gh_api(f"repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}", "PUT", fields)
     except RuntimeError as exc:
@@ -686,6 +695,9 @@ def apply_gitlab(rendered_path: Path, expect_revision: str | None = None) -> dic
     if refused:
         return refused
 
+    if not expect_revision:
+        return {"target": "gitlab", "ok": False, "error": "render-time revision is required"}
+
     if expect_revision is not None:
         try:
             _, current_revision = fetch_gitlab_file(ref=GITLAB_BASE_BRANCH)
@@ -722,14 +734,18 @@ def apply_gitlab(rendered_path: Path, expect_revision: str | None = None) -> dic
     encoded_path = GITLAB_FILE_PATH.replace("/", "%2F")
     content = rendered_path.read_text()
 
-    # Branch-level last_commit_id (falls back to None for a brand-new branch,
-    # which has nothing to race against yet). GitLab rejects the PUT below if
-    # this has moved, the same optimistic lock GitHub gets from the blob sha
-    # it sends in apply_github.
+    # Check against render, then lock the write against any later branch edit.
+    # A failed read must not turn off optimistic locking.
     try:
         _, branch_last_commit_id = fetch_gitlab_file(ref=BRANCH_NAME)
-    except RuntimeError:
-        branch_last_commit_id = None
+    except RuntimeError as exc:
+        return {"target": "gitlab", "ok": False, "error": f"could not verify update branch: {exc}"}
+    if branch_last_commit_id != expect_revision:
+        return {
+            "target": "gitlab",
+            "ok": False,
+            "error": "update branch differs from the rendered baseline; reconcile its MR before re-rendering",
+        }
 
     put_fields = [
         "-f",
@@ -739,8 +755,7 @@ def apply_gitlab(rendered_path: Path, expect_revision: str | None = None) -> dic
         "-f",
         f"content={content}",
     ]
-    if branch_last_commit_id:
-        put_fields += ["-f", f"last_commit_id={branch_last_commit_id}"]
+    put_fields += ["-f", f"last_commit_id={branch_last_commit_id}"]
 
     # GITLAB_FILE_PATH is release_calendar.yaml, which already exists on every
     # branch — this is always an update (PUT), never a create (POST).

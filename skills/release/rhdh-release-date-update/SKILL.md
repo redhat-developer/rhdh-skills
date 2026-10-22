@@ -10,8 +10,7 @@ description: >-
   release date files", "update release-schedule.yaml", "update
   release_calendar.yaml", "the RHDH schedule changed, propagate it", "check
   release-schedule.yaml is current", "keep plugin-owner release dates in
-  sync", or a downstream reminder or announcement that landed with the wrong
-  freeze date.
+  sync".
 ---
 
 # RHDH release date update
