@@ -1,0 +1,3 @@
+should_trigger: false
+category: near-miss-install
+rationale: Installing an existing skill belongs to a skill installer.

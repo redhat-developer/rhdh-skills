@@ -1,0 +1,3 @@
+should_trigger: true
+category: explicit-audit
+rationale: Requests diagnosis of an Agent Skill's routing behavior.

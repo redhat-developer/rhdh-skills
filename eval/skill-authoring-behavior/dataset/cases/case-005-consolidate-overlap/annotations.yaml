@@ -1,0 +1,9 @@
+workflow: consolidate
+expected_decision: merge
+rubric: |
+  The result recognizes that both skills claim the same trigger and operation,
+  merges them into one coherent runbook-create skill, preserves collection of
+  prerequisites plus Markdown authoring and validation, and contains no stale
+  invocations of the old names. The decision explains why the boundary was
+  shallow and specifies harness routing and behavior cases needed to compare the
+  consolidation against a baseline.

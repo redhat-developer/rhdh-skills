@@ -1,0 +1,7 @@
+workflow: audit
+rubric: |
+  The report identifies the description's unqualified generic review language,
+  missing domain anchors, and absent near-miss routing coverage. It separately
+  identifies the lack of end-to-end behavior cases and does not claim that prose
+  inspection proves runtime behavior. It respects the analysis-only request and
+  proposes targeted repairs rather than rewriting unrelated content.
