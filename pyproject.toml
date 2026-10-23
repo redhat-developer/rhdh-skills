@@ -26,6 +26,9 @@ include = [
 dev = [
     "pytest>=7.0",
     "ruff>=0.4.0",
+    # Test-only. Skill scripts that round-trip YAML declare this themselves via
+    # PEP 723 (ADR-0002); this entry just lets the unit tests import them.
+    "ruamel.yaml>=0.18",
 ]
 
 [project.scripts]
