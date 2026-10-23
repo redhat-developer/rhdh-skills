@@ -857,3 +857,73 @@ class TestGoVersionGte:
 
     def test_empty_is_not_gte(self) -> None:
         assert self._gte("", "1.26.5") == 1
+
+
+class TestGoModUpdateApplies:
+    """Operator go.mod is main-only. Must-gather Go starts at release-2.* and main."""
+
+    @staticmethod
+    def _applies(kind: str, branch: str) -> int:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_mod_update_applies")
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"{function}\ngo_mod_update_applies {kind} {branch}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode
+
+    def test_operator_main_only(self) -> None:
+        assert self._applies("rhdh-operator", "main") == 0
+        assert self._applies("rhdh-operator", "release-2.1") == 1
+        assert self._applies("rhdh-operator", "release-1.10") == 1
+
+    def test_must_gather_golang_branches(self) -> None:
+        assert self._applies("rhdh-must-gather", "main") == 0
+        assert self._applies("rhdh-must-gather", "release-2.1") == 0
+        assert self._applies("rhdh-must-gather", "release-1.10") == 1
+
+    def test_write_go_mod_inserts_missing_toolchain(self, tmp_path: Path) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "write_go_mod_versions")
+        go_mod = tmp_path / "go.mod"
+        go_mod.write_text(
+            "module example.com/must-gather\n\ngo 1.26.0\n\nrequire ()\n", encoding="utf-8"
+        )
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{function}\ncd "$1" && write_go_mod_versions 1.26.0 1.26.7 0 1 && cat go.mod',
+                "bash",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "go 1.26.0\ntoolchain go1.26.7\n" in result.stdout
+
+    def test_write_go_mod_does_not_replace_when_flags_are_off(self, tmp_path: Path) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "write_go_mod_versions")
+        go_mod = tmp_path / "go.mod"
+        original = "module example.com/op\n\ngo 1.26.0\n\ntoolchain go1.26.10\n"
+        go_mod.write_text(original, encoding="utf-8")
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{function}\ncd "$1" && write_go_mod_versions 1.26.0 1.26.7 0 0 && cat go.mod',
+                "bash",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == original

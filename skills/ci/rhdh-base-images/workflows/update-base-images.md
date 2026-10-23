@@ -10,7 +10,7 @@ Refresh **base images** and **RPM lockfiles** in the GitHub hub/operator/must-ga
 |------|------------------|-------------------|
 | rhdh | `build/containerfiles/Containerfile` or `docker/Dockerfile` (release-1.9) | `build/containerfiles/Containerfile` or `.rhdh/docker/Dockerfile` |
 | rhdh-operator | `go.mod` aligned with `ubi10/go-toolset` on **main** only | root `Dockerfile` (main, release-2.*, later); `.rhdh/docker/Dockerfile` on release-1.* |
-| rhdh-must-gather | — | `Containerfile` |
+| rhdh-must-gather | `go.mod` aligned with `ubi10/go-toolset` on **main** and **release-2.*** (no Go on release-1.*) | `Containerfile` |
 | rhdh-plugin-catalog | `builder.Containerfile` FROM + `.nvm/` + `konflux.additional-tags` `node-v*` | none |
 | rhdh-plugin-export-overlays | `versions.json` `node` | none |
 
@@ -191,9 +191,9 @@ the script:
 
 See [rhdh `.nvm/releases/README.adoc`](https://github.com/redhat-developer/rhdh/blob/main/.nvm/releases/README.adoc). On **release-1.9**, headers come from `docker/Dockerfile` (`ubi9/nodejs-22`), not Node 24.
 
-### Go toolchain (rhdh-operator, main only)
+### Go toolchain (rhdh-operator main; rhdh-must-gather main and release-2.*)
 
-On **main** only (not `release-*`), after base image bumps, reads `go version` from the `ubi9/go-toolset` or `ubi10/go-toolset` image in `.rhdh/docker/Dockerfile` and updates `go.mod` **only when that version is newer** than the current `go` / `toolchain` lines:
+On **rhdh-operator `main` only** (not `release-*`), and on **rhdh-must-gather `main` and `release-2.*`**, after base image bumps, reads `go version` from the `ubi9/go-toolset` or `ubi10/go-toolset` image and updates `go.mod` **only when that version is newer** than the current `go` / `toolchain` lines. Must-gather `release-1.*` has no Go module (Rust websocat builder) and is skipped. Operator reads `.rhdh/docker/Dockerfile` on release-1.* and the root `Dockerfile` otherwise; must-gather reads the root `Containerfile`. When `go.mod` has no `toolchain` line, one is inserted. The lines look like:
 
 ```text
 go 1.26.0

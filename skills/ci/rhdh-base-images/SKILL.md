@@ -101,8 +101,11 @@ until that path is migrated.
   `release-2.Y` → GitLab `release-2.Y` (using UBI10 / RHEL10). Catalog has no
   `rpms.lock.yaml`. Do not `[skip-build]` the catalog builder commit.
 - On rhdh-operator `main`, raise `go.mod` to the Go toolset image when the
-  image is newer. Never lower `go` or `toolchain` to match an older image;
-  a newer pin (for example from Renovate) is valid.
+  image is newer. On rhdh-must-gather `main` and `release-2.*`, do the same
+  from the root `Containerfile` `ubi9/go-toolset` or `ubi10/go-toolset` image,
+  inserting a `toolchain` line when `go.mod` has none. Skip must-gather
+  `release-1.*` (no Go module). Never lower `go` or `toolchain` to match an
+  older image; a newer pin (for example from Renovate) is valid.
 - Exclude RHDH `e2e-tests/` and `.ci/` from image scans.
 - Ignore `rpm-lockfile-prototype` lines matching `No sources found for` or
   "no matching sources". Those source RPMs are often unpublished; the binary
