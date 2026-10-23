@@ -1,0 +1,11 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: plugin-name
+  title: Plugin Title
+  annotations:
+    extensions.backstage.io/pre-installed: 'true'
+spec:
+  support:
+    level: tech-preview
+  lifecycle: active

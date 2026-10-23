@@ -1,0 +1,8 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Package
+metadata:
+  name: fixture-only
+  title: Fixture Package
+spec:
+  packageName: "@fixture/only"
+  support: community

@@ -1,0 +1,20 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Package
+metadata:
+  name: example-tech-preview
+  namespace: rhdh
+  title: Example Tech Preview
+  links:
+    - title: Source Code
+      url: https://github.com/example/tech-preview
+spec:
+  packageName: "@example/plugin-tech-preview"
+  version: 1.0.0
+  backstage:
+    role: frontend-plugin
+    supportedVersions: 1.49.4
+  author: Backstage Community
+  support:
+    provider: Red Hat
+    level: tech-preview
+  lifecycle: active
