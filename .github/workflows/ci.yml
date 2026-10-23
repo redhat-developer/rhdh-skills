@@ -22,18 +22,17 @@ jobs:
       - id: resolve
         run: |
           python3 << 'PYEOF' >> "$GITHUB_OUTPUT"
-          import re, json
-          with open('pyproject.toml') as f:
-              spec = re.search(r'requires-python\s*=\s*"([^"]+)"', f.read())
-          spec = spec.group(1) if spec else '>=3.9'
-          min_m = re.search(r'>=\s*([\d.]+)', spec)
-          max_m = re.search(r'<=?\s*([\d.]+)', spec)
-          min_v = min_m.group(1) if min_m else '3.9'
-          max_v = max_m.group(1) if max_m else '3.x'
-          matrix = [min_v, max_v] if min_v != max_v else [min_v]
-          print(f'min={min_v}')
-          print(f'max={max_v}')
-          print(f'matrix={json.dumps(matrix)}')
+          import json
+          # One CPython job: the newest 3.x that actions/setup-python offers
+          # on the current ubuntu-latest image. A floating 3.x spec follows
+          # the runner when ubuntu-latest moves. Do not also schedule the
+          # requires-python floor. Ubuntu 26.04 does not publish CPython 3.9,
+          # so setup-python fails with:
+          #   The version '3.9' with architecture 'x64' was not found for Ubuntu 26.04.
+          version = '3.x'
+          print(f'min={version}')
+          print(f'max={version}')
+          print(f'matrix={json.dumps([version])}')
           PYEOF
 
   lint:
