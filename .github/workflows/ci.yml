@@ -58,7 +58,13 @@ jobs:
 
   test:
     needs: resolve-python
-    runs-on: ubuntu-latest
+    # Pinned, unlike the other jobs, because the matrix includes this repo's
+    # minimum Python and `ubuntu-latest` moved to 24.04 -> 26.04 on 2026-10-22.
+    # `actions/setup-python` has no 3.9 build for 26.04 — 3.9 reached end of life
+    # in October 2025, so new images are not being produced for it — and the
+    # resulting failure takes out the whole matrix through fail-fast. Pin until
+    # the floor in pyproject.toml moves past 3.9.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ${{ fromJson(needs.resolve-python.outputs.matrix) }}
