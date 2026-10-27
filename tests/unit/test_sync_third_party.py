@@ -158,10 +158,17 @@ class TestApplySkill:
         (skill_dir / "NOTES.md").write_text("ours\n", encoding="utf-8")
         entry = sync.load_registry(tmp_path)[0]
         written = sync.apply_skill(
-            skill_dir, entry, upstream_map() | {Path("skills/productivity/demo/sub/NEW.md"): b"n"}
+            skill_dir,
+            entry,
+            upstream_map()
+            | {Path("skills/productivity/demo/sub/NEW.md"): b"n"}
+            | {Path("skills/productivity/demo/scripts/helper.py"): b"print('up')\n"},
         )
-        assert sorted(written) == ["SKILL.md", "sub/NEW.md"]
+        # The whole upstream directory copies, not just SKILL.md: scripts and
+        # other files a skill needs ride along.
+        assert sorted(written) == ["SKILL.md", "scripts/helper.py", "sub/NEW.md"]
         assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == "original\n"
+        assert (skill_dir / "scripts" / "helper.py").read_bytes() == b"print('up')\n"
         assert (skill_dir / "NOTES.md").read_text(encoding="utf-8") == "ours\n"
 
 
