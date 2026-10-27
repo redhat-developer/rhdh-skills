@@ -5,7 +5,7 @@ status transitions, and check upward through the hierarchy for parent
 transitions. On-demand — run at a natural stopping point, never proactively.
 
 Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
-and the adapter order. In local mode the exact commands are in
+and the adapter order. The reference implementation is in
 [references/tooling.md](../references/tooling.md).
 
 ## Step 1 — Detect the issue
@@ -18,7 +18,7 @@ Check in priority order and stop at the first match:
 3. **PR title or description** — the open PR for the current branch.
 4. **Recent commits** — commit subjects often reference the key.
 
-   > Tooling: `references/tooling.md#issue-detection` (local mode only) — the
+   > Tooling: `references/tooling.md#issue-detection` — the
    > exact git and forge-CLI probes for steps 2–4
 
 5. **Keyword search** — extract topic keywords and search:
@@ -39,7 +39,7 @@ acting.
 
 Read the issue with all fields when custom fields matter.
 
-> Tooling: `references/tooling.md#read` (local mode only)
+> Tooling: `references/tooling.md#read`
 
 Note the current status; it determines which transitions exist. Note whether the
 issue has a parent — if it does not, skip Step 6 entirely.
@@ -72,7 +72,7 @@ edited body for both the preview and the write; the Jira adapter does not edit i
 
 Confirm before posting: "Proposed comment: {comment}. Post this? [y/N/edit]"
 
-> Tooling: `references/tooling.md#comment` (local mode only)
+> Tooling: `references/tooling.md#comment`
 
 ## Step 4 — Propose a transition
 
@@ -102,7 +102,7 @@ it — the transition may already have happened. `/rhdh-jira-api` lists the rule
 
 Confirm, then apply the transition.
 
-> Tooling: `references/tooling.md#transition` (local mode only)
+> Tooling: `references/tooling.md#transition`
 
 If no transition applies, skip this step silently.
 
@@ -110,7 +110,7 @@ If no transition applies, skip this step silently.
 
 If the session revealed dependencies not yet tracked, offer an issue link.
 
-> Tooling: `references/tooling.md#link` (local mode only)
+> Tooling: `references/tooling.md#link`
 
 An **external URL** — a pull request, a design document, a support case — is not
 an issue link. It is a *remote link*. Use the remote-link operation in

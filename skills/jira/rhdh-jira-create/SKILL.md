@@ -11,7 +11,7 @@ description: >-
   is this skill's job, not the caller's. Editing or transitioning an issue that
   already exists, such as RHIDP-1234, is not creation.
 compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP, including the ability to create issues, set fields, and link parents. Requires the external grilling skill — creation is blocked without it. Windows, macOS, Linux."
-local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; Python 3.9+ and uv for the converter /rhdh-jira-api runs. An agent with ADLC Jira tooling uses that instead. See references/tooling.md."
+local-tooling: "Reference implementation: acli on PATH with a Jira session; Python 3.9+ and uv for the converter /rhdh-jira-api runs. An ADLC integration may serve the same verbs only where it meets the postconditions /rhdh-jira-api pins. See references/tooling.md."
 ---
 
 # Create RHDH Jira work
@@ -24,14 +24,16 @@ Feature, an Epic, or a Story. Deciding that is this skill's job. Getting it wron
 writes the wrong issue type into a public project, so the decision happens up
 front and out loud, and the user confirms it before anything is created.
 
-## Goals, not tools
+## Verbs, not tool choices
 
-Every step in this skill states what it needs, never which tool to use. Create
-the issue with whichever tool you actually have for Jira — an ADLC tool, the
-authenticated host adapter, or, when you have the local CLIs, the commands in
-[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
-wrapping a local CLI when both are available. The process — which type, which
-project, which fields, which gates — is the same either way.
+Every Jira read and write this skill needs is a verb `/rhdh-jira-api` defines
+and pins — search, view, create, comment, link — with exact inputs, outputs,
+and postconditions. Invoke the verb; never improvise a raw Jira call. The
+bundled scripts are the reference implementation, and
+[references/tooling.md](references/tooling.md) holds this skill's invocations
+of them. An ADLC integration may serve the same verbs only where it meets the
+postconditions — one that silently truncates results or drops custom fields is
+not an implementation, it is a bug.
 
 ## Route
 

@@ -11,7 +11,7 @@ description: >-
   stale". Assesses existing work; it does not open new issues and does not build
   a sprint.
 compatibility: "Authenticated read and write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search and read an issue with custom fields. Deliberately not gated on the grilling skill. Windows, macOS, Linux."
-local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts. An agent with ADLC Jira tooling uses that instead. See references/tooling.md."
+local-tooling: "Reference implementation: acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts. An ADLC integration may serve the same verbs only where it meets the postconditions /rhdh-jira-api pins. See references/tooling.md."
 ---
 
 # Refine RHDH Jira work
@@ -19,14 +19,17 @@ local-tooling: "Optional: only for agents using the local CLI path — acli on P
 Answer "is this ready" with the criteria the RHDH workflow actually enforces,
 and say what is missing rather than guessing at it.
 
-## Goals, not tools
+## Verbs, not tool choices
 
-Every check below states what it needs, never which tool to use. Read Jira
-with whichever tool you actually have — an ADLC tool, the authenticated host
-adapter, or, when you have the local CLIs, the commands in
-[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
-wrapping a local CLI when both are available. The checks — which fields, which
-exit criteria, which findings — are the same either way.
+Every Jira read and write this skill needs is a verb `/rhdh-jira-api` defines
+and pins — search, view, comment, edit, transition — with exact inputs,
+outputs, and postconditions. Invoke the verb; never improvise a raw Jira call.
+The bundled scripts are the reference implementation, and
+[references/tooling.md](references/tooling.md) holds this skill's invocations
+of them. An ADLC integration may serve the same verbs only where it meets the
+postconditions — one that silently truncates results or drops custom fields is
+not an implementation, it is a bug, and a finding built on it is a false
+finding.
 
 ## Route
 

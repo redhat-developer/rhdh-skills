@@ -1,11 +1,10 @@
-# Local tooling: create-issue commands
+# Reference implementation: create-issue commands
 
-**For agents that have the local CLIs.** This reference maps the create
-workflow's goals to exact commands. Reach for it only when you actually have
-`acli` — typically an agent working in a repository checkout. An agent with
-ADLC Jira tooling should use that instead and ignore this file: an ADLC tool is
-preferred over wrapping a CLI, and the process — which type, which project,
-which fields, which gates — is the same either way.
+**The reference implementation of the verbs `/rhdh-jira-api` pins.** These
+commands are what run locally, and they are the behavior any other backend
+must reproduce: same inputs, same outputs, same postconditions. An ADLC
+integration may replace them only where it meets those postconditions —
+otherwise these commands are the solution, not a suggestion.
 
 `/rhdh-jira-api` owns the field IDs, the component catalog, and the general
 `acli` flag traps. What follows is only what the create workflow needs.

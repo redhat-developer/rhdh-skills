@@ -11,7 +11,7 @@ description: >-
   Reading and query mechanics only — deciding what to file, judging readiness,
   or changing an issue belongs to the Jira skill that owns that verb.
 compatibility: "Authenticated read access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search, read an issue with custom fields, and list boards and sprints. Windows, macOS, Linux."
-local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts; an authenticated host Atlassian adapter for GraphQL and REST fallbacks. An agent with ADLC Jira tooling uses that instead. See references/tooling.md."
+local-tooling: "Reference implementation: acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts; an authenticated host Atlassian adapter for GraphQL and REST fallbacks. An ADLC integration may serve the same verbs only where it meets the postconditions this skill pins. See references/tooling.md."
 ---
 
 # RHDH Jira API
@@ -24,14 +24,22 @@ This skill reads. It never decides what to file and never approves a write —
 though it does define exactly what a write costs, because the payload shapes are
 here.
 
-## Goals, not tools
+## Verbs, not tool choices
 
-Every goal below states what it needs, never which tool to use. Use whichever
-tool you actually have for Jira — an ADLC tool, the authenticated host
-adapter, or, when you have the local CLIs, the commands in
-[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
-wrapping a local CLI when both are available. The process — which query,
-which fields, which rules — is the same either way.
+Every Jira read and write in this pack is one of the verbs this skill defines
+and pins — search, view, create, edit, transition, assign, comment, link,
+roster, sprint-report — with exact inputs, outputs, and postconditions. A
+caller names the verb and its inputs; it never improvises a raw Jira call and
+never names a CLI.
+
+Whichever backend executes a verb — the bundled local scripts, the
+authenticated host adapter, or an ADLC integration — must produce the
+postconditions. The local scripts are the reference implementation:
+[references/tooling.md](references/tooling.md) holds their exact syntax,
+flags, and traps. A backend that silently truncates results, drops custom
+fields, or reports an absent field as empty is not an implementation of the
+verb; it is a bug. Verify a backend against the postconditions before
+trusting it — nativeness is not conformance.
 
 All local command syntax, flags, traps, and script invocations live in
 [references/tooling.md](references/tooling.md). Nothing in this file depends on
@@ -49,7 +57,7 @@ them.
 | I need a relationship-heavy bulk read or a team roster | [references/graphql-queries.md](references/graphql-queries.md) |
 | The primary adapter cannot read or set this field | [references/rest-api-fallback.md](references/rest-api-fallback.md) |
 | Sprint report or burndown-chart numbers | [references/rest-api-fallback.md](references/rest-api-fallback.md), then the Greenhopper sprint-report read — [references/tooling.md](references/tooling.md) locally |
-| Which local command or flag does this, and what breaks? | [references/tooling.md](references/tooling.md) (local CLIs only) |
+| Which local command or flag does this, and what breaks? | [references/tooling.md](references/tooling.md) — the reference implementation |
 
 Load the one branch the question needs.
 
@@ -72,10 +80,10 @@ missing.
 
 A field you could not retrieve is reported as unretrieved, never as empty.
 
-> Tooling: `references/tooling.md#read-traps` — the exact local flags
-> (`--limit`, `--paginate`, `--count`, `--fields '*all'`, `--enrich`) that
-> enforce these rules in local mode. The bundled scripts, including
-> `greenhopper.py`, are listed there too.
+> Tooling: `references/tooling.md#read-traps` — the reference implementation's
+> flags (`--limit`, `--paginate`, `--count`, `--fields '*all'`, `--enrich`)
+> that enforce these rules. The bundled scripts, including `greenhopper.py`,
+> are listed there too.
 
 ## Writes
 
@@ -108,6 +116,6 @@ adapter, never printed — so nothing this skill hands back carries one.
 A read is complete when every field the answer asserts was actually fetched.
 Report the exact JQL used, the number of issues returned, and whether the
 result was truncated — a truncated result is an incomplete answer, not a
-finding. Name the adapter that produced each fact. In local mode also report
-the command. A field the API could not supply is named as unretrieved rather
+finding. Name the adapter that produced each fact. With the reference
+implementation, also report the command. A field the API could not supply is named as unretrieved rather
 than reported as empty or carried over from an earlier query.

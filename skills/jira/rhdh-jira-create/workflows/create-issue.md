@@ -74,7 +74,7 @@ Before drafting an Epic under a parent Feature, list what is already there:
 parent = FEATURE-KEY AND issuetype = Epic AND status != Closed
 ```
 
-> Tooling: `references/tooling.md#search` (local mode only)
+> Tooling: `references/tooling.md#search`
 
 Present the siblings with summaries and sizes, then ask which the new Epic
 relates to and whether it overlaps any. Carry that list into the interview — the
@@ -211,7 +211,7 @@ Render the filled template and the inferred fields as a temporary markdown file
 in a portable temp location (`$TMPDIR`, `%TEMP%`, or Python `tempfile`) and hand
 it to the user.
 
-> Tooling: `references/tooling.md#review-file` (local mode only) — the exact
+> Tooling: `references/tooling.md#review-file` — the exact
 > shell mechanics for creating and filling the file
 
 The file shows, in this order: a `## {Type}: {summary}` heading; a
@@ -238,7 +238,7 @@ issue instead?"
 project = RHDHPLAN AND issuetype = 'Feature Request' AND status = Accepted AND summary ~ "KEYWORD1 KEYWORD2"
 ```
 
-> Tooling: `references/tooling.md#search` (local mode only)
+> Tooling: `references/tooling.md#search`
 
 If one matches, offer to add a `Related` link after creation.
 
@@ -302,7 +302,7 @@ for a cross-project parent:
 Team is one of the fields not every adapter can set. Follow the adapter order
 and the Team payload in `/rhdh-jira-api`.
 
-> Tooling: `references/tooling.md#create` (local mode only) — the exact create
+> Tooling: `references/tooling.md#create` — the exact create
 > command per issue type, the single-file payload shapes for RHDHBUGS Bugs and
 > private issues, and the post-create update command.
 
@@ -316,7 +316,7 @@ After choosing the comment set, invoke `/prose-editing` once on the complete set
 of proposed comment bodies in the **flavored** register. Use those edited bodies
 for the preview and write gate; the Jira adapter must not edit them again.
 
-> Tooling: `references/tooling.md#comment` (local mode only)
+> Tooling: `references/tooling.md#comment`
 
 Customer-identifying detail goes only in a restricted-visibility comment, and
 only when the project supports security levels.

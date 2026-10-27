@@ -1,11 +1,10 @@
-# Local tooling: link-pr-mr commands
+# Reference implementation: link-pr-mr commands
 
-**For agents that have the local CLIs.** This reference maps the link protocol
-in `SKILL.md` to exact commands and scripts. Reach for it only when you
-actually have `Node`, `gh`/`glab`, and a Jira token — typically an agent
-working in a repository checkout. An agent with ADLC forge and Jira tooling
-should use that instead and ignore this file: an ADLC tool is preferred over
-wrapping a CLI, and the protocol is the same either way.
+**The reference implementation of the link protocol in `SKILL.md`.** These
+scripts are what run locally, and they are the behavior any other backend must
+reproduce: same link titles, same idempotent comment update, same post-move
+key reporting. An ADLC integration may replace them only where it meets the
+protocol — otherwise these scripts are the solution, not a suggestion.
 
 The scripts are transport layers: they post exactly what they are given and
 never edit prose.

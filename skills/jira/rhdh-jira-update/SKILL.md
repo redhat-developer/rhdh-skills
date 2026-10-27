@@ -10,7 +10,7 @@ description: >-
   "assign RHIDP-1234". Edits existing work — it does not create issues, audit a
   backlog, or build a sprint.
 compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to read an issue with custom fields, read a team roster, and create remote (web) links. Windows, macOS, Linux."
-local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; git and gh for issue detection; the authenticated host Atlassian adapter for web links and roster reads. See references/tooling.md."
+local-tooling: "Reference implementation: acli on PATH with a Jira session; git and gh for issue detection; the authenticated host Atlassian adapter for web links and roster reads. An ADLC integration may serve the same verbs only where it meets the postconditions /rhdh-jira-api pins. See references/tooling.md."
 ---
 
 # Update RHDH Jira work
@@ -18,14 +18,16 @@ local-tooling: "Optional: only for agents using the local CLI path — acli on P
 Small, precise changes to an issue that already exists. Two jobs live here
 because they are the same job: a field mutation on a known key.
 
-## Goals, not tools
+## Verbs, not tool choices
 
-Every step below states what it needs, never which tool to use. Change Jira
-with whichever tool you actually have — an ADLC tool, the authenticated host
-adapter, or, when you have the local CLIs, the commands in
-[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
-wrapping a local CLI when both are available. The change — which fields, which
-transition, which gate — is the same either way.
+Every Jira read and write this skill needs is a verb `/rhdh-jira-api` defines
+and pins — view, comment, transition, link, assign, roster — with exact
+inputs, outputs, and postconditions. Invoke the verb; never improvise a raw
+Jira call. The bundled scripts are the reference implementation, and
+[references/tooling.md](references/tooling.md) holds this skill's invocations
+of them. An ADLC integration may serve the same verbs only where it meets the
+postconditions — one that drops custom fields or skips the read-back is not an
+implementation, it is a bug.
 
 ## Route
 

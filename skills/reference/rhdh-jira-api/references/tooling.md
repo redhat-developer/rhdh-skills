@@ -1,11 +1,10 @@
-# Local tooling: acli Jira commands
+# Reference implementation: acli Jira commands
 
-**For agents that have the local CLIs.** This reference maps every goal in
-`SKILL.md` to exact `acli` commands. Reach for it only when you actually have
-`acli` — typically an agent working in a repository checkout. An agent with
-ADLC Jira tooling should use that instead and ignore this file: an ADLC tool
-is preferred over wrapping a CLI, and the process — which query, which fields,
-which rules — is the same either way.
+**The reference implementation of the verbs `/rhdh-jira-api` pins.** These
+commands are what run locally, and they are the behavior any other backend
+must reproduce: same inputs, same outputs, same postconditions. An ADLC
+integration may replace them only where it meets those postconditions —
+otherwise these commands are the solution, not a suggestion.
 
 Run the bundled scripts from this skill's directory. Stdlib only. Another skill
 invokes `/rhdh-jira-api` by name and lets this skill run them; it never reaches

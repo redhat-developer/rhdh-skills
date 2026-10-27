@@ -1,8 +1,23 @@
 # Spike: Make skills chai-bot native (dual-mode: local + chai)
 
-Status: proposal, revision 3 after team feedback. No skill rewritten beyond
+Status: proposal, revision 4 after team feedback. No skill rewritten beyond
 the rhdh-jira-api pilot. Deliverable of the research card "Make skills more
 chai bot native".
+
+Revision 4 replaces the per-goal tool choice with **verb contracts**. Revision
+3 said "use whichever tool you actually have; prefer a native integration" —
+which made the chai path non-deterministic: the agent re-derives API calls
+whose documented traps (30-row silent truncation, absent-vs-empty fields,
+security-on-create, ADF conversion) exist precisely because improvising them
+wrong is easy. The fix moves determinism from the command layer to the
+contract layer: each external operation is a named verb with pinned inputs,
+outputs, and postconditions; the bundled scripts are the **reference
+implementation**; and another backend — a chai integration — may execute the
+verbs only where it demonstrably meets the same postconditions. Conformance is
+checked once per backend, not re-decided at every step.
+
+Revision 3 corrects the mode test: the discriminator is **whether the agent
+has the specific tool the sidecar references**, not whether it has a shell.
 
 Revision 3 corrects the mode test: the discriminator is **whether the agent
 has the specific tool the sidecar references**, not whether it has a shell.
@@ -58,8 +73,8 @@ locally-formatted by the local agent's own UI):
 
 | Layer | Where it lives | Loaded when |
 |---|---|---|
-| **Process** — goals, decision tables, exit criteria, templates, sequencing, gates, failure modes | `SKILL.md` + `workflows/` + domain `references/` | always |
-| **Tooling** — exact CLI commands, script invocations, flags, auth notes | one `references/tooling.md` per skill | only by an agent that has the referenced CLIs |
+| **Process** — verb contracts (inputs, outputs, postconditions), decision tables, exit criteria, templates, sequencing, gates, failure modes | `SKILL.md` + `workflows/` + domain `references/` | always |
+| **Reference implementation** — exact CLI commands, script invocations, flags, auth notes | one `references/tooling.md` per skill | locally, always; another backend only where it meets the verb postconditions |
 
 ### Anatomy
 
@@ -74,38 +89,46 @@ skill/
 
 ### The rewriting pattern
 
-Every command block in process prose becomes a **goal statement with inputs,
-outputs, and failure mode**, plus a one-line tooling pointer:
+Every command block in process prose becomes a **verb invocation with pinned
+inputs, outputs, and postconditions**, plus a one-line pointer to the reference
+implementation:
 
 ```markdown
-Produce the prioritized list of open overlay PRs with labels, assignee, and
-staleness.
+Run the open-overlay-PRs read (verb contract: every open overlay PR with
+labels, assignee, and staleness; postcondition: the result states the total
+and whether it was truncated). Then classify each PR by the table below …
 
-> Tooling: `references/tooling.md#list-prs` (local mode only)
-
-Then classify each PR by the table below …
+> Tooling: `references/tooling.md#list-prs` — the reference implementation
 ```
 
-- **Chai agent**: satisfies each goal with its platform tools; never reads
-  `tooling.md`.
-- **Local agent**: follows the pointer and runs the exact command.
+- **Local agent**: runs the exact command behind the pointer. Deterministic.
+- **Chai agent**: executes the same verb through its integration — but only
+  after that backend has demonstrated the postconditions (a probe or a
+  verified run); until then it runs the same scripts through its shell. Either
+  way the verb contract, not per-step judgment, decides the shape of the call.
 - The pointer is the *only* place a CLI or script name appears in process prose.
 
-### How an agent picks its tool
+### How a verb gets executed
 
 One standard paragraph, stated in `SKILL.md` (restated per skill — skills may
 not cite repo-level files, per AGENTS.md):
 
-> Every goal below states what it needs, never which tool to use. Use
-> whichever tool you actually have — a native integration such as the chai
-> bot's, or, when you have the local CLIs, the commands in
-> `references/tooling.md`. Prefer a native integration over wrapping a local
-> CLI when both are available. The process is the same either way.
+> Every external operation below is a verb with pinned inputs, outputs, and
+> postconditions. Invoke the verb; never improvise a raw API call. The bundled
+> scripts are the reference implementation (`references/tooling.md` locally).
+> An ADLC integration may serve the verbs only where it meets the same
+> postconditions — a backend that silently truncates results or drops fields
+> is not an implementation, it is a bug.
 
-The test is **tool availability, not shell access**: an agent with bash but a
-native Jira integration should use the integration, not shell out to `acli`.
-Same for Google Workspace (native integration over `gog`), GitHub/GitLab
-(native over `gh`/`glab`).
+The test is **conformance, not availability or preference**. Revision 3 let
+the agent pick a tool per goal, which turned every chai-path execution into an
+untested re-derivation of calls whose traps are documented because getting
+them wrong is easy. Conformance is established once per backend, not decided
+per step: a probe asserts the postconditions (pagination returns the total,
+enrichment returns custom fields, absent is reported as unretrieved), and only
+a backend that passed serves the verbs. The local scripts remain the fallback
+that always works — "prefer the native integration" is aesthetics until that
+integration is conformance-tested.
 
 **Naming rule for shipped prose:** skills never name the specific bot or
 platform ("chai bot") — they say **ADLC tools**. The skill outlives whichever
@@ -124,11 +147,13 @@ runtime copy is what travels; the definition lives once.
 
 ```yaml
 compatibility: "Read access to RHIDP Jira; ability to create GitHub PRs. Core Team role."
-local-tooling: "acli on PATH with a Jira session; gh; Python 3.9+ and uv. Optional."
+local-tooling: "acli on PATH with a Jira session; gh; Python 3.9+ and uv. The reference implementation — see references/tooling.md."
 ```
 
 `compatibility:` becomes **process prerequisites** (access, role, capability) —
-true in both modes. `local-tooling:` is explicitly optional and names the CLIs.
+true in both modes. `local-tooling:` names the reference implementation's
+CLIs; another backend may replace them only where it meets the verb
+postconditions.
 
 ## What "optional" means — three tiers
 
@@ -137,8 +162,10 @@ true in both modes. `local-tooling:` is explicitly optional and names the CLIs.
    composition contracts in AGENTS.md, not tooling. If a gate must soften for
    chai, that is a separate explicit decision, not a side effect of this
    migration.
-2. **Local tooling**: the `tooling.md` reference and every script invocation.
-   Optional by construction — absent in chai mode, exact in local mode.
+2. **Reference implementation**: the `tooling.md` reference and every script
+   invocation. Exact locally. Another backend replaces it only by meeting the
+   verb postconditions — conformance, not absence, is what makes it
+   replaceable.
 3. **Already-optional steps** (`--no-open`, `--draft`, "open the diffs page",
    "push before create"): these are tooling conveniences, not process. They
    move into `tooling.md` entirely; process prose keeps only the decision
@@ -153,12 +180,13 @@ know it, it is process; otherwise it is tooling.**
 - **Transport wrappers**: extract sequencing knowledge into process prose
   ("push, create, link, open — in that order; missing Jira auth fails the
   link step, not the create"), then the wrapper either stays in `tooling.md`
-  as the local convenience or is deleted once nothing references it.
+  as the reference implementation or is deleted once nothing references it.
 - **Computation scripts**: keep. `tooling.md` says "run this for the exact
-  result"; the owning reference documents the algorithm so a chai agent can
-  approximate it from the rules when no CLI exists. Script stays the exact
-  implementation, not a dependency.
-- Net effect: identical skill, two execution modes, graceful degradation.
+  result"; the owning reference documents the algorithm so a conforming
+  backend can reproduce it. Script stays the exact implementation, not a
+  dependency.
+- Net effect: identical skill, one contract, backends that are checked rather
+  than trusted.
 
 ## What does not change
 
@@ -173,9 +201,9 @@ know it, it is process; otherwise it is tooling.**
 
 ## Migration plan
 
-1. **Define the pattern** in `skill-authoring` (anatomy, mode paragraph,
-   frontmatter split, tier rule) + update the repo-level rule here in
-   AGENTS.md if needed.
+1. **Define the pattern** in `skill-authoring` (anatomy, verb-execution
+   paragraph, frontmatter split, tier rule) + update the repo-level rule here
+   in AGENTS.md if needed.
 2. **Pilot on three skills** covering the range:
    - `rhdh-jira-api` (hardest: CLI mechanics are its substance — proves the
      split and shows how much moves to `tooling.md`),
@@ -183,13 +211,18 @@ know it, it is process; otherwise it is tooling.**
      proves the computation-script pattern),
    - `rhdh-jira-link` (write-heavy transport wrappers — proves the
      wrapper-extraction pattern).
-3. **Sweep remaining skills by domain**, jira first (most chai traffic), then
+3. **Conformance probe**: extend capability detection (`setup.py`) into a
+   probe that asserts the verb postconditions per backend — pagination
+   totals, enrichment, absent-vs-empty — so backend eligibility is checked,
+   not assumed. Until a backend passes, the local scripts are the only
+   executor.
+4. **Sweep remaining skills by domain**, jira first (most chai traffic), then
    plugins, release, ci, refinement.
-4. **Sweep tests alongside each domain**: tests that assert CLI text in
+5. **Sweep tests alongside each domain**: tests that assert CLI text in
    SKILL.md or workflows need updating to point at `tooling.md`; catalog,
    membership, and invocation-metadata tests should be unaffected.
-5. **Scripts last**: after nothing in process prose requires them, decide
-   wrapper-by-wrapper whether to keep as local convenience or delete.
+6. **Scripts last**: after nothing in process prose requires them, decide
+   wrapper-by-wrapper whether to keep as reference implementation or delete.
 
 Each step its own card/commit; tag per AGENTS.md versioning (the frontmatter
 meaning change and moved content warrant a major bump at the sweep).

@@ -31,7 +31,7 @@ Never construct credentials or raw HTTP requests.
    project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND updated >= -90d ORDER BY updated DESC
    ```
 
-   > Tooling: `references/tooling.md#bulk-read` (local mode only)
+   > Tooling: `references/tooling.md#bulk-read`
 
 3. Build an expertise profile: top components, issue-type counts, recurring
    domain phrases, and the share of work in the leading component.
@@ -41,7 +41,7 @@ Never construct credentials or raw HTTP requests.
    project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND sprint in (openSprints(), futureSprints()) AND status != Closed
    ```
 
-   > Tooling: `references/tooling.md#bulk-read` (local mode only)
+   > Tooling: `references/tooling.md#bulk-read`
 
 5. Mark a member overloaded at 10 open issues or 21 committed story points.
 6. Score context proximity: +3 per shared component, +1 per shared meaningful
@@ -69,7 +69,7 @@ metadata is missing, say the confidence is low — do not imply certainty.
 Assignment is an external write. Invoke `/mutation-gate` and follow it, with
 one row per issue-to-person mapping, then apply.
 
-> Tooling: `references/tooling.md#assign` (local mode only)
+> Tooling: `references/tooling.md#assign`
 
 There is no GraphQL mutation for assignment — the local CLI and the
 authenticated host adapter are the only two paths. If the local CLI cannot

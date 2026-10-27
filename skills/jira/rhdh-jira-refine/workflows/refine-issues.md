@@ -72,7 +72,7 @@ Run every applicable check per issue.
 Fetch with enrichment. A plain search result omits every custom field, so Story
 Points, Team, Size, and Sprint come back empty whether or not they are set.
 
-> Tooling: `references/tooling.md#bulk-read` (local mode only)
+> Tooling: `references/tooling.md#bulk-read`
 
 ### Check 1 — Missing fields against exit criteria
 
@@ -108,14 +108,14 @@ possibly-related duplicates.
 
 Query children with `parent = {key} AND status != Closed`.
 
-> Tooling: `references/tooling.md#hierarchy-lookups` (local mode only) — why
+> Tooling: `references/tooling.md#hierarchy-lookups` — why
 > hierarchy lookups prefer the local search path
 
 ### Check 4 — Unaddressed comments
 
 Fetch the issue's comments.
 
-> Tooling: `references/tooling.md#comments` (local mode only)
+> Tooling: `references/tooling.md#comments`
 
 Flag when the most recent comment is a question from someone other than the
 assignee, when it contains an action item ("TODO", "action item", "follow up",
@@ -274,7 +274,7 @@ and the edited bodies included in the plan.
 Writes follow the adapter order in `/rhdh-jira-api` — the local CLI for
 anything it supports, the authenticated host adapter for the rest.
 
-> Tooling: `references/tooling.md#writes` (local mode only)
+> Tooling: `references/tooling.md#writes`
 
 ## Error handling
 

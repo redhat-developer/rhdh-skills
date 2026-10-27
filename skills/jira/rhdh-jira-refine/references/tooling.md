@@ -1,11 +1,10 @@
-# Local tooling: refine-issue commands
+# Reference implementation: refine-issue commands
 
-**For agents that have the local CLIs.** This reference maps the refine
-workflow's reads and writes to exact commands. Reach for it only when you
-actually have `acli` — typically an agent working in a repository checkout. An
-agent with ADLC Jira tooling should use that instead and ignore this file: an
-ADLC tool is preferred over wrapping a CLI, and the checks are the same either
-way.
+**The reference implementation of the verbs `/rhdh-jira-api` pins.** These
+commands are what run locally, and they are the behavior any other backend
+must reproduce: same inputs, same outputs, same postconditions. An ADLC
+integration may replace them only where it meets those postconditions —
+otherwise these commands are the solution, not a suggestion.
 
 `/rhdh-jira-api` owns the JQL patterns, the field IDs, and the flag traps; the
 commands below are the ones this workflow runs most.
