@@ -1,9 +1,8 @@
 """The write gate refuses to preview or log credential-shaped content.
 
-These cases were inherited from the retired artifact store. The artifact envelope
-is gone, but the credential scanner it carried is the only automated protection
-against a token reaching a plan preview, a transcript, or a log, so it survives as
-the mutation gate's own script.
+The credential scanner is the only automated protection against a token
+reaching a plan preview, a transcript, or a log, so it ships as the mutation
+gate's own script.
 """
 
 import json

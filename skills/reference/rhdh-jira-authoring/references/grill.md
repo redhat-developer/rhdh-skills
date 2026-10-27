@@ -21,11 +21,6 @@ locate or read its files and do not re-implement its cadence here.
 
 Domain-specific challenges below stay in this skill. If the conversation already established context (e.g., chained from a parent issue), don't re-ask — carry it forward.
 
-### Grilling prerequisite
-
-The `grilling` skill is a hard prerequisite for creating an issue. It ships
-with this pack as a vendored third-party skill.
-
 ## Field Inference
 
 Don't ask the user to fill in each Jira field manually. Instead, infer field values from the conversation and present a recommendation for confirmation. The grill is a conversation, not a form.

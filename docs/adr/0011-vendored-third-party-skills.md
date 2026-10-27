@@ -59,10 +59,11 @@ Per ADR-0008 these skills keep their upstream names: they are not about RHDH.
 ## Consequences
 
 - One install source covers the complete pack: `npx skills add
-  redhat-developer/rhdh-skills`. The installer shows a seventh group,
-  Third-party, alongside the six domain groups of ADR-0009.
+  redhat-developer/rhdh-skills`. Third-party skills install as one selectable
+group per vendored source (`mattpocock-skills` today), alongside the six
+  domain groups of ADR-0009.
 - A Jira-only or Plugins-only group install does not pull `grilling` or
-  `code-review` — they sit in their own group. The ADR-0009 advice
+  `code-review` — they sit in their source's group. The ADR-0009 advice
   to install the groups you need (or the full set) still stands.
 - Upstream improvements arrive only when someone bumps `ref` and runs
   `--write`; the pack deliberately lags upstream instead of drifting from it.

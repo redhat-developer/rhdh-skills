@@ -30,6 +30,11 @@ MANIFEST_PATH = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 # as dependencies of the installable categories that require them.
 HIDDEN_INSTALL_CATEGORIES = frozenset({"reference"})
 
+# The third-party category installs as one selectable group per upstream
+# source directory, so a consumer can pick mattpocock-skills without every
+# other vendor's skills (ADR-0011).
+THIRD_PARTY_CATEGORY = "third-party"
+
 # skills CLI title-cases each kebab segment; spell acronyms so the tree reads
 # "CI" rather than "Ci".
 PLUGIN_NAME_BY_CATEGORY = {
@@ -134,6 +139,28 @@ def build_manifest(catalog: dict[str, Any]) -> dict[str, Any]:
         entries = by_category[category]
         if not entries:
             raise ValueError(f"category {category!r} has no skills in the catalog")
+
+        if category == THIRD_PARTY_CATEGORY:
+            directories: list[str] = []
+            by_directory: dict[str, list[dict[str, Any]]] = {}
+            for entry in entries:
+                directory = entry.get("directory")
+                if not isinstance(directory, str) or not directory:
+                    raise ValueError(f"{entry['name']}: third-party skills must carry a directory")
+                if directory not in by_directory:
+                    by_directory[directory] = []
+                    directories.append(directory)
+                by_directory[directory].append(entry)
+            for directory in directories:
+                plugins.append(
+                    {
+                        "name": directory,
+                        "source": "./",
+                        "description": f"Third-party skills vendored from {directory}",
+                        "skills": [_skill_path(entry) for entry in by_directory[directory]],
+                    }
+                )
+            continue
 
         paths: list[str] = []
         seen: set[str] = set()

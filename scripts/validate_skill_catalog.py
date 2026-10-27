@@ -32,7 +32,7 @@ PROMOTED_CATEGORIES = (
 # whose subject is not RHDH — prose-editing, clean-prose, mutation-gate,
 # skill-authoring — so renaming one left its callers dangling silently. Every
 # promoted name is kebab-case, but a skill can still be a single token. Route-like
-# tokens are filtered against the promoted/retired name sets below. A
+# tokens are filtered against the promoted name set below. A
 # trailing slash or dot means the token is a path, not a skill.
 NAMED_INVOCATION = re.compile(
     r"""(?:^|(?<=[\s(\[`'"]))/([a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])(?![/.])""",
@@ -42,7 +42,6 @@ NAMED_INVOCATION = re.compile(
 # would require editing upstream SKILL.md prose. Names, descriptions, harness
 # metadata, and invocation flags still apply.
 THIRD_PARTY_CATEGORY = "third-party"
-RETIRED_SKILLS = {"humanizer"}
 # A catalog entry may name the subdirectory its skill lives in under
 # skills/<category>/ (vendored third-party skills are grouped per upstream
 # source, ADR-0011). Without it the skill sits directly in its category.
@@ -280,8 +279,6 @@ def _resembles_a_skill(cited: str, known: set[str]) -> bool:
     skill that replaced it. ``/rhdh-jira`` survives as a prefix of ``rhdh-jira-create``;
     ``/image-registry`` resembles nothing in the catalog.
     """
-    if cited in RETIRED_SKILLS:
-        return True
     for name in known:
         if cited.startswith(f"{name}-") or name.startswith(f"{cited}-"):
             return True
@@ -489,6 +486,16 @@ def validate_repository(root: Path) -> dict[str, Any]:
             errors.append({"code": "SKILL_INVOCATION", "message": f"{name}: {invocation}"})
         if invocation == "human":
             human_names.append(name)
+        if category == THIRD_PARTY_CATEGORY and not isinstance(entry.get("directory"), str):
+            errors.append(
+                {
+                    "code": "SKILL_DIRECTORY_MISSING",
+                    "message": (
+                        f"{name}: third-party skills must declare the source directory "
+                        "they are vendored under"
+                    ),
+                }
+            )
 
         directory = entry.get("directory")
         if directory is not None:
