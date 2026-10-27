@@ -208,19 +208,27 @@ rules but does not edit this caller's draft. Preserve template headings, field
 values, acceptance-criteria checkboxes, and customer-identity restrictions.
 
 Render the filled template and the inferred fields as a temporary markdown file
-in a portable temp location (`$TMPDIR`, `%TEMP%`, or Python `tempfile`) and hand
-it to the user.
+in a portable temp location and hand it to the user.
 
-> Tooling: `references/tooling.md#review-file` — the exact
-> shell mechanics for creating and filling the file
+> Tooling: `references/tooling.md#review-file`
 
-The file shows, in this order: a `## {Type}: {summary}` heading; a
-`### Description` section with the filled template content; and a
-`### Fields` section listing every inferred field — Project, Priority (with
-rationale), Team, Size / Story Points (with rationale), Component, Assignee,
-Labels, Affects Version (RHDHBUGS Bugs only; required at create — see
-`/rhdh-jira-api`), and Security Level (or public; when private, it must be on
-the create payload — see `/rhdh-jira-api`).
+```markdown
+## {Type}: {summary}
+
+### Description
+{filled template content}
+
+### Fields
+- **Project**: {project}
+- **Priority**: {value} — {rationale}
+- **Team**: {value}
+- **Size / Story Points**: {value} — {rationale}
+- **Component**: {value}
+- **Assignee**: {value}
+- **Labels**: {values}
+- **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-api`)
+- **Security Level**: {value or public} — when private, must be on the create payload (see `/rhdh-jira-api`)
+```
 
 Present it: "Review before creating. Edit the file or tell me what to change.
 [approve / edit / cancel]"
@@ -249,7 +257,7 @@ Re-check the customer-identity and label rules from Validate before creating in
 description if any survived; confirm at most one `RHDH-Customer` label.
 
 Write the filled template to a temp file, then invoke `/rhdh-jira-api` to convert
-it to ADF and hand back the JSON file path (`jira-wiki-to-adf.py`). Jira Cloud
+it to ADF and hand back the JSON file path. Jira Cloud
 renders raw wiki markup and Markdown as literal characters when stuffed into ADF
 text nodes, so an unconverted description ships broken. Always use that helper —
 do not hand-split Markdown or wiki into ADF paragraphs, and do not reach into
@@ -302,9 +310,7 @@ for a cross-project parent:
 Team is one of the fields not every adapter can set. Follow the adapter order
 and the Team payload in `/rhdh-jira-api`.
 
-> Tooling: `references/tooling.md#create` — the exact create
-> command per issue type, the single-file payload shapes for RHDHBUGS Bugs and
-> private issues, and the post-create update command.
+> Tooling: `references/tooling.md#create`
 
 ## Step 9 — Comments
 

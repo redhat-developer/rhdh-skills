@@ -39,11 +39,10 @@ pointers, checkable completion criteria, and single-sourced behavior.
   caller to one. Two skills in this pack reached 4,029 and 7,784 total lines
   while their `SKILL.md` files stayed comfortably compliant.
 - Put deterministic validation and transformation in scripts.
-- **Contract, then reference implementation.** Process (verbs with pinned
-  inputs, outputs, and postconditions; gates; exit criteria) carries no CLI
-  names and no free-form "use whatever tool you have"; exact commands live in
-  one `references/tooling.md` sidecar that is the reference implementation any
-  other backend must match. See Dual-mode below.
+- **State goals, not tools.** Process states goals with inputs, outputs, and
+  failure modes — a postcondition wherever a wrong call fails silently; exact
+  commands live in one optional `references/tooling.md` sidecar. See Dual-mode
+  below.
 
 ## Duplication
 
@@ -85,32 +84,32 @@ order to disclaim it. "A key such as ABC-123 is not a sprint" makes the skill a
 candidate for exactly the request it is refusing. State the exclusion without the
 token: "works on a team and a board, never on a single issue key".
 
-## Dual-mode: contract and reference implementation
+## Dual-mode: goals and an optional tooling sidecar
 
 A skill that drives CLIs must also run for an agent that has native
-integrations (ADLC tools) instead — without handing that agent a free-form
-"pick a tool and improvise" step. Separate the layers:
+integrations (ADLC tools) instead. Separate the layers:
 
-- **Process** — verbs with pinned inputs, outputs, and postconditions; gates;
-  exit criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`,
-  and domain `references/`, with zero CLI names and zero script invocations.
-  The only exception is a one-line pointer naming `references/tooling.md`.
-- **Reference implementation** — exact commands, flags, traps, auth notes,
-  script invocations — lives in one `references/tooling.md`. These are what
-  run locally, and they are the behavior any other backend must reproduce:
-  same inputs, same outputs, same postconditions. An ADLC integration may
-  serve the verbs only where it meets them — conformance is checked, never
-  assumed from nativeness.
+- **Process** — goals with inputs, outputs, and failure modes; gates; exit
+  criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`, and
+  domain `references/`, with zero CLI names and zero script invocations. The
+  only exception is a one-line tooling pointer naming `references/tooling.md`.
+  Where a wrong call fails silently (a truncated search, an unread custom
+  field), state the postcondition on the goal — it binds whichever tool
+  executes.
+- **Tooling** — exact commands, flags, traps, auth notes, script invocations —
+  lives in one optional `references/tooling.md` sidecar, framed for agents
+  that have the local CLIs. An ADLC tool may serve the same goals; stated
+  postconditions bind it too.
 - **Frontmatter** splits accordingly: `compatibility:` names process
   prerequisites true in every execution mode; `local-tooling:` names the
-  reference implementation's CLIs.
+  optional CLIs.
 
-Each skill restates the verb-execution paragraph in its own words — an
-installed skill cannot rely on a host repository's conventions — and never
-names the bot or platform: shipped prose says "ADLC tools". Rule of thumb: if
-a conforming backend needs to know it to meet the contract, it is process; if
-it is how one particular backend runs, it is reference implementation. The
-full authoring pattern, with the paragraph to adapt, is in
+Each skill restates a short goals paragraph in its own words — an installed
+skill cannot rely on a host repository's conventions — and never names the
+bot or platform: shipped prose says "ADLC tools". Rule of thumb: if an agent
+using only native integrations still needs to know it, it is process; if it
+is how one particular tool runs, it is tooling. The full authoring pattern,
+with the paragraph to adapt, is in
 [references/create.md](references/create.md) → Dual-mode.
 
 ## Working inside a host repository

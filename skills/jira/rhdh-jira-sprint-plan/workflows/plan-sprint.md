@@ -4,7 +4,7 @@ Generate a sprint planning package: carryover report, velocity trend, per-member
 capacity, ready-for-planning queue, and sprint fill suggestions.
 
 Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
-and the enrichment rules. The reference implementation is in
+and the enrichment rules. The optional local commands are in
 [references/tooling.md](../references/tooling.md).
 
 ## Input

@@ -11,7 +11,7 @@ description: >-
   comment step, or a PR outside the rhdh-plugins and community-plugins monorepo
   flow. The full monorepo flow — build, changeset, recordings — is rhdh-pr-create.
 compatibility: "Access to raise a PR or MR on the target GitHub or GitLab repository; write access to RHDH Jira (RHIDP, RHDHPLAN, RHDHBUGS, RHDHSUPP) for web links, comments, field edits, and project moves. Windows, macOS, Linux."
-local-tooling: "Reference implementation: Node on PATH; gh for GitHub and glab for GitLab; a Jira API token via JIRA_API_TOKEN or the .jira-token file. An ADLC integration may perform the same steps only by meeting the protocol this skill pins. See references/tooling.md."
+local-tooling: "Optional: Node on PATH; gh for GitHub and glab for GitLab; a Jira API token via JIRA_API_TOKEN or the .jira-token file. See references/tooling.md."
 ---
 
 # Jira PR / MR links
@@ -21,16 +21,13 @@ Jira issue: raise the PR/MR when one does not exist, attach the Jira remote Web
 link, post or update the structured comment, optionally fill empty issue
 fields, and mark Web links merged or closed later.
 
-## Contracts, not tool choices
+## Goals, not tools
 
-The protocol below is the contract: title formats, comment shape, defaults
-policy, move semantics, and reported outcomes are pinned. Locally the bundled
-Node scripts are the reference implementation —
-[references/tooling.md](references/tooling.md) holds their exact invocations.
-An ADLC integration may perform the same steps only by meeting the contract:
-same link titles, same idempotent comment update, same post-move key
-reporting. Anything less is not a substitute for the scripts; it is a
-different, unverified behavior.
+Every step below states its goal, never which tool to use. Raise the PR/MR and
+write to Jira with whichever tools you actually have — ADLC tools, or the
+optional local scripts in [references/tooling.md](references/tooling.md). The
+protocol is pinned here — link titles, comment shape, defaults policy, the
+post-move key — and binds whichever tool runs it.
 
 ## Raise the PR/MR first
 
@@ -101,8 +98,7 @@ Team and sprint can be skipped together while the other defaults still apply.
 Missing values are an error only when applying defaults; the Web link and
 comment still succeed with defaults disabled.
 
-> Tooling: `references/tooling.md#defaults` — configuration
-> file locations, accepted keys, and precedence.
+> Tooling: `references/tooling.md#defaults`
 
 ## Mark merged / closed
 
@@ -143,8 +139,7 @@ free to transition the issue to **Review** (see
    its PR/MR URL.
 5. In user-facing summaries, link PR/MRs as `[<title>](<url>)`.
 
-> Tooling: `references/tooling.md` — the exact raise, link,
-> mark-merged, and defaults commands.
+> Tooling: `references/tooling.md`
 
 ## Every run here is an external write
 

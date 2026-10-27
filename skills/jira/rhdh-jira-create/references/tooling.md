@@ -1,11 +1,9 @@
-# Reference implementation: create-issue commands
+# Local tooling: create-issue commands
 
-**The reference implementation of the verbs `/rhdh-jira-api` pins.** These
-commands are what run locally, and they are the behavior any other backend
-must reproduce: same inputs, same outputs, same postconditions. An ADLC
-integration may replace them only where it meets those postconditions —
-otherwise these commands are the solution, not a suggestion.
-
+**The optional tooling sidecar.** Exact commands for the goals in `SKILL.md`,
+for agents that have the local CLIs. An ADLC tool may serve the same goals;
+postconditions stated in `SKILL.md` or `/rhdh-jira-api` bind whichever tool
+executes.
 `/rhdh-jira-api` owns the field IDs, the component catalog, and the general
 `acli` flag traps. What follows is only what the create workflow needs.
 

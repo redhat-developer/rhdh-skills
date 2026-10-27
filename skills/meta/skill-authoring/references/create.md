@@ -176,41 +176,41 @@ an RHDHSUPP conversation, a customer escalation, or an SLA question.
 The filenames above are **example only** — substitute the real ones for the skill
 you are building.
 
-### Dual-mode: contract and reference implementation (when the skill drives CLIs)
+### Dual-mode: goals and an optional tooling sidecar (when the skill drives CLIs)
 
-Name verbs, not tools — and never "use whatever you have". The same skill must
-run for an agent with native integrations (ADLC tools) and for an agent with a
-shell and local CLIs, so contract and implementation separate:
+State goals, not tools. The same skill must run for an agent with native
+integrations (ADLC tools) and for an agent with a shell and local CLIs, so
+process and tooling separate:
 
-- **Process** — verbs with pinned inputs, outputs, and postconditions; gates;
-  exit criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`,
-  and domain `references/`. Zero CLI names, zero script invocations, zero
-  free-form tool choice; the only exception is a one-line pointer
-  (`> Tooling: references/tooling.md#anchor — the reference implementation`).
-- **Reference implementation** — exact CLI commands, flags, traps, auth notes,
-  script invocations — lives in one `references/tooling.md`. These commands
-  are what run locally and what any other backend must reproduce.
+- **Process** — goals with inputs, outputs, and failure modes; gates; exit
+  criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`, and
+  domain `references/`. Zero CLI names, zero script invocations; the only
+  exception is a one-line tooling pointer
+  (`> Tooling: references/tooling.md#anchor`). Where a wrong call fails
+  silently — a truncated search, an unread custom field — state the
+  postcondition on the goal; it binds whichever tool executes.
+- **Tooling** — exact CLI commands, flags, traps, auth notes, script
+  invocations — lives in one optional `references/tooling.md` sidecar, framed
+  for agents that actually have the CLIs. An ADLC tool may serve the same
+  goals; stated postconditions bind it too.
 - **Frontmatter splits accordingly**: `compatibility:` names process
-  prerequisites (true in every mode); `local-tooling:` names the reference
-  implementation's CLIs.
+  prerequisites (true in every mode); `local-tooling:` names the optional
+  CLIs and says so.
 
-Restate the verb-execution paragraph in the skill's own words — it must travel
-with the installed skill, so it cannot live only in a host repository's
+Restate a short goals paragraph in the skill's own words — it must travel with
+the installed skill, so it cannot live only in a host repository's
 conventions:
 
-> Every external operation below is a verb with pinned inputs, outputs, and
-> postconditions. Invoke the verb; never improvise a raw API call. The
-> bundled scripts are the reference implementation (`references/tooling.md`
-> locally). An ADLC integration may serve the verbs only where it meets the
-> same postconditions — a backend that silently truncates results or drops
-> fields is not an implementation, it is a bug.
+> Every step below states its goal, never which tool to use. Use whichever
+> tool you actually have — an ADLC tool, or the optional local commands in
+> `references/tooling.md`. Postconditions stated on a goal bind whichever
+> tool executes it.
 
-The discriminator is **conformance, not availability or preference**: a
-backend serves the verbs only after demonstrating the postconditions (a probe
-or a verified run), and the local scripts remain the executor that always
-works. Rule of thumb: if a conforming backend needs to know it to meet the
-contract, it is process; otherwise it is reference implementation. Never name
-the bot or platform in shipped prose — say "ADLC tools".
+The discriminator is **tool availability, not shell access**: an agent with a
+shell and a native integration should use the integration, not wrap a CLI.
+Rule of thumb: if an agent using only native integrations still needs to know
+it, it is process; if it is how one particular tool runs, it is tooling. Never
+name the bot or platform in shipped prose — say "ADLC tools".
 
 ### Setup and capability gates (when applicable)
 
@@ -319,12 +319,13 @@ Before presenting the final skill, verify against this checklist:
 - [ ] Dual-mode split holds: process prose (`SKILL.md`, `workflows/`, domain
       `references/`) carries goals, gates, and exit criteria with zero CLI names
       or script invocations — the only exception is a one-line tooling pointer;
+      a postcondition is stated on every goal whose failure mode is silent;
       exact commands live in one optional `references/tooling.md` framed for
       agents that have the CLIs
 - [ ] Frontmatter carries the split: `compatibility:` names process
-      prerequisites true in both modes; `local-tooling:` names the optional
+      prerequisites true in every mode; `local-tooling:` names the optional
       local CLIs and says so
-- [ ] The mode paragraph is restated in the skill's own words, and shipped prose
+- [ ] The goals paragraph is restated in the skill's own words, and shipped prose
       says "ADLC tools", never a bot or platform name
 - [ ] Material shared with another skill is extracted, enforced, or documented, never copied
 - [ ] Skills compose by stable name — no sibling paths, no imports, no host layout probing

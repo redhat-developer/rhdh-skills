@@ -15,5 +15,4 @@ The contract:
 3. `/rhdh-pr-create` transitions the issue to **Review** on the effective key
    after the link step returns.
 
-> Tooling: `references/tooling.md#serving-rhdh-pr-create` —
-> the exact link invocation, post-move key extraction, and transition command.
+> Tooling: `references/tooling.md#serving-rhdh-pr-create`

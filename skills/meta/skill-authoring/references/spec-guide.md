@@ -30,7 +30,7 @@ description: What the skill does. Use when [triggers].
 | description   | Yes      | Max 1024 chars. Non-empty. What it does + when to use it.      |
 | license       | No       | License name or reference to bundled license file.             |
 | compatibility | No       | Max 500 chars. Process prerequisites — access, role, capability. True in every execution mode. |
-| local-tooling | No       | Max 500 chars. Reference-implementation CLIs; another backend replaces them only by meeting the verb postconditions. See create.md → Dual-mode. |
+| local-tooling | No       | Max 500 chars. Optional local CLIs, marked optional; stated postconditions bind whichever tool executes. See create.md → Dual-mode. |
 | metadata      | No       | Arbitrary key-value mapping.                                   |
 | allowed-tools | No       | Space-separated string of pre-approved tools. (Experimental)   |
 

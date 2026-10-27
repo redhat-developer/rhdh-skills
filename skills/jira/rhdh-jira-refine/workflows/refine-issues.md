@@ -108,8 +108,7 @@ possibly-related duplicates.
 
 Query children with `parent = {key} AND status != Closed`.
 
-> Tooling: `references/tooling.md#hierarchy-lookups` — why
-> hierarchy lookups prefer the local search path
+> Tooling: `references/tooling.md#hierarchy-lookups`
 
 ### Check 4 — Unaddressed comments
 

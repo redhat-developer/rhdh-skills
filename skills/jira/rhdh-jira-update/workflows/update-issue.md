@@ -5,7 +5,7 @@ status transitions, and check upward through the hierarchy for parent
 transitions. On-demand — run at a natural stopping point, never proactively.
 
 Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
-and the adapter order. The reference implementation is in
+and the adapter order. The optional local commands are in
 [references/tooling.md](../references/tooling.md).
 
 ## Step 1 — Detect the issue
@@ -18,8 +18,7 @@ Check in priority order and stop at the first match:
 3. **PR title or description** — the open PR for the current branch.
 4. **Recent commits** — commit subjects often reference the key.
 
-   > Tooling: `references/tooling.md#issue-detection` — the
-   > exact git and forge-CLI probes for steps 2–4
+   > Tooling: `references/tooling.md#issue-detection`
 
 5. **Keyword search** — extract topic keywords and search:
 

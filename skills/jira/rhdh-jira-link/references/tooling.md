@@ -1,11 +1,9 @@
-# Reference implementation: link-pr-mr commands
+# Local tooling: link-pr-mr commands
 
-**The reference implementation of the link protocol in `SKILL.md`.** These
-scripts are what run locally, and they are the behavior any other backend must
-reproduce: same link titles, same idempotent comment update, same post-move
-key reporting. An ADLC integration may replace them only where it meets the
-protocol — otherwise these scripts are the solution, not a suggestion.
-
+**The optional tooling sidecar.** Exact scripts for the protocol in
+`SKILL.md`, for agents that have Node, `gh`/`glab`, and a Jira token. An ADLC
+tool may perform the same steps; the protocol `SKILL.md` pins binds whichever
+tool runs.
 The scripts are transport layers: they post exactly what they are given and
 never edit prose.
 
