@@ -10,13 +10,22 @@ description: >-
   this epic", "run the Feature Exploration checklist", or "which of these are
   stale". Assesses existing work; it does not open new issues and does not build
   a sprint.
-compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv. Deliberately not gated on the grilling skill."
+compatibility: "Authenticated read and write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search and read an issue with custom fields. Deliberately not gated on the grilling skill. Windows, macOS, Linux."
+local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts. See references/tooling.md."
 ---
 
 # Refine RHDH Jira work
 
 Answer "is this ready" with the criteria the RHDH workflow actually enforces,
 and say what is missing rather than guessing at it.
+
+## Goals, not tools
+
+Every step below states its goal, never which tool to use. Use whichever tool
+you actually have for Jira — an ADLC tool, the authenticated host adapter, or
+the optional local commands in [references/tooling.md](references/tooling.md).
+`/rhdh-jira-api` owns the JQL, the field IDs, and the postconditions that keep
+a silent failure from becoming a false finding.
 
 ## Route
 

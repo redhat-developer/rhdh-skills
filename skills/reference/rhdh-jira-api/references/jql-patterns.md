@@ -123,7 +123,7 @@ acli jira workitem search --jql "project = RHIDP AND sprint in openSprints()" --
   | uv run scripts/parse_issues.py --enrich -f team="RHDH Install" -s key,summary,status,story_points
 ```
 
-For acli search command syntax, see `references/acli-commands.md`.
+For local command syntax, see `references/tooling.md`.
 For custom field IDs and `cf[]` JQL syntax, see `references/fields.md`.
 
 ---

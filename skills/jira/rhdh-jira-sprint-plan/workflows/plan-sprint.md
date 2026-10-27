@@ -3,8 +3,9 @@
 Generate a sprint planning package: carryover report, velocity trend, per-member
 capacity, ready-for-planning queue, and sprint fill suggestions.
 
-Use paginated `acli` for bulk reads and the authenticated host adapter only for
-fields `acli` cannot return. `/rhdh-jira-api` owns both.
+Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
+and the enrichment rules. The optional local commands are in
+[references/tooling.md](../references/tooling.md).
 
 ## Input
 
@@ -17,24 +18,21 @@ fields `acli` cannot return. `/rhdh-jira-api` owns both.
 
 ## Step 1 — Resolve the sprint context
 
-```bash
-acli jira board list-sprints --board BOARD_ID --state active --json
-acli jira board list-sprints --board BOARD_ID --state closed --json --recent 3
-acli jira board list-sprints --board BOARD_ID --state future --json --recent 1
-```
+List the board's sprints by state: the active sprint (source of carryover), the
+next sprint (planning target), and the last three closed sprints (source of
+velocity).
 
-Identify the active sprint (source of carryover), the next sprint (planning
-target), and the last three closed sprints (source of velocity).
+> Tooling: `references/tooling.md#sprints`
 
 ## Step 2 — Carryover
 
 Issues in the active sprint that are not Closed or Release Pending:
 
-```bash
-acli jira workitem search \
-  --jql 'project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status not in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID' \
-  --fields "key,summary,status,assignee,storypoints,issuetype" --paginate --json
+```jql
+project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status not in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
+
+> Tooling: `references/tooling.md#bulk-read`
 
 Flag any Epic in the sprint — only Bug, Task, and Story belong there: "RHIDP-1234
 is an Epic. Epics should be broken into Stories or Tasks, not added to sprints."
@@ -46,11 +44,11 @@ the sprint is overcommitted before any new work goes in.
 
 For each of the last three closed sprints, sum completed story points:
 
-```bash
-acli jira workitem search \
-  --jql 'project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID' \
-  --fields "key,storypoints" --paginate --json
+```jql
+project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
+
+> Tooling: `references/tooling.md#bulk-read`
 
 Report points per sprint, the three-sprint average, and the trend — accelerating,
 stable, or decelerating.
@@ -158,10 +156,10 @@ Avg velocity {avg} SP − carryover {carry_sp} SP = **{available} SP available**
 
 | Error | Action |
 |---|---|
-| Board ID not found | Ask. List boards with `acli jira board search --project RHIDP`. |
+| Board ID not found | Ask. Look it up in the board table in `/rhdh-jira-api`. |
 | No active sprint | "No active sprint found. Is the team between sprints?" |
 | No closed sprints | Skip velocity and say "no historical data — velocity unavailable". |
-| Bulk search fails | Retry the paginated `acli` search once. Do not fall back to raw REST search. |
+| Bulk search fails | Retry the paginated search once through the same adapter. Do not fall back to raw REST search. |
 | Carryover query returns 0 | "Clean sprint — no carryover. Full velocity available." |
 
 ## Caveats
@@ -174,5 +172,5 @@ Avg velocity {avg} SP − carryover {carry_sp} SP = **{available} SP available**
 3. **Release Pending stays in the sprint.** Per team convention it remains in the
    sprint and counts toward capacity.
 4. **Team is not JQL-filterable in every context.** `/rhdh-jira-api` covers the
-   `"Team[Team]"` syntax and the `parse_issues.py` post-filter for cases where it
-   fails.
+   `"Team[Team]"` syntax and the post-filter for cases where it fails
+   (tooling.md locally).

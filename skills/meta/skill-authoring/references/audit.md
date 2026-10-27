@@ -54,6 +54,14 @@ misfires or bloats.
 - [ ] References are one level deep, with no chains A → B → C
 - [ ] Context pointers name *when* to load, not a vague "see `references/`"
 - [ ] `## Completion` states what the skill leaves behind
+- [ ] Dual-mode split holds where the skill drives CLIs: process prose carries
+      goals with inputs, outputs, and failure modes — zero CLI names or script
+      invocations (one-line tooling pointers excepted), with a postcondition
+      stated on every goal whose failure mode is silent; exact commands live in
+      one optional `references/tooling.md` sidecar; frontmatter splits
+      `compatibility:` (process prerequisites) from `local-tooling:` (optional
+      CLIs); shipped prose says "ADLC tools", never a bot or platform name
+      (see `create.md` → Dual-mode)
 
 **Content quality:**
 

@@ -4,8 +4,9 @@ Generate a sprint review summary: committed versus completed, per-member
 breakdown, epic progress, demo checklist with naming conventions, and velocity
 trend.
 
-Use paginated `acli` for bulk reads and the authenticated host adapter only for
-fields `acli` cannot return. `/rhdh-jira-api` owns both.
+Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
+and the enrichment rules. The optional local commands are in
+[references/tooling.md](../references/tooling.md).
 
 ## Input
 
@@ -16,20 +17,18 @@ fields `acli` cannot return. `/rhdh-jira-api` owns both.
 
 ## Step 1 — Resolve the sprint
 
-```bash
-acli jira board list-sprints --board BOARD_ID --state active --json
-acli jira board list-sprints --board BOARD_ID --state closed --json --recent 1
-```
+List the board's active and most recent closed sprints; extract sprint ID,
+name, start date, and end date.
 
-Extract sprint ID, name, start date, and end date.
+> Tooling: `references/tooling.md#sprints`
 
 ## Step 2 — Fetch every issue in the sprint
 
-```bash
-acli jira workitem search \
-  --jql 'project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND "Team[Team]" = TEAM_ID' \
-  --fields "key,summary,status,issuetype,priority,assignee,storypoints,parent,labels,sprint" --paginate --json
+```jql
+project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND "Team[Team]" = TEAM_ID
 ```
+
+> Tooling: `references/tooling.md#bulk-read`
 
 ## Step 3 — Partition
 
@@ -88,11 +87,10 @@ Feature." That link is required at Release Pending.
 
 ## Step 8 — Velocity trend
 
-```bash
-acli jira board list-sprints --board BOARD_ID --state closed --json --recent 3
-```
+List the board's last three closed sprints, then run the completed-points query
+below per sprint.
 
-Then per closed sprint:
+> Tooling: `references/tooling.md#sprints`
 
 ```jql
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS)

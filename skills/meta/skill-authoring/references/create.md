@@ -176,6 +176,42 @@ an RHDHSUPP conversation, a customer escalation, or an SLA question.
 The filenames above are **example only** — substitute the real ones for the skill
 you are building.
 
+### Dual-mode: goals and an optional tooling sidecar (when the skill drives CLIs)
+
+State goals, not tools. The same skill must run for an agent with native
+integrations (ADLC tools) and for an agent with a shell and local CLIs, so
+process and tooling separate:
+
+- **Process** — goals with inputs, outputs, and failure modes; gates; exit
+  criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`, and
+  domain `references/`. Zero CLI names, zero script invocations; the only
+  exception is a one-line tooling pointer
+  (`> Tooling: references/tooling.md#anchor`). Where a wrong call fails
+  silently — a truncated search, an unread custom field — state the
+  postcondition on the goal; it binds whichever tool executes.
+- **Tooling** — exact CLI commands, flags, traps, auth notes, script
+  invocations — lives in one optional `references/tooling.md` sidecar, framed
+  for agents that actually have the CLIs. An ADLC tool may serve the same
+  goals; stated postconditions bind it too.
+- **Frontmatter splits accordingly**: `compatibility:` names process
+  prerequisites (true in every mode); `local-tooling:` names the optional
+  CLIs and says so.
+
+Restate a short goals paragraph in the skill's own words — it must travel with
+the installed skill, so it cannot live only in a host repository's
+conventions:
+
+> Every step below states its goal, never which tool to use. Use whichever
+> tool you actually have — an ADLC tool, or the optional local commands in
+> `references/tooling.md`. Postconditions stated on a goal bind whichever
+> tool executes it.
+
+The discriminator is **tool availability, not shell access**: an agent with a
+shell and a native integration should use the integration, not wrap a CLI.
+Rule of thumb: if an agent using only native integrations still needs to know
+it, it is process; if it is how one particular tool runs, it is tooling. Never
+name the bot or platform in shipped prose — say "ADLC tools".
+
 ### Setup and capability gates (when applicable)
 
 Non-negotiable checks before any file edits. Gates prevent generic output from missing context, and every gate follows one rule: when a required precondition is missing, stop that branch, name the missing capability, and name the exact setup entry point and route that supplies it. Write them as a table with a required check and a fail action per row, mutation last — the table pattern and where that rule stops are in `architecture-patterns.md` → Setup and capability gates.
@@ -280,6 +316,17 @@ Before presenting the final skill, verify against this checklist:
 - [ ] Branch pointers name a load condition, and every branch shares the domain model, gates, and completion criterion
 - [ ] Every gate names a required precondition and a fail action; a missing precondition stops the branch and names the exact setup entry point and route — no gate proceeds anyway
 - [ ] Register/mode system classifies before loading references
+- [ ] Dual-mode split holds: process prose (`SKILL.md`, `workflows/`, domain
+      `references/`) carries goals, gates, and exit criteria with zero CLI names
+      or script invocations — the only exception is a one-line tooling pointer;
+      a postcondition is stated on every goal whose failure mode is silent;
+      exact commands live in one optional `references/tooling.md` framed for
+      agents that have the CLIs
+- [ ] Frontmatter carries the split: `compatibility:` names process
+      prerequisites true in every mode; `local-tooling:` names the optional
+      local CLIs and says so
+- [ ] The goals paragraph is restated in the skill's own words, and shipped prose
+      says "ADLC tools", never a bot or platform name
 - [ ] Material shared with another skill is extracted, enforced, or documented, never copied
 - [ ] Skills compose by stable name — no sibling paths, no imports, no host layout probing
 - [ ] Handoffs are prose the producer states and the consumer reads; an external write invokes the skill that owns the write gate
