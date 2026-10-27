@@ -27,29 +27,37 @@ adaptations we sometimes need.
 ## Decision
 
 Vendor third-party skills into `skills/third-party/` as a promoted catalog
-category, with provenance and sync policy recorded per skill in
-`UPSTREAM.toml`:
+category, with all provenance and sync policy in one registry:
+`skills/third-party/registry.json`. Its `sources` map records each upstream
+`owner/repo` with one pinned `ref` and its `license`; its `skills` array
+records each vendored skill's `name` (the vendored directory), `source`,
+`path` inside that repository, and `mode`:
 
-- `source` — the `owner/repo` the skill came from.
-- `path` — the skill's directory inside that repository.
-- `ref` — the pinned upstream commit the vendored copy matches.
-- `mode` — `tracked` (vendored files must match the pinned ref; sync
-  overwrites) or `adapted` (we forked it; sync never overwrites, drift is
-  reported so a human re-ports upstream changes deliberately).
+- `tracked` — vendored files must match the pinned ref; sync overwrites.
+- `adapted` — we forked it; sync never overwrites, drift is reported so a
+  human re-ports upstream changes deliberately.
 
-`scripts/sync_third_party.py` fetches each pinned ref from codeload.github.com:
-`--check` fails on tracked drift (CI gate), `--write` refreshes tracked skills.
-Refreshing means editing `ref` to a new commit and running `--write`; the diff
-is reviewed like any other change. Files this repo adds on top of upstream
-(`UPSTREAM.toml` itself, harness metadata upstream does not ship) are preserved.
+The ref lives on the source, not the skill: every skill vendored from one
+upstream repository is pinned to the same commit by construction, and bumping
+a source refreshes all of its skills at once.
+
+`scripts/sync_third_party.py` reads the registry and fetches each source's
+pinned ref from codeload.github.com: `--check` fails on tracked drift (CI
+gate), `--write` refreshes tracked skills. Refreshing means editing the
+source's `ref` to a new commit and running `--write`; the diff is reviewed
+like any other change. Files this repo adds on top of upstream (harness
+metadata upstream does not ship) are preserved.
 
 Vendored skills follow upstream's authoring standard for their `SKILL.md`
 prose — the catalog validator exempts the category from the `## Completion`
 rule, because editing upstream prose would break tracked-mode sync. Everything
 else this repo requires still applies: frontmatter names and descriptions,
 `agents/openai.yaml` harness metadata, invocation flags, self-containment, and
-catalog membership. `pack.requiredExternalSkills` is empty; the former external
-dependencies are ordinary `requiresSkills` edges now.
+catalog membership. The external-skill machinery is removed outright:
+`pack.requiredExternalSkills`, per-entry `requiresExternalSkills`, and the
+setup script's second install operation no longer exist, and the catalog
+validator rejects any leftover of them. The former external dependencies are
+ordinary `requiresSkills` edges now.
 
 Per ADR-0008 these skills keep their upstream names: they are not about RHDH.
 
@@ -65,6 +73,6 @@ Per ADR-0008 these skills keep their upstream names: they are not about RHDH.
   `--write`; the pack deliberately lags upstream instead of drifting from it.
 - An `adapted` skill is a fork: re-porting upstream changes is manual, and the
   sync report is the reminder, not the mechanism.
-- New third-party skills land the same way: copy from a pinned ref, write
-  `UPSTREAM.toml`, add the catalog entry. A skill without `UPSTREAM.toml`
-  fails sync discovery.
+- New third-party skills land the same way: add the source and skill to
+  `registry.json`, copy the files from the pinned ref, add the catalog entry.
+  A skill directory missing from the registry fails sync.

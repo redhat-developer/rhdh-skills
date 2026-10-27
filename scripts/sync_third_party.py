@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Sync vendored third-party skills with their pinned upstream sources.
 
-Each ``skills/third-party/<name>/UPSTREAM.toml`` records where the skill came
-from (``source``, ``path``, ``ref``) and how it tracks upstream (``mode``):
+``skills/third-party/registry.json`` is the single metadata config for every
+vendored skill. ``sources`` maps each ``owner/repo`` to one pinned ``ref`` and
+its ``license`` — every skill from the same source is vendored at that one
+commit. ``skills`` lists each vendored skill: ``name`` (the vendored
+directory), ``source``, ``path`` (the skill's directory inside that
+repository), and ``mode``:
 
 - ``tracked`` — the vendored files must match the pinned upstream ref exactly.
   ``--write`` overwrites them from upstream; ``--check`` fails on drift.
@@ -11,10 +15,12 @@ from (``source``, ``path``, ``ref``) and how it tracks upstream (``mode``):
   changes deliberately.
 
 Refresh flow: resolve the new upstream commit (``git ls-remote <url> main``),
-edit ``ref`` in ``UPSTREAM.toml``, run ``--write``, review the diff.
+edit the source's ``ref`` in ``registry.json``, run ``--write``, review the
+diff. Bumping a source refreshes every skill vendored from it.
 
-Files this repo adds on top of upstream (``UPSTREAM.toml`` itself, harness
-metadata upstream does not ship) are preserved and never removed.
+Files this repo adds on top of upstream (harness metadata upstream does not
+ship) are preserved and never removed. The registry must list exactly the
+skill directories that exist under ``skills/third-party/``.
 
     python scripts/sync_third_party.py           # report drift, exit 0
     python scripts/sync_third_party.py --check   # exit 1 on tracked drift
@@ -32,67 +38,93 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
-from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 THIRD_PARTY_ROOT = REPO_ROOT / "skills" / "third-party"
-UPSTREAM_FILE = "UPSTREAM.toml"
+REGISTRY_FILE = "registry.json"
 MODES = ("tracked", "adapted")
-# UPSTREAM.toml is our own fixed format (source, path, ref, mode — all
-# strings), so a strict line parser is enough; tomllib needs Python 3.11.
-_LINE = re.compile(r'^([a-z]+)\s*=\s*"([^"]*)"$')
-FIELDS = ("source", "path", "ref", "mode")
+SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+SKILL_FIELDS = ("name", "source", "path", "mode")
+SOURCE_FIELDS = ("ref", "license")
 
 
 class SyncError(Exception):
-    """A UPSTREAM.toml or upstream fetch problem."""
+    """A registry or upstream fetch problem."""
 
 
-def parse_upstream_toml(text: str, origin: Path) -> dict[str, str]:
-    """Parse the fixed four-field UPSTREAM.toml format."""
-    fields: dict[str, str] = {}
-    for number, raw in enumerate(text.splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = _LINE.match(line)
-        if match is None:
-            raise SyncError(f'{origin}:{number}: not a `key = "value"` line: {raw!r}')
-        key, value = match.groups()
-        if key not in FIELDS:
-            raise SyncError(f"{origin}:{number}: unknown field {key!r}")
-        if key in fields:
-            raise SyncError(f"{origin}:{number}: duplicate field {key!r}")
-        fields[key] = value
-    missing = [field for field in FIELDS if not fields.get(field)]
-    if missing:
-        raise SyncError(f"{origin}: missing or empty fields: {', '.join(missing)}")
-    if fields["mode"] not in MODES:
-        raise SyncError(f"{origin}: mode must be one of {MODES}, got {fields['mode']!r}")
-    owner, _, repo = fields["source"].partition("/")
-    if not (owner and repo) or "/" in repo or fields["path"].startswith("/"):
-        raise SyncError(f"{origin}: source must be owner/repo and path must be relative")
-    return fields
+def load_registry(root: Path) -> list[dict[str, str]]:
+    """Load the third-party skill registry and join skills with their source.
 
+    Returns one flat entry per skill (name, source, path, ref, license, mode).
+    The ref lives on the source, so every skill from one upstream repository is
+    pinned to the same commit by construction.
+    """
+    registry_file = root / REGISTRY_FILE
+    if not registry_file.is_file():
+        raise SyncError(f"no {REGISTRY_FILE} under {root}")
+    try:
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SyncError(f"{registry_file}: {error}") from error
 
-def discover_skills(root: Path) -> dict[str, tuple[Path, dict[str, str]]]:
-    """Return {skill name: (vendored directory, UPSTREAM.toml fields)}."""
-    skills: dict[str, tuple[Path, dict[str, str]]] = {}
-    if not root.is_dir():
-        return skills
-    for upstream in sorted(root.glob(f"*/{UPSTREAM_FILE}")):
-        skill_dir = upstream.parent
-        fields = parse_upstream_toml(upstream.read_text(encoding="utf-8"), upstream)
-        skills[skill_dir.name] = (skill_dir, fields)
-    orphan = sorted(
-        path.parent.name
-        for path in root.glob("*/SKILL.md")
-        if not (path.parent / UPSTREAM_FILE).is_file()
-    )
-    if orphan:
-        raise SyncError(f"skills under {root} without {UPSTREAM_FILE}: {', '.join(orphan)}")
-    return skills
+    if registry.get("schemaVersion") != 1:
+        raise SyncError(f"{registry_file}: schemaVersion must be 1")
+    sources = registry.get("sources")
+    if not isinstance(sources, dict) or not sources:
+        raise SyncError(f"{registry_file}: sources must be a non-empty object")
+    for source, meta in sources.items():
+        origin = f"{registry_file} sources[{source!r}]"
+        owner, _, repo = source.partition("/")
+        if not (owner and repo) or "/" in repo:
+            raise SyncError(f"{origin}: source key must be owner/repo")
+        if not isinstance(meta, dict):
+            raise SyncError(f"{origin}: must be an object")
+        missing = [field for field in SOURCE_FIELDS if not meta.get(field)]
+        if missing:
+            raise SyncError(f"{origin}: missing or empty fields: {', '.join(missing)}")
+        unknown = sorted(set(meta) - set(SOURCE_FIELDS))
+        if unknown:
+            raise SyncError(f"{origin}: unknown fields: {', '.join(unknown)}")
+
+    entries = registry.get("skills")
+    if not isinstance(entries, list) or not entries:
+        raise SyncError(f"{registry_file}: skills must be a non-empty array")
+
+    loaded: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(entries):
+        origin = f"{registry_file} skills[{index}]"
+        if not isinstance(entry, dict):
+            raise SyncError(f"{origin}: must be an object")
+        missing = [field for field in SKILL_FIELDS if not entry.get(field)]
+        if missing:
+            raise SyncError(f"{origin}: missing or empty fields: {', '.join(missing)}")
+        unknown = sorted(set(entry) - set(SKILL_FIELDS))
+        if unknown:
+            raise SyncError(f"{origin}: unknown fields: {', '.join(unknown)}")
+        name = entry["name"]
+        if not SKILL_NAME.fullmatch(name):
+            raise SyncError(f"{origin}: name must be kebab-case, got {name!r}")
+        if name in seen:
+            raise SyncError(f"{origin}: duplicate skill {name!r}")
+        seen.add(name)
+        if entry["source"] not in sources:
+            raise SyncError(f"{origin}: source {entry['source']!r} has no sources[] metadata")
+        if entry["path"].startswith("/"):
+            raise SyncError(f"{origin}: path must be relative")
+        if entry["mode"] not in MODES:
+            raise SyncError(f"{origin}: mode must be one of {MODES}, got {entry['mode']!r}")
+        meta = sources[entry["source"]]
+        loaded.append(
+            {
+                **{field: entry[field] for field in SKILL_FIELDS},
+                "ref": meta["ref"],
+                "license": meta["license"],
+            }
+        )
+    return loaded
 
 
 def fetch_upstream_files(source: str, ref: str) -> dict[Path, bytes]:
@@ -112,24 +144,26 @@ def fetch_upstream_files(source: str, ref: str) -> dict[Path, bytes]:
             }
 
 
-def _vendored_files(skill_dir: Path) -> Iterator[Path]:
-    for path in sorted(skill_dir.rglob("*")):
-        if path.is_file() and UPSTREAM_FILE != path.name and "__pycache__" not in path.parts:
-            yield path
+def _vendored_files(skill_dir: Path) -> list[Path]:
+    return [
+        path
+        for path in sorted(skill_dir.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+    ]
 
 
 def compare_skill(
-    skill_dir: Path, fields: dict[str, str], upstream_files: dict[Path, bytes]
+    skill_dir: Path, entry: dict[str, str], upstream_files: dict[Path, bytes]
 ) -> dict[str, list[str]]:
     """Report how a vendored skill differs from its pinned upstream files."""
-    upstream_prefix = Path(fields["path"])
+    upstream_prefix = Path(entry["path"])
     expected = {
         path.relative_to(upstream_prefix): content
         for path, content in upstream_files.items()
         if path == upstream_prefix or upstream_prefix in path.parents
     }
     if not expected:
-        raise SyncError(f"{skill_dir.name}: upstream has no files at {fields['path']!r}")
+        raise SyncError(f"{entry['name']}: upstream has no files at {entry['path']!r}")
 
     present = {path.relative_to(skill_dir): path for path in _vendored_files(skill_dir)}
     report: dict[str, list[str]] = {
@@ -149,10 +183,10 @@ def compare_skill(
 
 
 def apply_skill(
-    skill_dir: Path, fields: dict[str, str], upstream_files: dict[Path, bytes]
+    skill_dir: Path, entry: dict[str, str], upstream_files: dict[Path, bytes]
 ) -> list[str]:
     """Overwrite tracked vendored files from upstream; return written paths."""
-    upstream_prefix = Path(fields["path"])
+    upstream_prefix = Path(entry["path"])
     written: list[str] = []
     for path, content in sorted(upstream_files.items()):
         if path != upstream_prefix and upstream_prefix not in path.parents:
@@ -165,33 +199,43 @@ def apply_skill(
     return written
 
 
-def sync(root: Path, write: bool = False) -> tuple[list[dict[str, object]], bool]:
+def sync(root: Path, write: bool = False) -> tuple[list[dict[str, Any]], bool]:
     """Sync every vendored skill; return (per-skill reports, check-clean flag)."""
-    skills = discover_skills(root)
-    if not skills:
-        raise SyncError(f"no vendored skills under {root}")
+    entries = load_registry(root)
+
+    on_disk = {path.parent.name for path in root.glob("*/SKILL.md")}
+    registered = {entry["name"] for entry in entries}
+    unregistered = sorted(on_disk - registered)
+    missing = sorted(registered - on_disk)
+    if unregistered:
+        raise SyncError(
+            f"skills under {root} missing from {REGISTRY_FILE}: {', '.join(unregistered)}"
+        )
+    if missing:
+        raise SyncError(f"{REGISTRY_FILE} lists skills with no directory: {', '.join(missing)}")
 
     archives: dict[tuple[str, str], dict[Path, bytes]] = {}
     clean = True
-    reports: list[dict[str, object]] = []
-    for name, (skill_dir, fields) in sorted(skills.items()):
-        key = (fields["source"], fields["ref"])
+    reports: list[dict[str, Any]] = []
+    for entry in entries:
+        skill_dir = root / entry["name"]
+        key = (entry["source"], entry["ref"])
         if key not in archives:
             archives[key] = fetch_upstream_files(*key)
         upstream_files = archives[key]
-        report = compare_skill(skill_dir, fields, upstream_files)
+        report = compare_skill(skill_dir, entry, upstream_files)
         action = "reported"
-        if fields["mode"] == "tracked":
+        if entry["mode"] == "tracked":
             drifted = bool(report["changed"] or report["missing"])
             if drifted and write:
-                apply_skill(skill_dir, fields, upstream_files)
+                apply_skill(skill_dir, entry, upstream_files)
                 action = "refreshed"
             elif drifted:
                 clean = False
                 action = "drift"
         else:
             action = "adapted-local-modifications" if report["changed"] else "adapted"
-        reports.append({"skill": name, "mode": fields["mode"], "action": action, **report})
+        reports.append({"skill": entry["name"], "mode": entry["mode"], "action": action, **report})
     return reports, clean
 
 

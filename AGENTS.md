@@ -88,8 +88,9 @@ model-invoked skill, the way `clean-prose` delegates to `prose-editing`;
 promoted skill is model-invoked and omits both flags. Every promoted skill has
 an `agents/openai.yaml` interface entry.
 
-The pack vendors three third-party skills under `skills/third-party/`, each with
-an `UPSTREAM.toml` recording its source, pinned ref, and sync mode. Creation
+The pack vendors third-party skills under `skills/third-party/`, with all
+provenance in `skills/third-party/registry.json`: one pinned ref and license
+per upstream source, one entry per skill with its sync mode. Creation
 and interview flows use `/grilling`; every `/rhdh-pr-review` run uses
 `/code-review`; `/handoff` carries context into a later session, which is why
 no artifact store does. Refresh them with `scripts/sync_third_party.py`

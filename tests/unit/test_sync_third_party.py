@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -10,13 +11,20 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SYNC = PROJECT_ROOT / "scripts" / "sync_third_party.py"
 
-UPSTREAM_TOML = """\
-# provenance
-source = "somebody/skills"
-path = "skills/productivity/demo"
-ref = "abc123"
-mode = "{mode}"
-"""
+REGISTRY = {
+    "schemaVersion": 1,
+    "sources": {
+        "somebody/skills": {"ref": "abc123", "license": "MIT"},
+    },
+    "skills": [
+        {
+            "name": "demo",
+            "source": "somebody/skills",
+            "path": "skills/productivity/demo",
+            "mode": "tracked",
+        }
+    ],
+}
 
 
 def load_sync():
@@ -31,10 +39,13 @@ def sync():
     return load_sync()
 
 
-def make_skill(root: Path, mode: str = "tracked") -> Path:
+def write_registry(root: Path, mode: str = "tracked") -> Path:
+    registry = json.loads(json.dumps(REGISTRY))
+    registry["skills"][0]["mode"] = mode
+    registry_file = root / "registry.json"
+    registry_file.write_text(json.dumps(registry, indent=2), encoding="utf-8")
     skill_dir = root / "demo"
-    (skill_dir).mkdir(parents=True)
-    (skill_dir / "UPSTREAM.toml").write_text(UPSTREAM_TOML.format(mode=mode), encoding="utf-8")
+    skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("original\n", encoding="utf-8")
     return skill_dir
 
@@ -43,78 +54,82 @@ def upstream_map(content: str = "original\n") -> dict[Path, bytes]:
     return {Path("skills/productivity/demo/SKILL.md"): content.encode()}
 
 
-class TestParseUpstreamToml:
-    def test_parses_the_four_fixed_fields(self, sync):
-        fields = sync.parse_upstream_toml(UPSTREAM_TOML.format(mode="tracked"), Path("x"))
-        assert fields == {
-            "source": "somebody/skills",
-            "path": "skills/productivity/demo",
-            "ref": "abc123",
-            "mode": "tracked",
-        }
+class TestLoadRegistry:
+    def test_joins_skills_with_their_source_ref_and_license(self, sync, tmp_path):
+        write_registry(tmp_path)
+        entries = sync.load_registry(tmp_path)
+        assert entries == [
+            {
+                "name": "demo",
+                "source": "somebody/skills",
+                "path": "skills/productivity/demo",
+                "mode": "tracked",
+                "ref": "abc123",
+                "license": "MIT",
+            }
+        ]
 
-    @pytest.mark.parametrize(
-        ("line", "problem"),
-        [
-            ('mode = "forked"\n', "mode"),
-            ("ref = 123\n", "not a"),
-            ('bogus = "x"\n', "unknown field"),
-        ],
-    )
-    def test_rejects_malformed_lines(self, sync, line, problem):
-        text = UPSTREAM_TOML.format(mode="tracked").replace('ref = "abc123"\n', line)
-        if line.startswith("bogus"):
-            text = UPSTREAM_TOML.format(mode="tracked") + line
-        with pytest.raises(sync.SyncError, match=problem):
-            sync.parse_upstream_toml(text, Path("x"))
+    def test_a_skill_with_no_source_metadata_is_rejected(self, sync, tmp_path):
+        write_registry(tmp_path)
+        registry_file = tmp_path / "registry.json"
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+        registry["skills"][0]["source"] = "someone-else/skills"
+        registry_file.write_text(json.dumps(registry), encoding="utf-8")
+        with pytest.raises(sync.SyncError, match="no sources"):
+            sync.load_registry(tmp_path)
 
-    def test_rejects_missing_fields(self, sync):
-        text = 'source = "a/b"\npath = "p"\nmode = "tracked"\n'
+    def test_a_source_without_a_ref_is_rejected(self, sync, tmp_path):
+        write_registry(tmp_path)
+        registry_file = tmp_path / "registry.json"
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+        del registry["sources"]["somebody/skills"]["ref"]
+        registry_file.write_text(json.dumps(registry), encoding="utf-8")
         with pytest.raises(sync.SyncError, match="ref"):
-            sync.parse_upstream_toml(text, Path("x"))
+            sync.load_registry(tmp_path)
 
-    def test_rejects_source_that_is_not_owner_repo(self, sync):
-        text = UPSTREAM_TOML.format(mode="tracked").replace(
-            '"somebody/skills"', '"github.com/somebody/skills"'
-        )
-        with pytest.raises(sync.SyncError, match="owner/repo"):
-            sync.parse_upstream_toml(text, Path("x"))
+    def test_an_unknown_skill_field_is_rejected(self, sync, tmp_path):
+        write_registry(tmp_path)
+        registry_file = tmp_path / "registry.json"
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+        registry["skills"][0]["ref"] = "per-skill refs are not allowed"
+        registry_file.write_text(json.dumps(registry), encoding="utf-8")
+        with pytest.raises(sync.SyncError, match="unknown fields: ref"):
+            sync.load_registry(tmp_path)
+
+    def test_a_bad_mode_is_rejected(self, sync, tmp_path):
+        write_registry(tmp_path, mode="forked")
+        with pytest.raises(sync.SyncError, match="mode"):
+            sync.load_registry(tmp_path)
 
 
 class TestCompareSkill:
     def test_reports_changed_missing_and_local_only(self, sync, tmp_path):
-        skill_dir = make_skill(tmp_path)
+        skill_dir = write_registry(tmp_path)
         (skill_dir / "SKILL.md").write_text("edited\n", encoding="utf-8")
         (skill_dir / "NOTES.md").write_text("ours\n", encoding="utf-8")
-        fields = sync.parse_upstream_toml(
-            UPSTREAM_TOML.format(mode="tracked"), skill_dir / "UPSTREAM.toml"
-        )
+        entry = sync.load_registry(tmp_path)[0]
         report = sync.compare_skill(
-            skill_dir, fields, upstream_map() | {Path("skills/productivity/demo/NEW.md"): b"x"}
+            skill_dir, entry, upstream_map() | {Path("skills/productivity/demo/NEW.md"): b"x"}
         )
         assert report["changed"] == ["SKILL.md"]
         assert report["missing"] == ["NEW.md"]
         assert report["local_only"] == ["NOTES.md"]
 
     def test_upstream_path_without_files_is_an_error(self, sync, tmp_path):
-        skill_dir = make_skill(tmp_path)
-        fields = sync.parse_upstream_toml(
-            UPSTREAM_TOML.format(mode="tracked"), skill_dir / "UPSTREAM.toml"
-        )
+        skill_dir = write_registry(tmp_path)
+        entry = sync.load_registry(tmp_path)[0]
         with pytest.raises(sync.SyncError, match="no files"):
-            sync.compare_skill(skill_dir, fields, {Path("elsewhere/SKILL.md"): b"x"})
+            sync.compare_skill(skill_dir, entry, {Path("elsewhere/SKILL.md"): b"x"})
 
 
 class TestApplySkill:
     def test_overwrites_only_upstream_files(self, sync, tmp_path):
-        skill_dir = make_skill(tmp_path)
+        skill_dir = write_registry(tmp_path)
         (skill_dir / "SKILL.md").write_text("edited\n", encoding="utf-8")
         (skill_dir / "NOTES.md").write_text("ours\n", encoding="utf-8")
-        fields = sync.parse_upstream_toml(
-            UPSTREAM_TOML.format(mode="tracked"), skill_dir / "UPSTREAM.toml"
-        )
+        entry = sync.load_registry(tmp_path)[0]
         written = sync.apply_skill(
-            skill_dir, fields, upstream_map() | {Path("skills/productivity/demo/sub/NEW.md"): b"n"}
+            skill_dir, entry, upstream_map() | {Path("skills/productivity/demo/sub/NEW.md"): b"n"}
         )
         assert sorted(written) == ["SKILL.md", "sub/NEW.md"]
         assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == "original\n"
@@ -123,7 +138,7 @@ class TestApplySkill:
 
 class TestSync:
     def test_tracked_drift_fails_check_and_write_refreshes(self, sync, tmp_path, monkeypatch):
-        skill_dir = make_skill(tmp_path)
+        skill_dir = write_registry(tmp_path)
         (skill_dir / "SKILL.md").write_text("edited\n", encoding="utf-8")
         monkeypatch.setattr(sync, "fetch_upstream_files", lambda source, ref: upstream_map())
 
@@ -140,7 +155,7 @@ class TestSync:
         assert clean is True
 
     def test_adapted_drift_is_reported_but_never_written(self, sync, tmp_path, monkeypatch):
-        skill_dir = make_skill(tmp_path, mode="adapted")
+        skill_dir = write_registry(tmp_path, mode="adapted")
         (skill_dir / "SKILL.md").write_text("our fork\n", encoding="utf-8")
         monkeypatch.setattr(sync, "fetch_upstream_files", lambda source, ref: upstream_map())
 
@@ -150,8 +165,16 @@ class TestSync:
         assert reports[0]["changed"] == ["SKILL.md"]
         assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == "our fork\n"
 
-    def test_a_skill_without_provenance_is_an_error(self, sync, tmp_path):
-        (tmp_path / "demo").mkdir()
-        (tmp_path / "demo" / "SKILL.md").write_text("x\n", encoding="utf-8")
-        with pytest.raises(sync.SyncError, match="without UPSTREAM.toml"):
-            sync.discover_skills(tmp_path)
+    def test_a_skill_dir_missing_from_the_registry_is_an_error(self, sync, tmp_path):
+        write_registry(tmp_path)
+        unregistered = tmp_path / "stray"
+        unregistered.mkdir()
+        (unregistered / "SKILL.md").write_text("x\n", encoding="utf-8")
+        with pytest.raises(sync.SyncError, match="stray"):
+            sync.sync(tmp_path, write=False)
+
+    def test_a_registry_skill_without_a_directory_is_an_error(self, sync, tmp_path):
+        write_registry(tmp_path)
+        (tmp_path / "demo" / "SKILL.md").unlink()
+        with pytest.raises(sync.SyncError, match="no directory"):
+            sync.sync(tmp_path, write=False)

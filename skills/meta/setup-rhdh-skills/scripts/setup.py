@@ -70,17 +70,11 @@ def setup_status(
 ) -> dict[str, Any]:
     installed = _installed_skills(home, project_root)
     promoted = [entry["name"] for entry in catalog["skills"]]
-    external = [entry["name"] for entry in catalog["pack"]["requiredExternalSkills"]]
-    required = [*promoted, *external]
-    missing = sorted(name for name in required if name not in installed)
-    external_status = {
-        name: "installed" if name in installed else "missing" for name in sorted(external)
-    }
+    missing = sorted(name for name in promoted if name not in installed)
     return {
         "installedSkills": sorted(installed),
         "installedSkillLocations": installed,
         "missingSkills": missing,
-        "requiredExternalSkills": external_status,
         "capabilities": {
             "tools": _tool_status(probe_tools),
             "projectConfiguration": "present"
@@ -150,7 +144,6 @@ def install_plan(
     target = f"{scope}:{agent}"
     operations: list[dict[str, Any]] = []
     promoted_names = [entry["name"] for entry in catalog["skills"]]
-    external_names = [entry["name"] for entry in pack["requiredExternalSkills"]]
 
     if resolved_pack_url:
         operations.append(
@@ -159,7 +152,7 @@ def install_plan(
                 command=["npx", "skills", "add", resolved_pack_url, *flags],
                 source=resolved_pack_url,
                 target=target,
-                skill_names=[*promoted_names, *external_names],
+                skill_names=promoted_names,
                 agent=agent,
                 scope=scope,
             )
@@ -184,24 +177,6 @@ def install_plan(
                 scope=scope,
             )
         )
-        by_source: dict[str, list[str]] = {}
-        for dependency in pack["requiredExternalSkills"]:
-            by_source.setdefault(dependency["source"], []).append(dependency["name"])
-        for source, names in sorted(by_source.items()):
-            skill_flags: list[str] = []
-            for name in sorted(names):
-                skill_flags.extend(["--skill", name])
-            operations.append(
-                _install_operation(
-                    order=len(operations) + 1,
-                    command=["npx", "skills", "add", source, *skill_flags, *flags],
-                    source=source,
-                    target=target,
-                    skill_names=names,
-                    agent=agent,
-                    scope=scope,
-                )
-            )
 
     return {
         "summary": f"Install the complete RHDH skill set for {agent} ({scope})",

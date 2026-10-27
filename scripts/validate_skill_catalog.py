@@ -32,7 +32,7 @@ PROMOTED_CATEGORIES = (
 # whose subject is not RHDH — prose-editing, clean-prose, mutation-gate,
 # skill-authoring — so renaming one left its callers dangling silently. Every
 # promoted name is kebab-case, but a skill can still be a single token. Route-like
-# tokens are filtered against the promoted/external/retired name sets below. A
+# tokens are filtered against the promoted/retired name sets below. A
 # trailing slash or dot means the token is a path, not a skill.
 NAMED_INVOCATION = re.compile(
     r"""(?:^|(?<=[\s(\[`'"]))/([a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])(?![/.])""",
@@ -42,11 +42,9 @@ NAMED_INVOCATION = re.compile(
 # would require editing upstream SKILL.md prose. Names, descriptions, harness
 # metadata, and invocation flags still apply.
 THIRD_PARTY_CATEGORY = "third-party"
-# Skills required from outside this pack. Empty today: the former externals
-# (code-review, grilling, handoff from mattpocock/skills) are vendored under
-# skills/third-party/ with UPSTREAM.toml provenance. A future external
-# dependency lands here and in pack.requiredExternalSkills.
-EXTERNAL_SKILLS: set[str] = set()
+# External skills are gone as a concept: anything the pack needs is vendored
+# under skills/third-party/ (ADR-0011). A leftover requiresExternalSkills field
+# is rejected below so the removed machinery cannot silently reappear.
 RETIRED_SKILLS = {"humanizer"}
 # A bundled script reading a file that ships *with it*, such as
 # `_DATA_DIR / "jql-release.md"`. Anchored to the handful of names that mean
@@ -302,7 +300,7 @@ def _validate_named_invocations(
     check catches it — the reference is not a path and not a declared dependency.
     Four dangling ``/rhdh-jira`` citations survived a split this way.
     """
-    known = catalog_names | EXTERNAL_SKILLS
+    known = catalog_names
     for name, skill_dir in sorted(skill_dirs.items()):
         for path in _shipped_files(skill_dir):
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -317,7 +315,7 @@ def _validate_named_invocations(
                         "code": "UNKNOWN_SKILL_REFERENCE",
                         "message": (
                             f"{path.relative_to(root).as_posix()} invokes /{cited}, which is "
-                            f"not a promoted skill or a required external one; it was likely "
+                            f"not a promoted skill; it was likely "
                             f"renamed or split"
                         ),
                     }
@@ -438,7 +436,6 @@ def validate_repository(root: Path) -> dict[str, Any]:
             "errors": [{"code": "CATALOG_MISSING", "message": str(catalog_file)}],
             "promotedSkills": [],
             "humanInvokedSkills": [],
-            "requiredExternalSkills": [],
         }
 
     try:
@@ -449,7 +446,6 @@ def validate_repository(root: Path) -> dict[str, Any]:
             "errors": [{"code": "CATALOG_INVALID", "message": str(exc)}],
             "promotedSkills": [],
             "humanInvokedSkills": [],
-            "requiredExternalSkills": [],
         }
 
     if catalog.get("schemaVersion") != 1:
@@ -464,9 +460,16 @@ def validate_repository(root: Path) -> dict[str, Any]:
     human_names: list[str] = []
     wrapper_delegations: dict[str, tuple[str, Path]] = {}
     entry_by_name: dict[str, dict[str, Any]] = {}
-    external_entries = catalog.get("pack", {}).get("requiredExternalSkills", [])
-    external_names = [item.get("name") for item in external_entries if isinstance(item, dict)]
-    external_set = {name for name in external_names if isinstance(name, str)}
+    if catalog.get("pack", {}).get("requiredExternalSkills"):
+        errors.append(
+            {
+                "code": "LEGACY_EXTERNAL_FIELD",
+                "message": (
+                    "pack.requiredExternalSkills: external skills are gone as a concept; "
+                    "vendor the skill under skills/third-party/ instead (ADR-0011)"
+                ),
+            }
+        )
 
     catalog_names = {
         entry.get("name")
@@ -622,27 +625,28 @@ def validate_repository(root: Path) -> dict[str, Any]:
     for name, entry in entry_by_name.items():
         dependencies = entry.get("requiresSkills", [])
         optional_dependencies = entry.get("optionalSkills", [])
-        external_dependencies = entry.get("requiresExternalSkills", [])
         if not isinstance(dependencies, list):
             errors.append({"code": "REQUIRES_TYPE", "message": name})
             dependencies = []
         if not isinstance(optional_dependencies, list):
             errors.append({"code": "OPTIONAL_REQUIRES_TYPE", "message": name})
             optional_dependencies = []
-        if not isinstance(external_dependencies, list):
-            errors.append({"code": "EXTERNAL_REQUIRES_TYPE", "message": name})
-            external_dependencies = []
+        if "requiresExternalSkills" in entry:
+            errors.append(
+                {
+                    "code": "LEGACY_EXTERNAL_FIELD",
+                    "message": (
+                        f"{name}: requiresExternalSkills is gone; vendor the dependency under "
+                        "skills/third-party/ and use requiresSkills instead (ADR-0011)"
+                    ),
+                }
+            )
         required_names = [dep for dep in dependencies if isinstance(dep, str)]
         optional_names = [dep for dep in optional_dependencies if isinstance(dep, str)]
         graph[name] = [*required_names, *optional_names]
         for dependency in graph[name]:
             if dependency not in internal_names:
                 errors.append({"code": "DEPENDENCY_MISSING", "message": f"{name} -> {dependency}"})
-        for dependency in external_dependencies:
-            if dependency not in external_set:
-                errors.append(
-                    {"code": "EXTERNAL_DEPENDENCY_MISSING", "message": f"{name} -> {dependency}"}
-                )
 
     cycle = _find_cycle(graph) if graph else None
     if cycle:
@@ -711,7 +715,6 @@ def validate_repository(root: Path) -> dict[str, Any]:
         "promotedSkills": sorted(promoted_names),
         "humanInvokedSkills": sorted(human_names),
         "delegatingWrappers": {name: target for name, (target, _) in wrapper_delegations.items()},
-        "requiredExternalSkills": sorted(external_set),
     }
 
 

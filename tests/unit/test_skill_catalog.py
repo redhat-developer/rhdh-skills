@@ -70,7 +70,7 @@ def write_repository(
     catalog = root / "skills" / "meta" / "setup-rhdh-skills" / "assets" / "catalog.json"
     catalog.parent.mkdir(parents=True, exist_ok=True)
     catalog.write_text(
-        json.dumps({"schemaVersion": 1, "skills": entries, "pack": {"requiredExternalSkills": []}}),
+        json.dumps({"schemaVersion": 1, "skills": entries, "pack": {"source": "x/y"}}),
         encoding="utf-8",
     )
     contracts_file = root / "skills" / "reference" / "rhdh-context" / "scripts"
@@ -127,7 +127,7 @@ def test_repository_catalog_exposes_the_approved_composable_skill_set():
         "clean-prose",
         "handoff",
     }
-    assert set(report["requiredExternalSkills"]) == set()
+    assert "requiredExternalSkills" not in report
     assert every_promoted_skill_lives_in_a_domain_category(catalog)
 
 
@@ -167,7 +167,7 @@ def test_operator_pr_test_is_split_from_pr_review():
     assert operator["invocation"] == "model"
     assert set(operator["requiresSkills"]) == {"mutation-gate", "rhdh-forge", "prose-editing"}
     assert operator.get("optionalSkills", []) == []
-    assert operator.get("requiresExternalSkills", []) == []
+    assert "requiresExternalSkills" not in operator
 
     assert "code-review" in review["requiresSkills"]
     assert "rhdh-operator-pr-test" not in review.get("requiresSkills", [])

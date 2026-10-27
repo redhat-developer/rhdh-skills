@@ -26,10 +26,7 @@ def read_catalog() -> dict:
 
 
 def every_packaged_skill(catalog: dict) -> list[str]:
-    return sorted(
-        [entry["name"] for entry in catalog["skills"]]
-        + [entry["name"] for entry in catalog["pack"]["requiredExternalSkills"]]
-    )
+    return sorted(entry["name"] for entry in catalog["skills"])
 
 
 def run_setup(*args: str) -> subprocess.CompletedProcess[str]:
@@ -76,10 +73,9 @@ def test_doctor_discovers_dependencies_across_supported_host_layouts(tmp_path):
     report = json.loads(result.stdout)
     assert "contract" not in report
     assert set(report["installedSkills"]) == {"ask-rhdh", "grilling", "mutation-gate"}
-    # The former externals (code-review, grilling, handoff) are vendored into
-    # the pack, so nothing is required from outside it anymore; grilling in
-    # this fixture counts as an installed pack skill.
-    assert report["requiredExternalSkills"] == {}
+    # External skills are gone as a concept: everything the pack needs is
+    # vendored, so the doctor report has no external section at all.
+    assert "requiredExternalSkills" not in report
     assert report["capabilities"]["tools"]["oc"] == "not-probed"
     assert report["capabilities"]["tools"]["gog"] == "not-probed"
     assert "setup-rhdh-skills" in report["missingSkills"]
