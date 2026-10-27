@@ -42,10 +42,11 @@ NAMED_INVOCATION = re.compile(
 # would require editing upstream SKILL.md prose. Names, descriptions, harness
 # metadata, and invocation flags still apply.
 THIRD_PARTY_CATEGORY = "third-party"
-# External skills are gone as a concept: anything the pack needs is vendored
-# under skills/third-party/ (ADR-0011). A leftover requiresExternalSkills field
-# is rejected below so the removed machinery cannot silently reappear.
 RETIRED_SKILLS = {"humanizer"}
+# A catalog entry may name the subdirectory its skill lives in under
+# skills/<category>/ (vendored third-party skills are grouped per upstream
+# source, ADR-0011). Without it the skill sits directly in its category.
+DIRECTORY_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 # A bundled script reading a file that ships *with it*, such as
 # `_DATA_DIR / "jql-release.md"`. Anchored to the handful of names that mean
 # "this script's own directory", because a bare `dir / "config.json"` is usually
@@ -460,16 +461,6 @@ def validate_repository(root: Path) -> dict[str, Any]:
     human_names: list[str] = []
     wrapper_delegations: dict[str, tuple[str, Path]] = {}
     entry_by_name: dict[str, dict[str, Any]] = {}
-    if catalog.get("pack", {}).get("requiredExternalSkills"):
-        errors.append(
-            {
-                "code": "LEGACY_EXTERNAL_FIELD",
-                "message": (
-                    "pack.requiredExternalSkills: external skills are gone as a concept; "
-                    "vendor the skill under skills/third-party/ instead (ADR-0011)"
-                ),
-            }
-        )
 
     catalog_names = {
         entry.get("name")
@@ -499,7 +490,14 @@ def validate_repository(root: Path) -> dict[str, Any]:
         if invocation == "human":
             human_names.append(name)
 
-        skill_dir = root / "skills" / category / name
+        directory = entry.get("directory")
+        if directory is not None:
+            if not isinstance(directory, str) or not DIRECTORY_NAME.fullmatch(directory):
+                errors.append({"code": "SKILL_DIRECTORY", "message": f"{name}: {directory!r}"})
+                continue
+            skill_dir = root / "skills" / category / directory / name
+        else:
+            skill_dir = root / "skills" / category / name
         skill_file = skill_dir / "SKILL.md"
         if not skill_file.is_file():
             errors.append({"code": "SKILL_MISSING", "message": str(skill_file)})
@@ -631,16 +629,6 @@ def validate_repository(root: Path) -> dict[str, Any]:
         if not isinstance(optional_dependencies, list):
             errors.append({"code": "OPTIONAL_REQUIRES_TYPE", "message": name})
             optional_dependencies = []
-        if "requiresExternalSkills" in entry:
-            errors.append(
-                {
-                    "code": "LEGACY_EXTERNAL_FIELD",
-                    "message": (
-                        f"{name}: requiresExternalSkills is gone; vendor the dependency under "
-                        "skills/third-party/ and use requiresSkills instead (ADR-0011)"
-                    ),
-                }
-            )
         required_names = [dep for dep in dependencies if isinstance(dep, str)]
         optional_names = [dep for dep in optional_dependencies if isinstance(dep, str)]
         graph[name] = [*required_names, *optional_names]
@@ -654,7 +642,7 @@ def validate_repository(root: Path) -> dict[str, Any]:
 
     skill_dirs: dict[str, Path] = {}
     for category in PROMOTED_CATEGORIES:
-        for skill_file in (root / "skills" / category).glob("*/SKILL.md"):
+        for skill_file in (root / "skills" / category).rglob("SKILL.md"):
             skill_dirs[skill_file.parent.name] = skill_file.parent
     for left, right in _duplicate_files(root, skill_dirs):
         errors.append(

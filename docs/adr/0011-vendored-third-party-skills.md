@@ -4,19 +4,14 @@
 
 ## Context
 
-The pack used to depend on three skills installed from outside it: `code-review`,
-`grilling`, and `handoff` from `mattpocock/skills`. `catalog.json` declared them
-under `pack.requiredExternalSkills`, the README told users to run a second
-`npx skills add mattpocock/skills` command, and `setup-rhdh-skills` planned that
-second install operation.
+Skills reach engineers through Slack as plugins on authorized Red Hat
+repositories, and that surface exposes this repository's pack — not arbitrary
+upstream sources. A skill the workflow cannot install from the pack is a skill
+the workflow cannot deliver. The same applies to any consumer who wants one
+install command instead of several.
 
-The new delivery surface changes the math: skills reach engineers through Slack
-as plugins on authorized Red Hat repositories, and that surface exposes this
-repository's pack — not arbitrary upstream sources. A skill the workflow cannot
-install from the pack is a skill the workflow cannot deliver. The same applies
-to any consumer who wants one install command instead of two.
-
-Upstream is MIT-licensed, so vendoring and modifying are both permitted.
+`mattpocock/skills` is MIT-licensed, so vendoring and modifying are both
+permitted.
 
 The `skills` CLI's experimental lockfile sync (`skills-lock.json`,
 `experimental_install`) was considered and rejected: it keeps the skills outside
@@ -27,19 +22,23 @@ adaptations we sometimes need.
 ## Decision
 
 Vendor third-party skills into `skills/third-party/` as a promoted catalog
-category, with all provenance and sync policy in one registry:
-`skills/third-party/registry.json`. Its `sources` map records each upstream
-`owner/repo` with one pinned `ref` and its `license`; its `skills` array
-records each vendored skill's `name` (the vendored directory), `source`,
-`path` inside that repository, and `mode`:
+category, grouped one directory per upstream source, with all provenance and
+sync policy in one registry: `skills/third-party/registry.json`.
+
+The registry's `sources` map records each upstream `owner/repo` with the
+`directory` its skills are vendored under, one pinned `ref`, and its `license`.
+Its `skills` array records each vendored skill's `name`, `source`, `path`
+inside that repository, and `mode`:
 
 - `tracked` — vendored files must match the pinned ref; sync overwrites.
 - `adapted` — we forked it; sync never overwrites, drift is reported so a
   human re-ports upstream changes deliberately.
 
-The ref lives on the source, not the skill: every skill vendored from one
-upstream repository is pinned to the same commit by construction, and bumping
-a source refreshes all of its skills at once.
+A vendored skill lives at `skills/third-party/<directory>/<name>`, and its
+catalog entry carries the same `directory`. The ref lives on the source, not
+the skill: every skill vendored from one upstream repository is pinned to the
+same commit by construction, and bumping a source refreshes all of its skills
+at once.
 
 `scripts/sync_third_party.py` reads the registry and fetches each source's
 pinned ref from codeload.github.com: `--check` fails on tracked drift (CI
@@ -53,11 +52,7 @@ prose — the catalog validator exempts the category from the `## Completion`
 rule, because editing upstream prose would break tracked-mode sync. Everything
 else this repo requires still applies: frontmatter names and descriptions,
 `agents/openai.yaml` harness metadata, invocation flags, self-containment, and
-catalog membership. The external-skill machinery is removed outright:
-`pack.requiredExternalSkills`, per-entry `requiresExternalSkills`, and the
-setup script's second install operation no longer exist, and the catalog
-validator rejects any leftover of them. The former external dependencies are
-ordinary `requiresSkills` edges now.
+catalog membership.
 
 Per ADR-0008 these skills keep their upstream names: they are not about RHDH.
 
@@ -66,13 +61,14 @@ Per ADR-0008 these skills keep their upstream names: they are not about RHDH.
 - One install source covers the complete pack: `npx skills add
   redhat-developer/rhdh-skills`. The installer shows a seventh group,
   Third-party, alongside the six domain groups of ADR-0009.
-- A Jira-only or Plugins-only group install no longer pulls `grilling` or
-  `code-review` implicitly — they sit in their own group. The ADR-0009 advice
+- A Jira-only or Plugins-only group install does not pull `grilling` or
+  `code-review` — they sit in their own group. The ADR-0009 advice
   to install the groups you need (or the full set) still stands.
 - Upstream improvements arrive only when someone bumps `ref` and runs
   `--write`; the pack deliberately lags upstream instead of drifting from it.
 - An `adapted` skill is a fork: re-porting upstream changes is manual, and the
   sync report is the reminder, not the mechanism.
 - New third-party skills land the same way: add the source and skill to
-  `registry.json`, copy the files from the pinned ref, add the catalog entry.
-  A skill directory missing from the registry fails sync.
+  `registry.json`, copy the files from the pinned ref into the source's
+  directory, add the catalog entry with its `directory`. A skill directory
+  missing from the registry fails sync.

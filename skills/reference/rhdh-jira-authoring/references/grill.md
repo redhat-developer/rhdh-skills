@@ -1,7 +1,8 @@
 # Grill Behavior
 
 The RHDH-specific half of an issue-creation interview. The general interview
-cadence belongs to the external `grilling` skill; what is here is the part
+cadence belongs to the `grilling` skill, vendored into this pack; what is
+here is the part
 `grilling` cannot know — which challenges matter for an RHDH Feature, Epic,
 Story, Task, or Bug, and how to infer RHDH Jira fields from the conversation.
 
@@ -24,18 +25,6 @@ Domain-specific challenges below stay in this skill. If the conversation already
 
 The `grilling` skill is a hard prerequisite for creating an issue. It ships
 with this pack as a vendored third-party skill.
-
-If the host reports `grilling` unavailable, stop before creating anything. Say
-that `grilling` is missing, that issue creation is gated on it, and that the fix
-is to run `/setup-rhdh-skills install`. Do not probe host skill directories, run
-an installer, or improvise a substitute interview. Resume only once `grilling`
-can be invoked by name.
-
-Creation is the only gated path, and deliberately so. **Do not gate
-`/rhdh-jira-refine`, `/rhdh-jira-update`, `/rhdh-jira-sprint-plan`, or
-`/rhdh-jira-sprint-report` on grilling** — those read or adjust work that already
-exists, and blocking them on an optional skill would take a whole
-capability offline for no benefit.
 
 ## Field Inference
 

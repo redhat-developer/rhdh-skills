@@ -54,7 +54,9 @@ def plugin_description(category: str) -> str:
 
 
 def _skill_path(entry: dict[str, Any]) -> str:
-    return f"./skills/{entry['category']}/{entry['name']}"
+    directory = entry.get("directory")
+    skill = f"{directory}/{entry['name']}" if directory else entry["name"]
+    return f"./skills/{entry['category']}/{skill}"
 
 
 def _reference_closure(

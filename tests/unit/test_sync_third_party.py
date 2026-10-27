@@ -14,7 +14,7 @@ SYNC = PROJECT_ROOT / "scripts" / "sync_third_party.py"
 REGISTRY = {
     "schemaVersion": 1,
     "sources": {
-        "somebody/skills": {"ref": "abc123", "license": "MIT"},
+        "somebody/skills": {"directory": "somebody-skills", "ref": "abc123", "license": "MIT"},
     },
     "skills": [
         {
@@ -44,7 +44,7 @@ def write_registry(root: Path, mode: str = "tracked") -> Path:
     registry["skills"][0]["mode"] = mode
     registry_file = root / "registry.json"
     registry_file.write_text(json.dumps(registry, indent=2), encoding="utf-8")
-    skill_dir = root / "demo"
+    skill_dir = root / "somebody-skills" / "demo"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("original\n", encoding="utf-8")
     return skill_dir
@@ -64,6 +64,7 @@ class TestLoadRegistry:
                 "source": "somebody/skills",
                 "path": "skills/productivity/demo",
                 "mode": "tracked",
+                "directory": "somebody-skills",
                 "ref": "abc123",
                 "license": "MIT",
             }
@@ -76,6 +77,15 @@ class TestLoadRegistry:
         registry["skills"][0]["source"] = "someone-else/skills"
         registry_file.write_text(json.dumps(registry), encoding="utf-8")
         with pytest.raises(sync.SyncError, match="no sources"):
+            sync.load_registry(tmp_path)
+
+    def test_a_source_without_a_directory_is_rejected(self, sync, tmp_path):
+        write_registry(tmp_path)
+        registry_file = tmp_path / "registry.json"
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+        del registry["sources"]["somebody/skills"]["directory"]
+        registry_file.write_text(json.dumps(registry), encoding="utf-8")
+        with pytest.raises(sync.SyncError, match="directory"):
             sync.load_registry(tmp_path)
 
     def test_a_source_without_a_ref_is_rejected(self, sync, tmp_path):
@@ -167,7 +177,7 @@ class TestSync:
 
     def test_a_skill_dir_missing_from_the_registry_is_an_error(self, sync, tmp_path):
         write_registry(tmp_path)
-        unregistered = tmp_path / "stray"
+        unregistered = tmp_path / "somebody-skills" / "stray"
         unregistered.mkdir()
         (unregistered / "SKILL.md").write_text("x\n", encoding="utf-8")
         with pytest.raises(sync.SyncError, match="stray"):
@@ -175,6 +185,6 @@ class TestSync:
 
     def test_a_registry_skill_without_a_directory_is_an_error(self, sync, tmp_path):
         write_registry(tmp_path)
-        (tmp_path / "demo" / "SKILL.md").unlink()
+        (tmp_path / "somebody-skills" / "demo" / "SKILL.md").unlink()
         with pytest.raises(sync.SyncError, match="no directory"):
             sync.sync(tmp_path, write=False)

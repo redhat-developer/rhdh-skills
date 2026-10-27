@@ -24,13 +24,6 @@ Load `workflows/refine-issues.md`. It covers both the per-issue readiness audit
 and the Feature Exploration checklist — the same checks, applied at different
 points in a Feature's life.
 
-## Not gated on grilling
-
-Unlike `/rhdh-jira-create`, this skill does **not** require the
-`grilling` skill and must not be blocked on it. Refinement reads work that
-already exists. Gating it on an optional skill would take a whole
-capability offline for no benefit.
-
 ## Reads by default, writes only on request
 
 The report is read-only. When the user asks for fixes, each change becomes an

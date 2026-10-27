@@ -584,19 +584,22 @@
       "name": "code-review",
       "category": "third-party",
       "invocation": "model",
-      "requiresSkills": []
+      "requiresSkills": [],
+      "directory": "mattpocock-skills"
     },
     {
       "name": "grilling",
       "category": "third-party",
       "invocation": "model",
-      "requiresSkills": []
+      "requiresSkills": [],
+      "directory": "mattpocock-skills"
     },
     {
       "name": "handoff",
       "category": "third-party",
       "invocation": "human",
-      "requiresSkills": []
+      "requiresSkills": [],
+      "directory": "mattpocock-skills"
     }
   ]
 }

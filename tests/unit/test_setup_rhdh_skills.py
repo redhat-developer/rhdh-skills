@@ -73,9 +73,6 @@ def test_doctor_discovers_dependencies_across_supported_host_layouts(tmp_path):
     report = json.loads(result.stdout)
     assert "contract" not in report
     assert set(report["installedSkills"]) == {"ask-rhdh", "grilling", "mutation-gate"}
-    # External skills are gone as a concept: everything the pack needs is
-    # vendored, so the doctor report has no external section at all.
-    assert "requiredExternalSkills" not in report
     assert report["capabilities"]["tools"]["oc"] == "not-probed"
     assert report["capabilities"]["tools"]["gog"] == "not-probed"
     assert "setup-rhdh-skills" in report["missingSkills"]

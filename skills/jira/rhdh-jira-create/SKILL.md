@@ -35,11 +35,9 @@ turn a case into a defect or a feature request.
 
 ## Grilling is a hard gate
 
-Creation requires the external `grilling` skill. It is not bundled with this
-pack. If the host cannot invoke it by name, stop before creating anything, say
-that creation is gated on `grilling`, and name `/setup-rhdh-skills install`.
-Never probe host skill directories, install it yourself, or improvise a
-substitute interview.
+Creation requires the `grilling` skill, which ships with this pack. If the
+host cannot invoke it by name, stop before creating anything and say so;
+running `/setup-rhdh-skills install` restores it.
 
 `/rhdh-jira-authoring` carries the RHDH half of the interview — the challenge
 matrix, field inference, sizing, and templates. Invoke it by name.

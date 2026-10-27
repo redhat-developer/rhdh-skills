@@ -2,9 +2,10 @@
 """Sync vendored third-party skills with their pinned upstream sources.
 
 ``skills/third-party/registry.json`` is the single metadata config for every
-vendored skill. ``sources`` maps each ``owner/repo`` to one pinned ``ref`` and
-its ``license`` — every skill from the same source is vendored at that one
-commit. ``skills`` lists each vendored skill: ``name`` (the vendored
+vendored skill. ``sources`` maps each ``owner/repo`` to the subdirectory it is
+vendored under (``directory``), one pinned ``ref``, and its ``license`` —
+every skill from the same source is vendored at that one commit, under that
+one directory. ``skills`` lists each vendored skill: ``name`` (the vendored
 directory), ``source``, ``path`` (the skill's directory inside that
 repository), and ``mode``:
 
@@ -20,7 +21,8 @@ diff. Bumping a source refreshes every skill vendored from it.
 
 Files this repo adds on top of upstream (harness metadata upstream does not
 ship) are preserved and never removed. The registry must list exactly the
-skill directories that exist under ``skills/third-party/``.
+skill directories that exist under ``skills/third-party/``, one
+``<directory>/<name>`` pair per skill.
 
     python scripts/sync_third_party.py           # report drift, exit 0
     python scripts/sync_third_party.py --check   # exit 1 on tracked drift
@@ -47,7 +49,7 @@ REGISTRY_FILE = "registry.json"
 MODES = ("tracked", "adapted")
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SKILL_FIELDS = ("name", "source", "path", "mode")
-SOURCE_FIELDS = ("ref", "license")
+SOURCE_FIELDS = ("directory", "ref", "license")
 
 
 class SyncError(Exception):
@@ -57,9 +59,10 @@ class SyncError(Exception):
 def load_registry(root: Path) -> list[dict[str, str]]:
     """Load the third-party skill registry and join skills with their source.
 
-    Returns one flat entry per skill (name, source, path, ref, license, mode).
-    The ref lives on the source, so every skill from one upstream repository is
-    pinned to the same commit by construction.
+    Returns one flat entry per skill (name, source, path, directory, ref,
+    license, mode). The ref lives on the source, so every skill from one
+    upstream repository is pinned to the same commit by construction, and the
+    vendored path is ``<directory>/<name>`` under the third-party root.
     """
     registry_file = root / REGISTRY_FILE
     if not registry_file.is_file():
@@ -87,6 +90,11 @@ def load_registry(root: Path) -> list[dict[str, str]]:
         unknown = sorted(set(meta) - set(SOURCE_FIELDS))
         if unknown:
             raise SyncError(f"{origin}: unknown fields: {', '.join(unknown)}")
+        if not SKILL_NAME.fullmatch(meta["directory"]):
+            raise SyncError(
+                f"{origin}: directory must be a single kebab-case segment, "
+                f"got {meta['directory']!r}"
+            )
 
     entries = registry.get("skills")
     if not isinstance(entries, list) or not entries:
@@ -120,6 +128,7 @@ def load_registry(root: Path) -> list[dict[str, str]]:
         loaded.append(
             {
                 **{field: entry[field] for field in SKILL_FIELDS},
+                "directory": meta["directory"],
                 "ref": meta["ref"],
                 "license": meta["license"],
             }
@@ -199,14 +208,19 @@ def apply_skill(
     return written
 
 
+def skill_dir_for(root: Path, entry: dict[str, str]) -> Path:
+    """The vendored directory for a registry entry: <root>/<directory>/<name>."""
+    return root / entry["directory"] / entry["name"]
+
+
 def sync(root: Path, write: bool = False) -> tuple[list[dict[str, Any]], bool]:
     """Sync every vendored skill; return (per-skill reports, check-clean flag)."""
     entries = load_registry(root)
 
-    on_disk = {path.parent.name for path in root.glob("*/SKILL.md")}
-    registered = {entry["name"] for entry in entries}
-    unregistered = sorted(on_disk - registered)
-    missing = sorted(registered - on_disk)
+    on_disk = {path.parent for path in root.glob("*/*/SKILL.md")}
+    registered = {skill_dir_for(root, entry) for entry in entries}
+    unregistered = sorted(path.name for path in on_disk - registered)
+    missing = sorted(path.name for path in registered - on_disk)
     if unregistered:
         raise SyncError(
             f"skills under {root} missing from {REGISTRY_FILE}: {', '.join(unregistered)}"
@@ -218,7 +232,7 @@ def sync(root: Path, write: bool = False) -> tuple[list[dict[str, Any]], bool]:
     clean = True
     reports: list[dict[str, Any]] = []
     for entry in entries:
-        skill_dir = root / entry["name"]
+        skill_dir = skill_dir_for(root, entry)
         key = (entry["source"], entry["ref"])
         if key not in archives:
             archives[key] = fetch_upstream_files(*key)

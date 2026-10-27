@@ -74,7 +74,11 @@ def build_rows() -> list[str]:
         if entry.get("invocation") != "model":
             continue
         name = entry["name"]
-        skill_md = REPO_ROOT / "skills" / entry["category"] / name / "SKILL.md"
+        directory = entry.get("directory")
+        skill_md = REPO_ROOT / "skills" / entry["category"]
+        if directory:
+            skill_md = skill_md / directory
+        skill_md = skill_md / name / "SKILL.md"
         if not skill_md.is_file():
             raise FileNotFoundError(f"catalog names {name} but {skill_md} is missing")
         # Escape pipes (table cell separators) and asterisks (markdownlint's

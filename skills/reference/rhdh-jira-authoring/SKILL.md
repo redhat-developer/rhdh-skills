@@ -64,7 +64,7 @@ wiki→ADF conversion; do not hand-build ADF from Markdown paragraphs.
 - Auditing issues that already exist is `/rhdh-jira-refine`.
 - Field IDs, the component catalog, JQL, `acli` syntax, and workflow exit
   criteria are `/rhdh-jira-api`.
-- The general interview cadence is the external `grilling` skill, invoked by
+- The general interview cadence is the `grilling` skill, invoked by
   name. What is here is only the RHDH-specific half.
 
 ## Completion

@@ -118,16 +118,14 @@ def test_repository_catalog_exposes_the_approved_composable_skill_set():
     assert set(report["promotedSkills"]) == {entry["name"] for entry in catalog["skills"]}
 
     # These two are contracts rather than inventory: exactly four entry points
-    # are human-invoked (three authored plus the vendored handoff), and the pack
-    # requires no external skills — the former mattpocock externals are vendored
-    # under skills/third-party/ (ADR-0011).
+    # are human-invoked (three authored plus the vendored handoff), and every
+    # promoted skill lives in a domain category.
     assert set(report["humanInvokedSkills"]) == {
         "ask-rhdh",
         "setup-rhdh-skills",
         "clean-prose",
         "handoff",
     }
-    assert "requiredExternalSkills" not in report
     assert every_promoted_skill_lives_in_a_domain_category(catalog)
 
 
@@ -167,7 +165,6 @@ def test_operator_pr_test_is_split_from_pr_review():
     assert operator["invocation"] == "model"
     assert set(operator["requiresSkills"]) == {"mutation-gate", "rhdh-forge", "prose-editing"}
     assert operator.get("optionalSkills", []) == []
-    assert "requiresExternalSkills" not in operator
 
     assert "code-review" in review["requiresSkills"]
     assert "rhdh-operator-pr-test" not in review.get("requiresSkills", [])

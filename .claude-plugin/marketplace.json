@@ -11,9 +11,9 @@
       "source": "./",
       "description": "Third-party skills from the RHDH pack",
       "skills": [
-        "./skills/third-party/code-review",
-        "./skills/third-party/grilling",
-        "./skills/third-party/handoff"
+        "./skills/third-party/mattpocock-skills/code-review",
+        "./skills/third-party/mattpocock-skills/grilling",
+        "./skills/third-party/mattpocock-skills/handoff"
       ]
     },
     {
