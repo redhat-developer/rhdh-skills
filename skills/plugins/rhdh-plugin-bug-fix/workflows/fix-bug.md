@@ -27,9 +27,8 @@ Parse without making a network call:
   derive the repository from `git remote -v`.
 - Plain report: set source to `none` and retain the user's text.
 
-For Jira, prefer invoking `/rhdh-jira-api` by name with the key and consuming the
-issue detail it returns. If unavailable, use authenticated `acli` without
-reading token files into context. For GitHub, invoke `/rhdh-forge` by name with
+For Jira, read the issue with your Jira tool and consume the detail it
+returns, without reading token files into context. For GitHub, invoke `/rhdh-forge` by name with
 the raw reference; do not parse the URL or run `gh issue view` here. It returns
 the key, summary, source, URL, repository, number, state, labels, description,
 and a candidate workspace with the strategy that resolved it — treat the
@@ -48,7 +47,7 @@ Run the capability checks needed by the selected branch:
 | Git checkout | Always | `git remote -v` identifies rhdh-plugins or community-plugins |
 | Node and Yarn | Always | `node --version`; `yarn --version` |
 | GitHub CLI | GitHub issue or auto-publication | `gh auth status` |
-| Jira access | Jira issue | named `/rhdh-jira-api` or authenticated `acli` |
+| Jira access | Jira issue | your authenticated Jira tool |
 | ffmpeg | UI evidence conversion | `ffmpeg -version`; warn and retain WebM if absent |
 
 Stop this branch with a precise setup requirement when a required capability is

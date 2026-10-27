@@ -5,8 +5,7 @@ renders them for `scripts/release.py` and for the Jira search links it emits.
 All queries tested against `redhat.atlassian.net`.
 
 This is adapter input, not a query catalog to run by hand. For general Jira
-queries, boards, and sprints, invoke `/rhdh-jira-api` by name and use what it
-returns. Do not locate its reference files.
+queries, boards, and sprints, `/rhdh-jira-context` owns the patterns and IDs.
 
 Freeze scopes, the demo and Test Day filters, and the release-note lifecycle
 queues are absent here on purpose: the Rich Filter export supplies them at run

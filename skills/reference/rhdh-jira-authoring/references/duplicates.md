@@ -12,9 +12,9 @@ Run this read-only check before creating work and during refinement audits.
    project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND summary ~ "KEYWORD1 KEYWORD2" AND status != Closed ORDER BY updated DESC
    ```
 
-   The caller runs the search with whichever Jira tool it has; `/rhdh-jira-api`
-   owns the search mechanics, including the silent 30-row default page that
-   would make this check look clean when it is not.
+   The caller runs the search with whichever Jira tool it has; `/rhdh-jira-context`
+   owns the read rules, including the silent truncation that would make this
+   check look clean when it is not.
 
 3. When comparing an existing issue, add `AND key != CURRENT_KEY`.
 4. Run a second search with the strongest component and one distinctive phrase when the first search

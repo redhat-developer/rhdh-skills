@@ -56,5 +56,5 @@ Decomposition is done when:
 - Every child is a tracer bullet (or an explicit wide-refactor / spike exception)
 - Every child has blocking edges stated
 - User approved the batch table
-- The customer-identity and `RHDH-Customer` label rules from `/rhdh-jira-api` still hold on every
+- The customer-identity and `RHDH-Customer` label rules from `/rhdh-jira-context` still hold on every
   new issue

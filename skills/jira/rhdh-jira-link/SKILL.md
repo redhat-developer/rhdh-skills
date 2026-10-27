@@ -11,7 +11,7 @@ description: >-
   comment step, or a PR outside the rhdh-plugins and community-plugins monorepo
   flow. The full monorepo flow — build, changeset, recordings — is rhdh-pr-create.
 compatibility: "Access to raise a PR or MR on the target GitHub or GitLab repository; write access to RHDH Jira (RHIDP, RHDHPLAN, RHDHBUGS, RHDHSUPP) for web links, comments, field edits, and project moves. Windows, macOS, Linux."
-local-tooling: "Optional: Node on PATH; gh for GitHub and glab for GitLab; a Jira API token via JIRA_API_TOKEN or the .jira-token file. See references/tooling.md."
+local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or another tool; a forge CLI (gh, glab) to raise the PR/MR. The bundled executor authenticates from the environment (JIRA_API_TOKEN or the .jira-token file)."
 ---
 
 # Jira PR / MR links
@@ -24,10 +24,11 @@ fields, and mark Web links merged or closed later.
 ## Goals, not tools
 
 Every step below states its goal, never which tool to use. Raise the PR/MR and
-write to Jira with whichever tools you actually have — ADLC tools, or the
-optional local scripts in [references/tooling.md](references/tooling.md). The
-protocol is pinned here — link titles, comment shape, defaults policy, the
-post-move key — and binds whichever tool runs it.
+write to Jira with whichever tools you actually have — an ADLC tool, an MCP
+server, or a CLI you know how to drive; the tool's own help covers its syntax.
+The protocol — link titles, comment shape, defaults policy, the post-move key —
+is pinned here and binds whichever tool runs it. Field and payload context is
+`/rhdh-jira-context`.
 
 ## Raise the PR/MR first
 
@@ -98,15 +99,14 @@ Team and sprint can be skipped together while the other defaults still apply.
 Missing values are an error only when applying defaults; the Web link and
 comment still succeed with defaults disabled.
 
-> Tooling: `references/tooling.md#defaults`
-
 ## Mark merged / closed
 
-Given an issue key, check each of its Web links against the forge. Prefix the
-titles with `[x] merged:` when the PR/MR is merged, or `[!] closed:` when it
-is closed without merging. Do not re-apply defaults or comment. Report each
-title **and** its PR/MR URL; open PRs/MRs stay unprefixed. A failed status
-check leaves the link unprefixed — never treat a failed check as closed.
+Given an issue key, check each of its Web links against the forge — the agent
+checks PR/MR state itself; no script does. Prefix the titles with
+`[x] merged: ` when the PR/MR is merged, or `[!] closed: ` when it is closed
+without merging. Do not re-apply defaults or comment. Report each title
+**and** its PR/MR URL; open PRs/MRs stay unprefixed. A failed status check
+leaves the link unprefixed — never treat a failed check as closed.
 
 Title formats:
 
@@ -115,6 +115,25 @@ Title formats:
 [x] merged: <repo-short-name> #<id>: <full PR/MR title>
 [!] closed: <repo-short-name> #<id>: <full PR/MR title>
 ```
+
+## Bundled executor
+
+`scripts/link-pr-mr.js` implements the link step and mark-merged against the
+Jira REST API directly, authenticating from the environment (`JIRA_API_TOKEN`
+plus login/server in `~/.config/.jira/.config.yml`, or the `.jira-token` file
+`acli` uses). It runs no other tool. `link` takes `--issue`, `--url`, `--title`,
+optional `--host`, `--no-defaults`, `--no-comment`. `mark-merged --issue KEY`
+takes the PR/MR states you checked as repeated `--state <url>=<merged|closed|open>`
+arguments and prefixes accordingly. Stdout includes `move: …` and the
+post-move `issue:` key.
+
+Defaults configuration: `~/.config/jira-pr-mr-link/config.json` (template:
+`config.example.json`), `$JIRA_PR_MR_CONFIG`, or `config.local.json` next to
+the scripts. Precedence: CLI > env > config file > Jira CLI hints.
+
+Another skill that needs the link step invokes `/rhdh-jira-link` by name and
+lets this skill run its own scripts; it never calls into this directory by
+path.
 
 ## Relationship to `/rhdh-pr-create`
 
@@ -138,8 +157,6 @@ free to transition the issue to **Review** (see
 4. For mark-merged: report merged, closed, and still-open Web links, each with
    its PR/MR URL.
 5. In user-facing summaries, link PR/MRs as `[<title>](<url>)`.
-
-> Tooling: `references/tooling.md`
 
 ## Every run here is an external write
 

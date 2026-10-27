@@ -1,6 +1,6 @@
 # Jira input and handoff
 
-Resolve Jira input locally, then compose with `/rhdh-jira-api` by name.
+Resolve Jira input locally with your Jira tool, then compose the handoff.
 This skill does not authenticate to Jira or select among `acli`, REST, GraphQL,
 or MCP.
 
@@ -25,8 +25,8 @@ Accept these formats and normalize them to a key and browse URL:
 
 ## Read handoff
 
-When the caller did not provide Jira context, invoke `/rhdh-jira-api` with the
-key and consume the issue detail it returns:
+When the caller did not provide Jira context, read the issue with your Jira
+tool and consume the detail:
 
 ```json
 {

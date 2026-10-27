@@ -11,7 +11,7 @@ description: >-
   is this skill's job, not the caller's. Editing or transitioning an issue that
   already exists, such as RHIDP-1234, is not creation.
 compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP, including the ability to create issues, set fields, and link parents. Requires the external grilling skill — creation is blocked without it. Windows, macOS, Linux."
-local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv for the converter. The local command reference is /rhdh-jira-api."
+local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or another tool. The wiki-to-ADF converter ships with /rhdh-jira-context."
 ---
 
 # Create RHDH Jira work
@@ -27,8 +27,8 @@ front and out loud, and the user confirms it before anything is created.
 ## Goals, not tools
 
 Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
+how to drive. `/rhdh-jira-context` owns the JQL,
 the field IDs, and the end-state rules that keep a silent failure from
 becoming a half-created issue.
 
@@ -73,7 +73,7 @@ Never create-then-restrict. If `security` cannot be set when required, stop.
 - Judging whether an existing issue is ready is `/rhdh-jira-refine`.
 - Changing status, assignee, comments, or links on a known key is `/rhdh-jira-update`.
 - Field IDs, the component catalog, and the workflow exit criteria are
-  `/rhdh-jira-context`; the local command reference is `/rhdh-jira-api`.
+  `/rhdh-jira-context`.
 - Templates, the challenge matrix, sizing, duplicate detection, and decomposition
   rules are `/rhdh-jira-authoring`.
 - Creating a PR and linking it back to an issue is `/rhdh-jira-link`.

@@ -231,7 +231,6 @@ def test_jira_refine_finalizes_comment_bodies_before_one_write_gate() -> None:
 def test_transport_layers_do_not_reedit_prose() -> None:
     for relative in (
         "skills/plugins/rhdh-pr-review/workflows/post-to-github.md",
-        "skills/jira/rhdh-jira-link/scripts/create-pr-mr.js",
         "skills/jira/rhdh-jira-link/scripts/link-pr-mr.js",
         "skills/ci/rhdh-base-images/scripts/base-images-and-rpms.sh",
         "skills/ci/rhdh-konflux-rpa/scripts/update_rpa_tags.py",

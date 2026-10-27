@@ -176,47 +176,51 @@ an RHDHSUPP conversation, a customer escalation, or an SLA question.
 The filenames above are **example only** — substitute the real ones for the skill
 you are building.
 
-### Dual-mode: goals and an optional tooling sidecar (when the skill drives CLIs)
+### Two skill types, no tool-teaching
 
-State goals, not tools. The same skill must run for an agent with native
-integrations (ADLC tools) and for an agent with a shell and local CLIs, so
-process and tooling separate:
+Every skill is an **outcome** skill or a **context** skill, and neither
+teaches tool syntax — models know the common CLIs and MCP servers, and a
+tool's own help beats our copy of it:
 
-- **Process** — goals with inputs, outputs, and failure modes; gates; exit
-  criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`, and
-  domain `references/`. Zero CLI names, zero script invocations; the only
-  exception is a one-line tooling pointer
-  (`> Tooling: references/tooling.md#anchor`). Where a wrong call fails
-  silently — a truncated search, an unread custom field — state the
-  postcondition on the goal; it binds whichever tool executes.
-- **Tooling** — exact CLI commands, flags, traps, auth notes, script
-  invocations — lives in one optional `references/tooling.md` sidecar, framed
-  for agents that actually have the CLIs. A sidecar is per-skill only when
-  the skill owns its own scripts; command syntax shared across a domain
-  lives in the mechanics skill that owns it (`/rhdh-jira-api` for Jira), and
-  other skills point there by name. Whatever holds the commands opens with
-  its environment contract — what it assumes on PATH, how to check, and what
-  to do when a tool is missing — because a command reference with silent PATH
-  assumptions fails for every agent that lacks them. An ADLC tool may serve
-  the same goals; stated postconditions bind it too.
-- **Frontmatter splits accordingly**: `compatibility:` names process
-  prerequisites (true in every mode); `local-tooling:` names the optional
-  CLIs and says so.
+- **Outcome skills** — goals with inputs, outputs, and failure modes; gates;
+  exit criteria; sequencing; templates — in `SKILL.md`, `workflows/`, and
+  domain `references/`. Zero CLI syntax, zero script invocations in process
+  prose. Where a wrong call fails silently — a truncated search, an unread
+  custom field — state the verification on the goal; it binds whichever tool
+  executes.
+- **Context skills** — the knowledge that makes the outcomes correct: field
+  IDs, states and exit criteria, catalogs, payload shapes, instance traps
+  stated tool-neutrally ("verify the total before counting", not "pass
+  `--paginate`"). A context skill runs nothing and teaches no tool; if you
+  don't know a tool, say so once and point at the tool's own help.
+
+Rules that follow:
+
+- **Scripts are self-contained.** A bundled script never relies on another
+  tool being available: no spawning `gh`, `glab`, `acli`, or an MCP server.
+  It is pure computation, or it talks to its own service with credentials
+  from the environment. A script that checks things consumes input the agent
+  fetched. When a workflow needs tool-specific behavior, the agent runs the
+  tool itself following the goal; nothing wraps it.
+- **Frontmatter splits accordingly**: `compatibility:` names prerequisites
+  true in every execution mode; `local-tooling:` names the optional tools.
+  Setup skills are the exception that keeps concrete steps — configuring
+  tools is their outcome and their audience is the human.
 
 Restate a short goals paragraph in the skill's own words — it must travel with
 the installed skill, so it cannot live only in a host repository's
 conventions:
 
 > Every step below states its goal, never which tool to use. Use whichever
-> tool you actually have — an ADLC tool, or the optional local commands in
-> `references/tooling.md`. Postconditions stated on a goal bind whichever
-> tool executes it.
+> tool you actually have — an ADLC tool, an MCP server, or a CLI you know
+> how to drive. Verifications stated on a goal bind whichever tool executes
+> it.
 
 The discriminator is **tool availability, not shell access**: an agent with a
 shell and a native integration should use the integration, not wrap a CLI.
 Rule of thumb: if an agent using only native integrations still needs to know
-it, it is process; if it is how one particular tool runs, it is tooling. Never
-name the bot or platform in shipped prose — say "ADLC tools".
+it, it is process; if it is how one particular tool runs, it is nowhere.
+Never name the bot or platform in shipped prose — say "ADLC tools".
 
 ### Setup and capability gates (when applicable)
 
@@ -322,15 +326,15 @@ Before presenting the final skill, verify against this checklist:
 - [ ] Branch pointers name a load condition, and every branch shares the domain model, gates, and completion criterion
 - [ ] Every gate names a required precondition and a fail action; a missing precondition stops the branch and names the exact setup entry point and route — no gate proceeds anyway
 - [ ] Register/mode system classifies before loading references
-- [ ] Dual-mode split holds: process prose (`SKILL.md`, `workflows/`, domain
-      `references/`) carries goals, gates, and exit criteria with zero CLI names
-      or script invocations — the only exception is a one-line tooling pointer;
-      a postcondition is stated on every goal whose failure mode is silent;
-      exact commands live in one optional `references/tooling.md` framed for
-      agents that have the CLIs
-- [ ] Frontmatter carries the split: `compatibility:` names process
-      prerequisites true in every mode; `local-tooling:` names the optional
-      local CLIs and says so
+- [ ] Two-type rule holds: outcome prose (`SKILL.md`, `workflows/`, domain
+      `references/`) carries goals, gates, and exit criteria with zero CLI
+      syntax or script invocations; a verification is stated on every goal
+      whose failure mode is silent; instance knowledge lives in a context
+      skill stated tool-neutrally; nothing teaches tool syntax
+- [ ] Bundled scripts are self-contained — none spawns another tool or needs
+      one on PATH; checkers consume input the agent fetched
+- [ ] Frontmatter carries the split: `compatibility:` names prerequisites
+      true in every mode; `local-tooling:` names the optional tools
 - [ ] The goals paragraph is restated in the skill's own words, and shipped prose
       says "ADLC tools", never a bot or platform name
 - [ ] Material shared with another skill is extracted, enforced, or documented, never copied

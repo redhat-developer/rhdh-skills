@@ -62,8 +62,8 @@ into `/code-review` Spec. Spec still runs; the review does not wait on an issue.
 ## Jira keys
 
 The script extracts Jira keys (for example, `RHIDP-1234`) from the PR body but
-does not fetch them. When Jira detail affects the review, invoke `/rhdh-jira-api`
-by name with the keys and use what it returns. Otherwise retain the keys and
+does not fetch them. When Jira detail affects the review, read the issues
+with your Jira tool and use what it returns. Otherwise retain the keys and
 continue. Do not select a Jira transport or inspect Jira credentials from this
 workflow.
 

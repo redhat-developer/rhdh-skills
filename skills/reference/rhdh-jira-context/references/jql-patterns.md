@@ -117,8 +117,8 @@ project = RHDHPAI
 ## Team Filtering
 
 The Team field (`customfield_10001`) cannot be used in JQL. Search without
-the team clause and post-filter on the team field — `/rhdh-jira-api` runs the
-post-filter locally with `parse_issues.py`.
+the team clause and post-filter on the team field — this skill's
+`scripts/parse_issues.py` does the post-filter.
 
 For custom field IDs and `cf[]` JQL syntax, see [fields.md](fields.md).
 
@@ -167,16 +167,14 @@ Sprints follow: `{Team Name} {Sprint Number}` (e.g., "RHDH COPE 3291", "RHDH Ins
 
 A board's sprints are listed by state — active (the current sprint), closed
 (velocity history), future (the planning target) — and a sprint view carries
-its dates (`startDate` is the interrupt cutoff). The exact local commands are
-`/rhdh-jira-api`'s.
+its dates (`startDate` is the interrupt cutoff). Use whichever Jira tool you have for the calls.
 
 Release-horizon velocity reconstructs completed story points and mid-sprint
 additions from those issues. The unofficial Greenhopper sprint-report path lives
-in `/rhdh-jira-api`'s REST fallback; skip it when the host adapter
+in [rest-api-fallback.md](rest-api-fallback.md); skip it when the host adapter
 cannot GET it.
 
 ### Saved Filters
 
 Pre-built JQL filters exist in the instance, searchable by name. These may be
-more efficient than building JQL from scratch for common queries; the search
-command is `/rhdh-jira-api`'s.
+more efficient than building JQL from scratch for common queries.

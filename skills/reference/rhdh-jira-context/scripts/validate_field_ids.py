@@ -14,21 +14,21 @@ Two checks, independent:
            that catches the real failure mode, so it runs by default and is the
            one worth wiring into CI.
 
-  Live     The IDs in fields.md are still the IDs Jira uses. Needs `acli`, which
+  Live     The IDs in fields.md are still the IDs Jira uses. Needs issue JSON,
            holds its own credentials; nothing secret enters arguments or output.
 
 Usage:
-  python scripts/validate_field_ids.py                 # copies only, offline
-  python scripts/validate_field_ids.py --live          # copies + live Jira
-  python scripts/validate_field_ids.py --live --sample RHIDP-1 RHDHPLAN-1
+  python scripts/validate_field_ids.py                    # copies only
+  python scripts/validate_field_ids.py --from-json a.json # + live Jira
+  # a.json: output of `acli jira workitem view KEY --fields "*all" --json`,
+  # fetched by the agent; one file per sampled issue
   python scripts/validate_field_ids.py --json
 
 Exit codes:
   0  Everything agrees
   1  Drift detected
   2  Argument or repository-layout error
-  3  acli not found (only with --live)
-  4  Jira request failed (only with --live)
+  3  No readable issue JSON supplied (only with --from-json)
 """
 
 from __future__ import annotations
@@ -36,8 +36,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -51,7 +49,7 @@ ANY_FIELD_ID = re.compile(r'"(customfield_\d+)"')
 # Every script that carries a copy of the IDs. Keep this list in step with the
 # warning comment each of those files carries.
 COPY_PATHS = (
-    "skills/reference/rhdh-jira-api/scripts/parse_issues.py",
+    "skills/reference/rhdh-jira-context/scripts/parse_issues.py",
     "skills/release/rhdh-release-announce/scripts/_jira.py",
     "skills/release/rhdh-release-schedule/scripts/_jira.py",
     "skills/release/rhdh-release-status/scripts/_jira.py",
@@ -92,33 +90,24 @@ def ids_in_copy(path: Path) -> dict[str, str]:
     return found
 
 
-def fetch_live_ids(acli: str, issue_keys: list[str]) -> tuple[set[str], list[str]]:
-    """Return the custom-field ids Jira returns, and the keys that failed.
+def load_live_ids(paths: list[str]) -> tuple[set[str], list[str]]:
+    """Return the custom-field ids seen in fetched issue JSON, and unreadable paths.
 
-    Jira only reports fields it holds for the sampled issues, so absence here is
-    weaker evidence than presence. Sampling one issue per project widens
-    coverage; the caller still reports a miss as suspected rather than proven.
+    The agent fetches the issues with whichever Jira tool it has (for example
+    `acli jira workitem view KEY --fields "*all" --json`) and saves each
+    payload to a file; this script never runs a tool itself. Jira only reports
+    fields it holds for the sampled issues, so absence here is weaker evidence
+    than presence. Sampling one issue per project widens coverage; the caller
+    still reports a miss as suspected rather than proven.
     """
     seen: set[str] = set()
     unreadable: list[str] = []
-    for key in issue_keys:
+    for path in paths:
         try:
-            result = subprocess.run(
-                [acli, "jira", "workitem", "view", key, "--fields", "*all", "--json"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=30,
-            )
-            if result.returncode != 0:
-                unreadable.append(key)
-                continue
-            payload = json.loads(result.stdout)
-        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
-            unreadable.append(key)
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            unreadable.append(path)
             continue
-
         fields = payload.get("fields", payload)
         if isinstance(fields, dict):
             seen.update(name for name in fields if name.startswith("customfield_"))
@@ -157,48 +146,31 @@ def check_copies(root: Path, documented: dict[str, str]) -> list[dict[str, str]]
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Also check fields.md against live Jira through acli",
-    )
-    parser.add_argument(
-        "--sample",
+        "--from-json",
         nargs="+",
-        metavar="KEY",
-        default=list(DEFAULT_SAMPLE),
-        help="Issue keys to sample for live field metadata",
+        metavar="ISSUE_JSON",
+        default=[],
+        help="paths to fetched issue payloads (workitem view --fields '*all' --json)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="Emit JSON")
     args = parser.parse_args()
 
-    script = Path(__file__).resolve()
-    root = repo_root(script)
-    fields_path = script.parent.parent / "references" / "fields.md"
-    if not fields_path.exists():
-        print(f"fields.md not found at {fields_path}", file=sys.stderr)
-        return 2
-
+    root = repo_root(Path(__file__).resolve())
+    fields_path = root / "skills" / "reference" / "rhdh-jira-context" / "references" / "fields.md"
     documented = documented_ids(fields_path)
-    if not documented:
-        print(f"No custom-field rows parsed from {fields_path}", file=sys.stderr)
-        return 2
 
     findings = check_copies(root, documented)
     unreadable: list[str] = []
     unobserved: list[str] = []
 
-    if args.live:
-        acli = shutil.which("acli")
-        if not acli:
-            print("acli not found. Run /setup-rhdh-skills jira.", file=sys.stderr)
-            return 3
-        live, unreadable = fetch_live_ids(acli, args.sample)
-        if not live and len(unreadable) == len(args.sample):
+    if args.from_json:
+        live, unreadable = load_live_ids(args.from_json)
+        if not live and len(unreadable) == len(args.from_json):
             print(
-                f"Could not read any sampled issue ({', '.join(unreadable)}).",
+                f"Could not read any supplied issue JSON ({', '.join(unreadable)}).",
                 file=sys.stderr,
             )
-            return 4
+            return 3
         unobserved = sorted(set(documented) - live)
         for field_id in unobserved:
             findings.append(
@@ -219,7 +191,7 @@ def main() -> int:
                 {
                     "documentedCount": len(documented),
                     "copiesChecked": len(COPY_PATHS),
-                    "liveChecked": args.live,
+                    "liveChecked": bool(args.from_json),
                     "unreadableSamples": unreadable,
                     "findings": findings,
                     "inSync": not findings,
@@ -231,8 +203,8 @@ def main() -> int:
 
     print(f"Documented custom fields: {len(documented)}")
     print(f"Copies checked:           {len(COPY_PATHS)}")
-    if args.live:
-        print(f"Sampled issues:           {', '.join(args.sample)}")
+    if args.from_json:
+        print(f"Sampled issue files:      {len(args.from_json)}")
         if unreadable:
             print(f"  unreadable:             {', '.join(unreadable)}")
     print()
@@ -248,7 +220,7 @@ def main() -> int:
     print(f"Drift detected: {len(findings)} finding(s).")
     if unobserved:
         print("An ID reported as not observed is a lead, not a verdict: Jira omits")
-        print("fields it holds no value for. Widen --sample before editing a copy.")
+        print("fields it holds no value for. Widen the sample before editing a copy.")
     return 1
 
 

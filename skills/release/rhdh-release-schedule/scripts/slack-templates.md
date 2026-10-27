@@ -11,7 +11,7 @@ Templates for release milestone announcements. Each template uses `{{PLACEHOLDER
 - **Milestone:** Feature Freeze
 - **When to send:** Before Feature Freeze date
 - **Data requirements:**
-  1. Feature Freeze date from release issue (use `active_release` query via `/rhdh-jira-api`, then read the date table in the issue description)
+  1. Feature Freeze date from release issue (use the `active_release` query via the bundled Jira adapter, then read the date table in the issue description)
   2. Active engineering teams from spreadsheet (Category=Engineering, Status=Active)
   3. Outstanding Release Notes count (use `release_notes` query with `--count`)
   4. Team issue counts (use `feature_freeze_issues` query filtered by team)
@@ -67,7 +67,7 @@ cc @rhdh-release
 - **Milestone:** Code Freeze
 - **When to send:** Before Code Freeze date
 - **Data requirements:**
-  1. Code Freeze date from release issue (use `active_release` query via `/rhdh-jira-api`, then read the date table in the issue description)
+  1. Code Freeze date from release issue (use the `active_release` query via the bundled Jira adapter, then read the date table in the issue description)
   2. Active engineering teams from spreadsheet (Category=Engineering, Status=Active)
   3. Outstanding Release Notes count (use `release_notes` query with `--count`)
   4. Feature Subtasks count (use `feature_subtasks` query with `--count`)

@@ -11,7 +11,7 @@ description: >-
   stale". Assesses existing work; it does not open new issues and does not build
   a sprint.
 compatibility: "Authenticated read and write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search and read an issue with custom fields. Deliberately not gated on the grilling skill. Windows, macOS, Linux."
-local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv. The local command reference is /rhdh-jira-api."
+local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or another tool."
 ---
 
 # Refine RHDH Jira work
@@ -22,8 +22,8 @@ and say what is missing rather than guessing at it.
 ## Goals, not tools
 
 Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
+how to drive. `/rhdh-jira-context` owns the JQL,
 the field IDs, and the end-state rules that keep a silent failure from
 becoming a false finding.
 

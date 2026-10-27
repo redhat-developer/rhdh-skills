@@ -4,9 +4,8 @@ Analyze issues for readiness, missing fields, duplicates, stale comments, and
 relevance. Produces a refinement report with actionable recommendations and
 optional fixes.
 
-Reads and writes go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL,
-the field IDs, and the exit criteria. The optional local commands live behind
-`/rhdh-jira-api`.
+Reads and writes use whichever Jira tool you have; `/rhdh-jira-context` owns the
+JQL, the field IDs, and the exit criteria.
 
 ## Input
 
@@ -72,8 +71,6 @@ Run every applicable check per issue.
 Fetch with enrichment. A plain search result omits every custom field, so Story
 Points, Team, Size, and Sprint come back empty whether or not they are set.
 
-> Local commands: `/rhdh-jira-api`
-
 ### Check 1 — Missing fields against exit criteria
 
 Determine each issue's type and current status, look up the required fields in
@@ -108,13 +105,9 @@ possibly-related duplicates.
 
 Query children with `parent = {key} AND status != Closed`.
 
-> Local commands: `/rhdh-jira-api`
-
 ### Check 4 — Unaddressed comments
 
 Fetch the issue's comments.
-
-> Local commands: `/rhdh-jira-api`
 
 Flag when the most recent comment is a question from someone other than the
 assignee, when it contains an action item ("TODO", "action item", "follow up",
@@ -270,10 +263,8 @@ and the edited bodies included in the plan.
   issue with no resolution and no comment loses the decision trail entirely.
   `/rhdh-jira-update` applies the same rule when it closes an issue.
 
-Writes follow the adapter order in `/rhdh-jira-api` — the local CLI for
-anything it supports, the authenticated host adapter for the rest.
-
-> Local commands: `/rhdh-jira-api`
+Writes use whichever Jira tool you have; the end-state rules in
+`/rhdh-jira-context` bind whichever tool executes.
 
 ## Error handling
 

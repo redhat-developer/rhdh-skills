@@ -8,8 +8,8 @@ row, run it, present what it returns.
 Jira reads use `acli`; `team-breakdown` also needs `gog`. When a command fails,
 run `uv run scripts/release.py --json check` and follow its `next_steps`;
 `references/config.md` documents the Rich Filter and Google Workspace setup it
-points at. If Jira itself is unreachable, invoke `/rhdh-jira-api` for the reads and
-say which figures stayed unverified.
+points at. If Jira itself is unreachable, use the bundled Jira adapter for the reads
+and say which figures stayed unverified.
 
 </prerequisites>
 
@@ -58,7 +58,7 @@ Ask for counts, not full issue payloads, when only a total is wanted. Check
 subcommands — `active_release`, `open_issues`, `open_issues_by_type`, `blockers`,
 `epics`, `cves`, `open_issues_by_team`, `feature_subtasks`, and
 `features_added_to_release` (scope added in the last 14 days). Invoke
-`/rhdh-jira-api` with the matching template and take the counts from its result.
+the bundled Jira adapter with the matching template and take the counts from its result.
 
 There is no fallback for `notes`, `post-freeze`, or `rich-filter`: the Rich
 Filter export is the source of truth for release-note classification, Post Code

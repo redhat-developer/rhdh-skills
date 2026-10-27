@@ -10,9 +10,8 @@ Invoke `grilling` by name. If it is unavailable, stop here and follow the hard
 gate in SKILL.md.
 
 Load `/rhdh-jira-authoring` for the challenge matrix, sizing scales, and
-templates. Load `/rhdh-jira-context` for field IDs and the component catalog,
-and `/rhdh-jira-api` for the local commands. Do not read their files by
-path.
+templates. Load `/rhdh-jira-context` for field IDs and the component catalog.
+Do not read its files by path.
 
 ## Step 1 — Decide the type and project
 
@@ -74,8 +73,6 @@ Before drafting an Epic under a parent Feature, list what is already there:
 ```jql
 parent = FEATURE-KEY AND issuetype = Epic AND status != Closed
 ```
-
-> Local commands: `/rhdh-jira-api`
 
 Present the siblings with summaries and sizes, then ask which the new Epic
 relates to and whether it overlaps any. Carry that list into the interview — the
@@ -245,8 +242,6 @@ issue instead?"
 project = RHDHPLAN AND issuetype = 'Feature Request' AND status = Accepted AND summary ~ "KEYWORD1 KEYWORD2"
 ```
 
-> Local commands: `/rhdh-jira-api`
-
 If one matches, offer to add a `Related` link after creation.
 
 ## Step 8 — Create
@@ -255,12 +250,12 @@ Re-check the customer-identity and label rules from Validate before creating in
 `/rhdh-jira-authoring` one last time. Strip customer names from the summary and
 description if any survived; confirm at most one `RHDH-Customer` label.
 
-Write the filled template to a temp file, then invoke `/rhdh-jira-api` to convert
-it to ADF and hand back the JSON file path. Jira Cloud
+Write the filled template to a temp file, then invoke `/rhdh-jira-context` to
+convert it to ADF with its bundled converter and hand back the JSON file path. Jira Cloud
 renders raw wiki markup and Markdown as literal characters when stuffed into ADF
 text nodes, so an unconverted description ships broken. Always use that helper —
 do not hand-split Markdown or wiki into ADF paragraphs, and do not reach into
-`/rhdh-jira-api`'s directory for the script; invoke the skill so it runs the
+`/rhdh-jira-context`'s directory for the script; invoke the skill so it runs the
 converter. An ADLC tool that accepts a markdown description directly needs no
 conversion.
 
@@ -306,10 +301,8 @@ for a cross-project parent:
 {"fields": {"customfield_10018": "RHDHPLAN-XXX"}}
 ```
 
-Team is one of the fields not every adapter can set. Follow the adapter order
-and the Team payload in `/rhdh-jira-api`.
-
-> Local commands: `/rhdh-jira-api`
+Team is one of the fields not every adapter can set. Follow the Team payload
+in `/rhdh-jira-context`.
 
 ## Step 9 — Comments
 
@@ -320,8 +313,6 @@ the reasoning survives outside the description.
 After choosing the comment set, invoke `/prose-editing` once on the complete set
 of proposed comment bodies in the **flavored** register. Use those edited bodies
 for the preview and write gate; the Jira adapter must not edit them again.
-
-> Local commands: `/rhdh-jira-api`
 
 Customer-identifying detail goes only in a restricted-visibility comment, and
 only when the project supports security levels.
@@ -385,7 +376,7 @@ The user merges, drops, or approves before any Epic is created.
 |---|---|
 | Target project inaccessible | Stop. The user lacks project access. |
 | Type inference ambiguous | Ask the user directly. Do not guess a hierarchy level. |
-| The create call fails | Retry via `/rhdh-jira-api` adapter; re-approve if the payload changes. Private retries must still carry `security` — never fall back to a public create. |
+| The create call fails | Retry through another Jira path; re-approve if the payload changes. Private retries must still carry `security` — never fall back to a public create. |
 | Private create cannot set `security` | Stop. Do not create-then-restrict. |
 | Private create OK but `security` null on read-back | Report failure; do not add sensitive content. Remediate only with user approval. |
 | Field update after create fails | Report it. The issue exists — say which fields are unset. |

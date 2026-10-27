@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-JIRA_SKILL = Path(__file__).parents[2] / "skills" / "reference" / "rhdh-jira-api"
+JIRA_SKILL = Path(__file__).parents[2] / "skills" / "reference" / "rhdh-jira-context"
 SCRIPT = JIRA_SKILL / "scripts" / "jira-wiki-to-adf.py"
 AUTHORING_SKILL = Path(__file__).parents[2] / "skills" / "reference" / "rhdh-jira-authoring"
 EPIC_EXAMPLE = AUTHORING_SKILL / "assets" / "examples" / "epic-example.txt"

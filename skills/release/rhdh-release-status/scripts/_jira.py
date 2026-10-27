@@ -89,7 +89,7 @@ def _adf_to_text(issue):
 #     acli jira workitem view RHIDP-1 --fields '*all' --json
 #
 # The duplication is deliberate — this script must run installed alone. Guard:
-#     skills/reference/rhdh-jira-api/scripts/validate_field_ids.py
+#     skills/reference/rhdh-jira-context/scripts/validate_field_ids.py
 # Run it with no arguments to check every copy against fields.md offline, or with
 # --live to check fields.md against Jira. Run it after editing any ID here.
 # ---------------------------------------------------------------------------

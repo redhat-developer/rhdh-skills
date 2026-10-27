@@ -1,8 +1,26 @@
 # Spike: Make skills chai-bot native (dual-mode: local + chai)
 
-Status: proposal, revision 6 after team feedback. No skill rewritten beyond
+Status: proposal, revision 8 after team feedback. No skill rewritten beyond
 the rhdh-jira-api pilot. Deliverable of the research card "Make skills more
 chai bot native".
+
+Revision 8 is the landing: two skill types, no tool-teaching, and
+self-contained scripts. Models know the common CLIs and MCP servers, and a
+tool's own help beats our copy of it — so no skill teaches tool syntax, and
+the how-skill of revision 7 dissolves: its instance knowledge (payloads,
+fallback fields, the roster query, the traps) moved to `/rhdh-jira-context`
+stated tool-neutrally, its setup content already lived in
+`/setup-rhdh-skills` (the one exception that keeps concrete steps — its
+outcome is configuring tools and its audience is the human), and its scripts
+moved to the context skill as bundled helpers. Bundled scripts never rely on
+another tool being available: no spawning gh, glab, acli, or an MCP server —
+they are pure computation, or talk to their own service with credentials
+from the environment; checkers consume JSON the agent fetched
+(`create-pr-mr.js`, which wrapped git and the forge CLIs, is deleted; the
+agent raises the PR/MR itself; `link-pr-mr.js` keeps its direct Jira REST
+half and takes PR/MR state as input instead of probing the forge).
+
+Revision 7 splits context from tool usage into two skills:
 
 Revision 7 splits context from tool usage into two skills:
 `/rhdh-jira-context` owns the what (field IDs, JQL patterns, workflow states

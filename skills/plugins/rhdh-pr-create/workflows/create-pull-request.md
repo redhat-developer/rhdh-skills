@@ -29,9 +29,9 @@ When the change handoff supplies recordings, the GIF upload in Step 10.2 is MAND
 ## Prerequisites
 
 - **`gh` CLI** — GitHub CLI must be installed and authenticated (`gh auth status` should show logged in). Install: <https://cli.github.com/>
-- **`/rhdh-jira-api`** and **`/rhdh-jira-update`** — required only when Jira context must be read or the
-  published PR must be linked back to Jira. This workflow never reads Jira
-  credentials or chooses a Jira transport.
+- **`/rhdh-jira-update`** — required only when the published PR must be linked
+  back to Jira; **`/rhdh-jira-context`** when field or JQL context is needed.
+  This workflow never reads Jira credentials or chooses a Jira transport.
 - Working checkout of `rhdh-plugins` (or `community-plugins`)
 - `yarn` available on PATH
 
@@ -99,8 +99,8 @@ Ask: "Issue key, URL, or #number? (enter to skip)".
 
 ### Fetch summary (if not provided by caller)
 
-- **Jira:** Invoke `/rhdh-jira-api` with the key and consume the issue detail it
-  returns. If the named skill is unavailable, store `jira_summary = null`, retain
+- **Jira:** Read the issue with your Jira tool and consume the detail.
+  If no Jira tool is available, store `jira_summary = null`, retain
   the key, and report that Jira enrichment is unavailable and that the human's
   next step is `/setup-rhdh-skills jira`. Do not inspect credentials or call Jira
   REST, MCP, GraphQL, or `acli` from this workflow.
@@ -471,7 +471,7 @@ optional full-e2e recordings, root cause, and test plan in the conversation.
 | Reference | Load when... |
 |-----------|-------------|
 | `references/repo-profiles.md` | Always — at the start of every invocation (Step 1) |
-| `references/jira-input.md` | When parsing Jira input and building the named `/rhdh-jira-api` handoff |
+| `references/jira-input.md` | When parsing Jira input and building the Jira handoff |
 | `references/github-input.md` | When resolving GitHub issue context (Step 1.5, `issue_source` = `github`) |
 
 </reference_index>

@@ -63,7 +63,7 @@ def test_shared_adf_parser_keeps_the_current_milestone_date():
     from datetime import datetime
 
     milestones = load_script(
-        "skills/reference/rhdh-jira-api/scripts/adf_milestones.py",
+        "skills/reference/rhdh-jira-context/scripts/adf_milestones.py",
         "rhdh_shared_adf_natural_dates",
     )
     description = {

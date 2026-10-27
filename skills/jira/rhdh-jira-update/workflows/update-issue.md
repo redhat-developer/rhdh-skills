@@ -4,8 +4,8 @@ Detect the related issue, add a status comment summarizing the session, propose
 status transitions, and check upward through the hierarchy for parent
 transitions. On-demand — run at a natural stopping point, never proactively.
 
-Reads and writes go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL
-and the field IDs. The optional local commands live behind `/rhdh-jira-api`.
+Reads and writes use whichever Jira tool you have; `/rhdh-jira-context` owns the
+JQL and the field IDs.
 
 ## Step 1 — Detect the issue
 
@@ -34,8 +34,6 @@ acting.
 ## Step 2 — Read the current state
 
 Read the issue with all fields when custom fields matter.
-
-> Local commands: `/rhdh-jira-api`
 
 Note the current status; it determines which transitions exist. Note whether the
 issue has a parent — if it does not, skip Step 6 entirely.
@@ -68,8 +66,6 @@ edited body for both the preview and the write; the Jira adapter does not edit i
 
 Confirm before posting: "Proposed comment: {comment}. Post this? [y/N/edit]"
 
-> Local commands: `/rhdh-jira-api`
-
 ## Step 4 — Propose a transition
 
 | Session activity | Transition |
@@ -99,19 +95,15 @@ automation rules.
 
 Confirm, then apply the transition.
 
-> Local commands: `/rhdh-jira-api`
-
 If no transition applies, skip this step silently.
 
 ## Step 5 — Propose links
 
 If the session revealed dependencies not yet tracked, offer an issue link.
 
-> Local commands: `/rhdh-jira-api`
-
 An **external URL** — a pull request, a design document, a support case — is not
 an issue link. It is a *remote link*. Use the remote-link operation in
-`/rhdh-jira-api`, which takes the issue key plus a URL
+`/rhdh-jira-context`, which takes the issue key plus a URL
 and a title. A second link with the same URL replaces the first rather than
 duplicating it.
 

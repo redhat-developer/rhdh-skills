@@ -6,7 +6,7 @@ Reviews a test plan Jira ticket against platform and integration support lifecyc
 
 | Requirement | Check |
 |-------------|-------|
-| **Jira** | Invoke `/rhdh-jira-api`; it reports whether `acli` is authenticated |
+| **Jira** | `/rhdh-jira-context`'s setup.py reports acli presence and the token file |
 | **Google Sheets** | `python scripts/check_gsheets.py --json` → `"capability_ready": true` |
 
 If Jira is unreachable, say so and direct the human to `/setup-rhdh-skills jira`.
@@ -20,8 +20,8 @@ direct the human to `/setup-rhdh-skills google-workspace`.
 
 ## Step 1: Fetch the test plan Jira ticket
 
-Invoke `/rhdh-jira-api` by name for `TICKET-ID` and use the enriched issue it
-returns. Do not locate Jira scripts or credentials.
+Read `TICKET-ID` with your Jira tool and use the enriched issue. Do not
+locate Jira scripts or credentials.
 
 Extract the RHDH version from `fixVersions[0].name`. If empty, check `summary` for a version string (e.g., "RHDH 1.6 Test Plan").
 
@@ -265,7 +265,7 @@ Report the created keys, and report every task the user skipped as skipped.
 <gotchas>
 
 - **ADF round-trip**: Send ADF when updating via REST — converting to plain text destroys formatting. Modify only version strings inside existing table cells.
-- **Credential safety**: Jira access goes through `/rhdh-jira-api` and its authenticated adapter.
+- **Credential safety**: Jira access goes through your authenticated Jira tool.
   Credentials stay out of shell variables, files, previews, and the answer.
 - **Key dates table**: Match milestone rows by label keyword (e.g., "Code Freeze", "GA announce"). Update only the date cell. Leave rows you cannot match untouched.
 - **Version normalization**: Tables may use "v1.29", "1.29.x", or "Kubernetes 1.29" — normalize to `major.minor` before comparing.

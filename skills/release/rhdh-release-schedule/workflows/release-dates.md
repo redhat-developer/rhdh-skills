@@ -56,7 +56,7 @@ show both rows and flag the conflict; do not pick a winner.
 
 ## Step 4 (fallback): CLI unavailable
 
-For Jira, invoke `/rhdh-jira-api` with the `active_release` template from
+For Jira, use the bundled Jira adapter with the `active_release` template from
 `scripts/jql-release.md`, then ask it for each returned issue's description.
 The dates live in a table inside the description, not in custom fields — read the
 milestone rows, and treat a date cell that is plain text rather than a date node

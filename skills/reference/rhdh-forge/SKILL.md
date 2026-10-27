@@ -56,7 +56,7 @@ files from another skill.
   number. Never retain the user's raw URL; it may carry a fragment or a query
   string.
 - A Jira key is not this skill's work. Extract it, hand it back, and let the
-  caller invoke `/rhdh-jira-api` for the detail.
+  caller read it with its Jira tool.
 - `gh pr checks` and `statusCheckRollup` are cached views and go stale. Confirm
   a check verdict against `gh run list --branch` before acting on it.
 - A GitLab pipeline verdict belongs to a commit, not to a merge request. Compare
@@ -112,7 +112,8 @@ is no envelope: the issue fields are the whole document.
 `CLOSED`, and `workspace.strategy` is one of `label`, `body`, `title`,
 `package`, or `unresolved`.
 
-`/rhdh-jira-api` returns the same issue shape with `source: jira`, and a GitLab
+A Jira issue read through the caller's tool fills the same fields with
+`source: jira`, and a GitLab
 issue read through `references/glab-cli.md` fills the same fields with
 `source: gitlab`, so a caller consumes any of the three without branching on
 shape.

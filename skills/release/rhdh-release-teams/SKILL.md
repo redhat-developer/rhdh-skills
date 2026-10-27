@@ -25,7 +25,7 @@ Load `workflows/teams-and-leads.md`.
   skill resolves.
 - The freeze message that lists teams and pings their leads is
   `/rhdh-release-announce`.
-- Assigning work to a person or team, or any Jira write, is `/rhdh-jira-api`.
+- Assigning work to a person or team, or any Jira write, is `/rhdh-jira-update`.
 
 ## Completion
 

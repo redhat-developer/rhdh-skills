@@ -34,7 +34,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-jira-authoring",
         "mutation-gate",
         "prose-editing",
@@ -59,7 +58,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-jira-authoring",
         "prose-editing",
         "rhdh-jira-context"
@@ -74,7 +72,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
@@ -84,7 +81,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
@@ -94,7 +90,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "mutation-gate",
         "prose-editing",
         "rhdh-jira-context"
@@ -115,7 +110,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
@@ -231,9 +225,9 @@
         "prose-editing"
       ],
       "optionalSkills": [
-        "rhdh-jira-api",
         "rhdh-jira-update",
-        "rhdh-jira-link"
+        "rhdh-jira-link",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },
@@ -381,7 +375,6 @@
       "category": "release",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-release-teams",
         "rhdh-release-schedule"
       ],
@@ -415,7 +408,6 @@
       "category": "release",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
         "rhdh-release-schedule",
         "mutation-gate"
       ],
@@ -503,15 +495,6 @@
       "invocation": "model",
       "requiresSkills": [
         "mutation-gate"
-      ],
-      "requiresExternalSkills": []
-    },
-    {
-      "name": "rhdh-jira-api",
-      "category": "reference",
-      "invocation": "model",
-      "requiresSkills": [
-        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },

@@ -3,9 +3,8 @@
 Generate a sprint planning package: carryover report, velocity trend, per-member
 capacity, ready-for-planning queue, and sprint fill suggestions.
 
-Reads go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL and the
-board and sprint IDs. The optional local commands live behind
-`/rhdh-jira-api`.
+Reads use whichever Jira tool you have; `/rhdh-jira-context` owns the JQL and
+the board and sprint IDs.
 
 ## Input
 
@@ -22,8 +21,6 @@ List the board's sprints by state: the active sprint (source of carryover), the
 next sprint (planning target), and the last three closed sprints (source of
 velocity).
 
-> Local commands: `/rhdh-jira-api`
-
 ## Step 2 — Carryover
 
 Issues in the active sprint that are not Closed or Release Pending:
@@ -31,8 +28,6 @@ Issues in the active sprint that are not Closed or Release Pending:
 ```jql
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status not in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
-
-> Local commands: `/rhdh-jira-api`
 
 Flag any Epic in the sprint — only Bug, Task, and Story belong there: "RHIDP-1234
 is an Epic. Epics should be broken into Stories or Tasks, not added to sprints."
@@ -48,14 +43,12 @@ For each of the last three closed sprints, sum completed story points:
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
 
-> Local commands: `/rhdh-jira-api`
-
 Report points per sprint, the three-sprint average, and the trend — accelerating,
 stable, or decelerating.
 
 ## Step 4 — Per-member capacity
 
-Fetch the roster through `/rhdh-jira-api` (the `GetTeamRoster` query), keeping
+Fetch the roster through `/rhdh-jira-context` (the `GetTeamRoster` query), keeping
 only `FULL_MEMBER` entries. For each member, report carryover items and points,
 open issues, points already committed in the next sprint, and an overloaded flag
 at 10 open issues or 21 story points.
@@ -173,4 +166,4 @@ Avg velocity {avg} SP − carryover {carry_sp} SP = **{available} SP available**
    sprint and counts toward capacity.
 4. **Team is not JQL-filterable in every context.** `/rhdh-jira-context` covers
    the `"Team[Team]"` syntax and its limits; the post-filter for cases where it
-   fails is `/rhdh-jira-api`'s, run locally.
+   fails is `/rhdh-jira-context`'s `parse_issues.py`.

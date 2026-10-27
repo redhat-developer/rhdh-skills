@@ -12,7 +12,7 @@ description: >-
   "release capacity plan", "how much interrupt into 2.1 planning", or "will
   COPE have room for 1.10 candidates". A whole-release horizon for one team —
   not filling the next sprint, and not whether the release is ready to ship.
-compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv; a Jira team ID and board ID; gog for the team mapping, release schedule, and shared PTO calendar. Greenhopper sprint reports use the /rhdh-jira-api token-file adapter when the local .jira-token file is readable."
+compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv; a Jira team ID and board ID; gog for the team mapping, release schedule, and shared PTO calendar. Greenhopper sprint reports use /rhdh-jira-context's token-file adapter when the local .jira-token file is readable."
 ---
 
 # Plan RHDH release capacity
@@ -36,7 +36,7 @@ Load `workflows/plan-capacity.md`. Run it when a team is choosing which
   `/rhdh-release-schedule`.
 - Team name to Cloud ID and board is `/rhdh-release-teams`.
 - Board IDs, JQL, Team-field traps, roster GraphQL, and the Greenhopper
-  sprint-report seam are `/rhdh-jira-api`.
+  sprint-report adapter are `/rhdh-jira-context`.
 - What a T-shirt size means when writing an issue is `/rhdh-jira-authoring`.
   This skill does not use that sprint-effort table for demand. Unsized T-shirts
   use a placeholder Fibonacci map in the script until a calibrated conversion

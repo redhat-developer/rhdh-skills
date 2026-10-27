@@ -34,7 +34,8 @@ modify product code.
 
 - This skill stages, formats, validates, creates changesets, commits, pushes,
   opens the PR, uploads supplied recordings, and updates linked GitHub issues.
-  Jira reads belong to `/rhdh-jira-api` and Jira writes to `/rhdh-jira-update`.
+  Jira writes belong to `/rhdh-jira-update`; field and JQL context is
+  `/rhdh-jira-context`.
   Invoke either by name and consume what it reports; never call Jira directly
   from here.
 - GitHub issue reads belong to `/rhdh-forge`, which returns the same issue

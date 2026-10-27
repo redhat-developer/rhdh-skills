@@ -13,15 +13,15 @@ JQL query, and an optional Jira team ID.
 
 ## Capability boundary
 
-Issue reads go through `/rhdh-jira-api`. The team roster comes from the
+Issue reads use whichever Jira tool you have. The team roster comes from the
 authenticated host GraphQL adapter — the `GetTeamRoster` query in
-`/rhdh-jira-api`. If that adapter is unavailable, say so, name
+`/rhdh-jira-context`. If that adapter is unavailable, say so, name
 `/setup-rhdh-skills atlassian-mcp`, and ask whether to continue in quick mode.
 Never construct credentials or raw HTTP requests.
 
 ## Deep analysis
 
-1. Fetch the roster through `/rhdh-jira-api`. Keep members whose `state` is
+1. Fetch the roster through `/rhdh-jira-context`. Keep members whose `state` is
    `FULL_MEMBER`; drop `INVITED` and `ALUMNI` — counting either inflates capacity
    and recommends people who cannot take the work. Capture display name and
    account ID, and paginate past 50 members.
@@ -31,8 +31,6 @@ Never construct credentials or raw HTTP requests.
    project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND updated >= -90d ORDER BY updated DESC
    ```
 
-   > Local commands: `/rhdh-jira-api`
-
 3. Build an expertise profile: top components, issue-type counts, recurring
    domain phrases, and the share of work in the leading component.
 4. Fetch active and future sprint load:
@@ -40,8 +38,6 @@ Never construct credentials or raw HTTP requests.
    ```jql
    project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND sprint in (openSprints(), futureSprints()) AND status != Closed
    ```
-
-   > Local commands: `/rhdh-jira-api`
 
 5. Mark a member overloaded at 10 open issues or 21 committed story points.
 6. Score context proximity: +3 per shared component, +1 per shared meaningful
@@ -69,12 +65,10 @@ metadata is missing, say the confidence is low — do not imply certainty.
 Assignment is an external write. Invoke `/mutation-gate` and follow it, with
 one row per issue-to-person mapping, then apply.
 
-> Local commands: `/rhdh-jira-api`
-
 There is no GraphQL mutation for assignment — the local CLI and the
-authenticated host adapter are the only two paths. If the local CLI cannot
-perform a required assignment, use the authenticated host adapter through
-`/rhdh-jira-api`; never fall back to raw HTTP.
+authenticated host adapter are the only two paths. If the tool you have
+cannot perform a required assignment, use the authenticated host adapter;
+never fall back to raw HTTP.
 
 Verify each assignee after execution and report successes, skips, and permission
 failures separately.

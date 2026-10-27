@@ -51,7 +51,7 @@ and missing; do not fill it.
 ## Step 3 (fallback): milestone messages only
 
 If `slack code-freeze` fails, rebuild the message: take blocker bugs and open
-issues from `/rhdh-jira-api` using the `blockers` and `open_issues` templates in
+issues with the bundled Jira adapter using the `blockers` and `open_issues` templates in
 `scripts/jql-release.md`, feature demos from
 `rich-filter query static demo --version "{{VERSION}}" --count`, Test Day features
 from `rich-filter query static "Test Day" --version "{{VERSION}}" --count`, then

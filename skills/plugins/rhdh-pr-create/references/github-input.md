@@ -12,8 +12,8 @@ Invoke `/rhdh-forge` with the raw reference — a URL, a bare `#number`, or
 it. Construct `github_issue_url` from the returned `url`; never retain the
 user's raw input.
 
-`source` is `github` here and `jira` when the same shape arrives from
-`/rhdh-jira-api`, so Step 1.5 branches on `source`, not on shape.
+`source` is `github` here and `jira` when the same shape arrives from a Jira
+read, so Step 1.5 branches on `source`, not on shape.
 
 If `/rhdh-forge` is unavailable, retain the number and repository, leave the
 title unresolved, and report that GitHub enrichment is unavailable and that the

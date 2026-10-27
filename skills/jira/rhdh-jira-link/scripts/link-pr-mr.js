@@ -6,6 +6,8 @@
     link         Create/update a Web link, apply missing configured defaults, In Progress.
                  Auto-moves RHDHPLAN Epic/Story/Task → RHIDP first.
     mark-merged  Prefix remotelink titles: "[x] merged: " or "[!] closed: "
+                 Takes --state <url>=<merged|closed|open> per link; the agent
+                 checks PR/MR state with its forge tool — this script calls none.
 
   Auth (either):
     - $JIRA_API_TOKEN + login/server from ~/.config/.jira/.config.yml
@@ -17,8 +19,6 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-
 const {
   DEFAULT_JIRA_SERVER,
   RHIDP_PROJECT,
@@ -136,6 +136,7 @@ After link (unless --no-comment), posts/updates a Jira comment:
 function parseArgs(argv) {
   return parseArgv(argv, {
     booleanFlags: ['no-defaults', 'no-comment'],
+    multiFlags: ['state'],
     onHelp: () => usage(0),
   });
 }
@@ -672,55 +673,16 @@ async function cmdLink(args, cfg) {
   });
 }
 
-function lookupPrMrState(ref) {
-  if (ref.kind === 'github') {
-    const label = `${ref.owner}/${ref.repo}#${ref.id}`;
-    const out = spawnSync(
-      'gh',
-      [
-        'api',
-        `repos/${ref.owner}/${ref.repo}/pulls/${ref.id}`,
-        '--jq',
-        '{merged:.merged,state:.state}',
-      ],
-      { encoding: 'utf8' },
-    );
-    if (out.status !== 0) {
-      const err = (out.stderr || out.stdout || '').trim().slice(0, 240);
-      console.error(`warn: merge-check failed for github ${label}: ${err || `exit ${out.status}`}`);
-      return 'unknown';
+function parseStates(pairs = []) {
+  const states = new Map();
+  for (const pair of pairs) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) {
+      throw new Error(`--state expects <url>=<merged|closed|open>, got: ${pair}`);
     }
-    try {
-      return classifyPrMrState(JSON.parse(out.stdout));
-    } catch (err) {
-      console.error(`warn: merge-check parse failed for github ${label}: ${err.message}`);
-      return 'unknown';
-    }
+    states.set(pair.slice(0, eq), pair.slice(eq + 1));
   }
-  const label = `${ref.project}!${ref.id}`;
-  const project = encodeURIComponent(ref.project);
-  const glabArgs = ['api'];
-  if (ref.host) {
-    glabArgs.push('--hostname', ref.host);
-  }
-  glabArgs.push(`projects/${project}/merge_requests/${ref.id}`);
-  const out = spawnSync('glab', glabArgs, { encoding: 'utf8' });
-  if (out.status !== 0) {
-    const err = (out.stderr || out.stdout || '').trim().slice(0, 240);
-    console.error(`warn: merge-check failed for gitlab ${label}: ${err || `exit ${out.status}`}`);
-    return 'unknown';
-  }
-  try {
-    const mr = JSON.parse(out.stdout);
-    return classifyPrMrState({
-      merged: Boolean(mr.merged_at) || mr.state === 'merged',
-      state: mr.state,
-      mergedAt: mr.merged_at,
-    });
-  } catch (err) {
-    console.error(`warn: merge-check parse failed for gitlab ${label}: ${err.message}`);
-    return 'unknown';
-  }
+  return states;
 }
 
 async function cmdMarkMerged(args, cfg) {
@@ -729,6 +691,7 @@ async function cmdMarkMerged(args, cfg) {
     throw new Error('mark-merged requires --issue');
   }
   const { json: links } = await jiraFetch(cfg, 'GET', `/rest/api/3/issue/${issue}/remotelink`);
+  const states = parseStates(args.state);
   const updated = [];
   const leftOpen = [];
   const skipped = [];
@@ -744,8 +707,13 @@ async function cmdMarkMerged(args, cfg) {
       skipped.push(title || url);
       continue;
     }
-    const prMrState = lookupPrMrState(ref);
-    if (prMrState === 'open' || prMrState === 'unknown') {
+    const prMrState = states.get(url);
+    if (prMrState === 'open' || prMrState === 'unknown' || !prMrState) {
+      if (!prMrState) {
+        console.error(
+          `warn: no --state supplied for ${url}; check it with your forge tool and rerun`,
+        );
+      }
       leftOpen.push({ title: title || url, url });
       continue;
     }

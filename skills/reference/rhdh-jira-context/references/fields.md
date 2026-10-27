@@ -293,7 +293,8 @@ Jira UI action (**Feature → More → Create Doc EPIC from RHDHPlan**) availabl
 
 ### Component Validation (live)
 
-The component catalog above is maintained manually. Components may be added or renamed in Jira without updating this file. `/rhdh-jira-api` runs a component validator against live Jira to detect drift.
+The component catalog above is maintained manually. Components may be added or renamed in Jira without updating this file. This skill ships a component validator (`scripts/validate_components.py`) that
+compares the catalog against fetched Jira project JSON to detect drift.
 
 It reports components that exist in Jira but are missing from this file (add them), and components listed here that no longer exist in Jira (remove them).
 

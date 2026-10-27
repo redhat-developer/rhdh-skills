@@ -3,18 +3,20 @@
 # requires-python = ">=3.9"
 # dependencies = []
 # ///
-"""Verify acli installation and Jira API capabilities for RHDH."""
+"""Check acli presence and the Jira token file without executing anything.
+
+This script never runs another tool: it reports whether acli is on PATH and
+whether the token file exists and is well-formed. Connectivity is the agent's
+smoke check (a real call, per /setup-rhdh-skills), not this script's.
+"""
 
 import argparse
 import json
 import os
 import shutil
 import stat
-import subprocess
 import sys
 from pathlib import Path
-
-RHDH_PROJECTS = ["RHIDP", "RHDHPLAN", "RHDHBUGS", "RHDHSUPP"]
 
 
 def find_acli():
@@ -78,86 +80,27 @@ def check_token_file(acli_path=None):
         return None, f"read error: {e}", warnings
 
 
-def smoke_test(acli_path):
-    """Run a smoke test to verify Jira connectivity."""
-    try:
-        result = subprocess.run(
-            [acli_path, "jira", "project", "list", "--recent", "1"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
-        if result.returncode == 0 and stdout.strip():
-            return True, stdout.strip()
-        return False, stderr.strip() or "empty response"
-    except subprocess.TimeoutExpired:
-        return False, "timeout after 30s"
-    except OSError as e:
-        return False, str(e)
-
-
-def check_projects(acli_path):
-    """Check which RHDH projects are accessible."""
-    accessible = []
-    inaccessible = []
-
-    for project in RHDH_PROJECTS:
-        try:
-            result = subprocess.run(
-                [acli_path, "jira", "project", "view", "--key", project],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
-            if result.returncode == 0:
-                accessible.append(project)
-            else:
-                stderr = result.stderr or ""
-                inaccessible.append((project, stderr.strip()))
-        except (subprocess.TimeoutExpired, OSError) as e:
-            inaccessible.append((project, str(e)))
-
-    return accessible, inaccessible
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Verify acli installation and Jira API capabilities for RHDH."
+        description="Check acli presence and the Jira token file. Runs nothing."
     )
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    parser.add_argument("--quick", action="store_true", help="Skip project accessibility check")
     args = parser.parse_args(argv)
 
     results = {
         "acli_found": False,
         "acli_path": None,
-        "adapters": [],
         "token_file_found": False,
         "token_file_path": None,
         "token_file_status": None,
         "token_file_warnings": [],
-        "connectivity": False,
-        "connectivity_detail": None,
-        "projects_accessible": [],
-        "projects_inaccessible": [],
-        "overall": "fail",
+        "smoke_check": "agent runs a real call; see /setup-rhdh-skills jira",
     }
 
-    # Step 1: Find acli
     acli_path = find_acli()
     if acli_path:
         results["acli_found"] = True
         results["acli_path"] = acli_path
-    else:
-        results["connectivity_detail"] = "acli not found on PATH"
-        _output(results, args.json)
-        sys.exit(1)
 
     token_path, token_status, token_warnings = check_token_file(acli_path)
     if token_path:
@@ -166,27 +109,8 @@ def main(argv=None):
     results["token_file_status"] = token_status
     results["token_file_warnings"] = token_warnings
 
-    # The smoke test is the credential-store boundary for acli. Token-file
-    # status is reported without printing file contents.
-    ok, detail = smoke_test(acli_path)
-    results["connectivity"] = ok
-    results["connectivity_detail"] = detail
-
-    if not ok:
-        _output(results, args.json)
-        sys.exit(1)
-
-    results["adapters"] = ["acli"]
-
-    # Check project access
-    if not args.quick:
-        accessible, inaccessible = check_projects(acli_path)
-        results["projects_accessible"] = accessible
-        results["projects_inaccessible"] = [{"project": p, "error": e} for p, e in inaccessible]
-
-    results["overall"] = "pass"
     _output(results, args.json)
-    sys.exit(0)
+    sys.exit(0 if results["acli_found"] else 1)
 
 
 def _output(results, as_json):

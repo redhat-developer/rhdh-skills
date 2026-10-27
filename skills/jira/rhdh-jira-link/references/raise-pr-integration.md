@@ -13,6 +13,4 @@ The contract:
 2. An RHDHPLAN Epic, Story, or Task may have been moved to RHIDP by the link
    step — use the post-move key it reports for everything that follows.
 3. `/rhdh-pr-create` transitions the issue to **Review** on the effective key
-   after the link step returns.
-
-> Tooling: `references/tooling.md#serving-rhdh-pr-create`
+   after the link step returns, with its own Jira tool.

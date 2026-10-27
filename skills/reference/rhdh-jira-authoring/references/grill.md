@@ -192,11 +192,11 @@ Keep this lightweight. One search during the grill is enough — don't run a sea
 
 Before proceeding to creation, verify the issue would pass New-status entry criteria:
 
-- Are all required fields for New status determined? (Assignee, Priority, Team, Component — varies by type; for RHDHBUGS Bugs also Affects Version — see `/rhdh-jira-api`)
+- Are all required fields for New status determined? (Assignee, Priority, Team, Component — varies by type; for RHDHBUGS Bugs also Affects Version — see `/rhdh-jira-context`)
 - Is the description substantive enough? A one-sentence description on a Feature is a red flag.
 - Is the summary clear and specific? Summaries like "Update plugins" or "Fix bug" are too vague.
 
-Also enforce customer identity and label rules. `/rhdh-jira-api` holds the authoritative detail:
+Also enforce customer identity and label rules. `/rhdh-jira-context` holds the authoritative detail:
 
 - **Preferred pattern:** Put support-ticket / case keys (and persona/use-case language) in summary/description when needed; apply a single `RHDH-Customer` Jira label for customer-origin work; put customer-identifying detail only in restricted-visibility comments when the project supports it.
 - **Guardrail:** Never put customer names or other identifying detail in unprotected fields (summary, description, public fields).

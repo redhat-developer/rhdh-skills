@@ -39,10 +39,10 @@ pointers, checkable completion criteria, and single-sourced behavior.
   caller to one. Two skills in this pack reached 4,029 and 7,784 total lines
   while their `SKILL.md` files stayed comfortably compliant.
 - Put deterministic validation and transformation in scripts.
-- **State goals, not tools.** Process states goals with inputs, outputs, and
-  failure modes — a postcondition wherever a wrong call fails silently; exact
-  commands live in one optional `references/tooling.md` sidecar. See Dual-mode
-  below.
+- **State goals, not tools.** Outcome prose carries goals, gates, and end
+  states; context skills carry instance knowledge stated tool-neutrally;
+  nothing teaches tool syntax. Bundled scripts are self-contained — they
+  never rely on another tool being available. See Two skill types below.
 
 ## Duplication
 
@@ -84,38 +84,45 @@ order to disclaim it. "A key such as ABC-123 is not a sprint" makes the skill a
 candidate for exactly the request it is refusing. State the exclusion without the
 token: "works on a team and a board, never on a single issue key".
 
-## Dual-mode: goals and an optional tooling sidecar
+## Two skill types, no tool-teaching
 
-A skill that drives CLIs must also run for an agent that has native
-integrations (ADLC tools) instead. Separate the layers:
+Every skill is one of two types, and neither teaches tool syntax — models
+know the common CLIs and MCP servers, and a tool's own help beats our copy
+of it:
 
-- **Process** — goals with inputs, outputs, and failure modes; gates; exit
-  criteria; sequencing; templates — stays in `SKILL.md`, `workflows/`, and
-  domain `references/`, with zero CLI names and zero script invocations. The
-  only exception is a one-line tooling pointer naming `references/tooling.md`.
-  Where a wrong call fails silently (a truncated search, an unread custom
-  field), state the postcondition on the goal — it binds whichever tool
-  executes.
-- **Tooling** — exact commands, flags, traps, auth notes, script invocations —
-  lives in one optional `references/tooling.md` sidecar, framed for agents
-  that have the local CLIs. A sidecar is per-skill only when the skill owns
-  its own scripts; command syntax shared across a domain lives in the
-  mechanics skill that owns it (`/rhdh-jira-api` for Jira), and other skills
-  point there by name. Whatever holds the commands states its PATH
-  assumptions and how to check them — process prose never assumes a tool is
-  on PATH. An ADLC tool may serve the same goals; stated postconditions bind
-  it too.
-- **Frontmatter** splits accordingly: `compatibility:` names process
-  prerequisites true in every execution mode; `local-tooling:` names the
-  optional CLIs.
+- **Outcome skills** — goals with inputs, outputs, and failure modes; gates;
+  exit criteria; sequencing; templates — in `SKILL.md`, `workflows/`, and
+  domain `references/`, with zero CLI syntax and zero script invocations in
+  process prose. Where a wrong call fails silently (a truncated search, an
+  unread custom field), state the verification on the goal — it binds
+  whichever tool executes.
+- **Context skills** — the knowledge that makes the outcomes correct: field
+  IDs, states and exit criteria, catalogs, payload shapes, instance traps
+  stated tool-neutrally. A context skill runs nothing and teaches no tool.
+
+Rules that follow:
+
+- **Teach the instance, not the tool.** "Verify the total before counting"
+  is context; "pass `--paginate`" is a tool tutorial — drop it. If you don't
+  know a tool, say so once and point at the tool's own help.
+- **Scripts are self-contained.** A bundled script never relies on another
+  tool being available: no spawning `gh`, `glab`, `acli`, or an MCP server.
+  It is pure computation, or it talks to its own service with credentials
+  from the environment. A script that checks things consumes input the agent
+  fetched. When a workflow needs tool-specific behavior, the agent runs the
+  tool itself following the goal; nothing wraps it.
+- **Frontmatter** splits accordingly: `compatibility:` names prerequisites
+  true in every execution mode; `local-tooling:` names the optional tools.
+  Setup skills are the exception that keeps concrete steps — configuring
+  tools is their outcome and their audience is the human.
 
 Each skill restates a short goals paragraph in its own words — an installed
 skill cannot rely on a host repository's conventions — and never names the
 bot or platform: shipped prose says "ADLC tools". Rule of thumb: if an agent
 using only native integrations still needs to know it, it is process; if it
-is how one particular tool runs, it is tooling. The full authoring pattern,
+is how one particular tool runs, it is nowhere. The full authoring pattern,
 with the paragraph to adapt, is in
-[references/create.md](references/create.md) → Dual-mode.
+[references/create.md](references/create.md) → Two skill types.
 
 ## Working inside a host repository
 

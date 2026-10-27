@@ -7,7 +7,7 @@ description: >-
   EKS, GKE, PostgreSQL, RHBK, and Quay rows. Use for "review the test plan for
   1.11", "which platform versions should the 1.10 test plan list", "update the
   test plan dates", or a test-plan Jira URL or key such as RHIDP-1234.
-compatibility: "Python 3.9+ and uv; /rhdh-jira-api for the plan issue; gog for the RHDH release schedule spreadsheet."
+compatibility: "Python 3.9+ and uv; a Jira tool for the plan issue; gog for the RHDH release schedule spreadsheet."
 ---
 
 # RHDH test-plan review
@@ -35,7 +35,7 @@ dimension that stays unverified.
 
 | Need | Skill |
 |---|---|
-| The plan issue, its linked issues, ownership, labels, and status | `/rhdh-jira-api` |
+| The plan issue, its linked issues, ownership, labels, and status | your Jira tool; `/rhdh-jira-context` for fields |
 | Supported OCP, Kubernetes, PostgreSQL, RHBK, and Quay versions | `/rhdh-platform-lifecycle` |
 | Feature Freeze, Code Freeze, and GA dates | `/rhdh-release-schedule` |
 | What is still open against the release | `/rhdh-release-status` |

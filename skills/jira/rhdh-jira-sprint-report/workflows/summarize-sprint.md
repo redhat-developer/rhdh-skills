@@ -4,9 +4,8 @@ Generate a sprint review summary: committed versus completed, per-member
 breakdown, epic progress, demo checklist with naming conventions, and velocity
 trend.
 
-Reads go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL and the
-board and sprint IDs. The optional local commands live behind
-`/rhdh-jira-api`.
+Reads use whichever Jira tool you have; `/rhdh-jira-context` owns the JQL and
+the board and sprint IDs.
 
 ## Input
 
@@ -20,15 +19,11 @@ board and sprint IDs. The optional local commands live behind
 List the board's active and most recent closed sprints; extract sprint ID,
 name, start date, and end date.
 
-> Local commands: `/rhdh-jira-api`
-
 ## Step 2 — Fetch every issue in the sprint
 
 ```jql
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND "Team[Team]" = TEAM_ID
 ```
-
-> Local commands: `/rhdh-jira-api`
 
 ## Step 3 — Partition
 
@@ -89,8 +84,6 @@ Feature." That link is required at Release Pending.
 
 List the board's last three closed sprints, then run the completed-points query
 below per sprint.
-
-> Local commands: `/rhdh-jira-api`
 
 ```jql
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS)

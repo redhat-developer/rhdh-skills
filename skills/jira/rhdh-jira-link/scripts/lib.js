@@ -348,8 +348,9 @@ function flagToCamel(flag) {
  * @param {string[]} argv
  * @param {{ booleanFlags?: string[], onHelp?: () => void }} [opts]
  */
-function parseArgs(argv, { booleanFlags = [], onHelp } = {}) {
+function parseArgs(argv, { booleanFlags = [], multiFlags = [], onHelp } = {}) {
   const bool = new Set(booleanFlags);
+  const multi = new Set(multiFlags);
   const args = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -370,7 +371,11 @@ function parseArgs(argv, { booleanFlags = [], onHelp } = {}) {
     if (!val || val.startsWith('--')) {
       throw new Error(`Missing value for --${key}`);
     }
-    args[key] = val;
+    if (multi.has(key)) {
+      (args[key] || (args[key] = [])).push(val);
+    } else {
+      args[key] = val;
+    }
     i += 1;
   }
   return args;

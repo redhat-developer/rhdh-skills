@@ -55,15 +55,15 @@ Sub-tasks are children of an existing issue, never standalone.
 
 A filled template is wiki markup, and Jira Cloud will render wiki markup or
 Markdown as literal characters (`h1.`, `*text*`, `# Heading`) when those bytes
-are stuffed into ADF text nodes instead of converted. `/rhdh-jira-api` owns
-wiki→ADF conversion; do not hand-build ADF from Markdown paragraphs.
+are stuffed into ADF text nodes instead of converted. `/rhdh-jira-context`
+ships the wiki→ADF converter; do not hand-build ADF from Markdown paragraphs.
 
 ## Boundary with the neighbouring skills
 
 - Running the interview and creating the issue is `/rhdh-jira-create`.
 - Auditing issues that already exist is `/rhdh-jira-refine`.
 - Field IDs, the component catalog, JQL, and workflow exit criteria are
-  `/rhdh-jira-context`; the local command reference is `/rhdh-jira-api`.
+  `/rhdh-jira-context`.
 - The general interview cadence is the external `grilling` skill, invoked by
   name. What is here is only the RHDH-specific half.
 

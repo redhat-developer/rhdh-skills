@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Shared ADF milestone parsing lives in rhdh-jira-api (requiresSkills dependency).
-_jira_api_scripts = Path(__file__).resolve().parents[3] / "reference" / "rhdh-jira-api" / "scripts"
+# Shared ADF milestone parsing lives in rhdh-jira-context (requiresSkills dependency).
+_jira_api_scripts = (
+    Path(__file__).resolve().parents[3] / "reference" / "rhdh-jira-context" / "scripts"
+)
 if str(_jira_api_scripts) not in sys.path:
     sys.path.insert(0, str(_jira_api_scripts))
 

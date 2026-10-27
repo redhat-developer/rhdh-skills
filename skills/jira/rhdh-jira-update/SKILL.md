@@ -10,7 +10,7 @@ description: >-
   "assign RHIDP-1234". Edits existing work — it does not create issues, audit a
   backlog, or build a sprint.
 compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to read an issue with custom fields, read a team roster, and create remote (web) links. Windows, macOS, Linux."
-local-tooling: "Optional: acli on PATH with a Jira session; git and gh for issue detection; the authenticated host Atlassian adapter for web links and roster reads. The local command reference is /rhdh-jira-api."
+local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or another tool; git and a forge CLI for issue detection."
 ---
 
 # Update RHDH Jira work
@@ -21,8 +21,8 @@ because they are the same job: a field mutation on a known key.
 ## Goals, not tools
 
 Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
+how to drive. `/rhdh-jira-context` owns the JQL,
 the field IDs, and the end-state rules that keep a silent failure from
 becoming a partial update reported as a success.
 
@@ -60,8 +60,8 @@ one stated set so one approval covers them, rather than asking three times.
 - Sprint carryover, velocity, and fill suggestions are `/rhdh-jira-sprint-plan`;
   it invokes this skill for per-issue assignee recommendations rather than
   scoring them itself.
-- Field IDs, JQL, and workflow exit criteria are `/rhdh-jira-context`; GraphQL
-  roster queries and the local command reference are `/rhdh-jira-api`.
+- Field IDs, JQL, GraphQL roster queries, and workflow exit criteria are
+  `/rhdh-jira-context`.
 - Creating a PR and attaching the Jira web link in one step is
   `/rhdh-jira-link`.
 

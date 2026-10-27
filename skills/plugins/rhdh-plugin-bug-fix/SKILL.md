@@ -42,7 +42,8 @@ full-e2e or no-e2e branch, reproduces, fixes, verifies, and cleans up.
   workspace against the checkout before working in it, and ask the user when
   the strategy reports it unresolved. Do not parse the URL or run `gh issue
   view` here.
-- `/rhdh-jira-api` owns reading a Jira key and returns the same issue detail.
+- A Jira key is read with whichever Jira tool you have; `/rhdh-jira-context`
+  owns the fields.
 - `/grilling` is the design gate when several root causes remain plausible or
   materially different fixes carry different compatibility costs. Use the
   constraints it produces before implementing. If it is not installed, say so,

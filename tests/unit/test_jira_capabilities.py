@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-JIRA_SCRIPTS = PROJECT_ROOT / "skills" / "reference" / "rhdh-jira-api" / "scripts"
+JIRA_SCRIPTS = PROJECT_ROOT / "skills" / "reference" / "rhdh-jira-context" / "scripts"
 
 
 def load_script(name: str):
@@ -25,17 +24,17 @@ def load_script(name: str):
 def test_setup_detects_native_acli_without_inspecting_credentials(monkeypatch, capsys):
     setup = load_script("setup.py")
     monkeypatch.setattr(setup, "find_acli", lambda: "/tools/acli")
-    monkeypatch.setattr(setup, "smoke_test", lambda _path: (True, "connected"))
 
     with pytest.raises(SystemExit) as exc:
-        setup.main(["--json", "--quick"])
+        setup.main(["--json"])
 
     assert exc.value.code == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["adapters"] == ["acli"]
-    assert result["connectivity"] is True
+    assert result["acli_found"] is True
+    assert result["acli_path"] == "/tools/acli"
     assert result["token_file_found"] is False
     assert result["token_file_status"] == "not found"
+    assert "setup-rhdh-skills" in result["smoke_check"]
     blob = json.dumps(result)
     assert not any(
         word in key.lower() for key in result for word in ("credential", "password", "secret")
@@ -138,20 +137,12 @@ def test_greenhopper_http_error_is_status_only(monkeypatch, capsys, tmp_path):
     assert "secret" not in json.dumps(payload)
 
 
-def test_component_validation_reads_project_data_through_acli(monkeypatch):
+def test_component_validation_reads_fetched_project_json(tmp_path):
     validator = load_script("validate_components.py")
-    calls = []
+    fetched = tmp_path / "rhidp.json"
+    fetched.write_text(
+        json.dumps({"components": [{"name": "Catalog"}, {"name": "Build"}]}),
+        encoding="utf-8",
+    )
 
-    def fake_run(argv, **_kwargs):
-        calls.append(argv)
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps({"components": [{"name": "Catalog"}, {"name": "Build"}]}),
-            "",
-        )
-
-    monkeypatch.setattr(validator.subprocess, "run", fake_run)
-
-    assert validator.fetch_components("/tools/acli", "RHIDP") == ["Build", "Catalog"]
-    assert calls == [["/tools/acli", "jira", "project", "view", "--key", "RHIDP", "--json"]]
+    assert validator.load_components(str(fetched)) == ["Build", "Catalog"]

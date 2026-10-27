@@ -7,46 +7,33 @@ components that exist in Jira but are missing from fields.md, and components
 listed in fields.md that no longer exist in Jira.
 
 Usage:
-  python scripts/validate_components.py
-  python scripts/validate_components.py --json
+  python scripts/validate_components.py RHIDP.json RHDHPLAN.json
+  python scripts/validate_components.py RHIDP.json RHDHPLAN.json --json
 
-Requires:
-  - acli authenticated through its native credential store
-  - Network access to the configured Jira site
+Each argument is a file the agent fetched — the JSON output of a Jira
+project view for RHIDP and RHDHPLAN (for example
+`acli jira project view --key RHIDP --json`). This script never runs a
+tool itself.
 
 Exit codes:
   0  All components match
   1  Drift detected (missing or extra components)
-  2  Argument error
-  3  acli not found
-  4  API request failed
+  2  Argument or file error
 """
 
 import argparse
 import json
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 
-def fetch_components(acli: str, project: str) -> list[str]:
-    """Fetch component names through acli's authenticated project adapter."""
+def load_components(path: str) -> list[str]:
+    """Read component names from a fetched Jira project-view JSON file."""
     try:
-        result = subprocess.run(
-            [acli, "jira", "project", "view", "--key", project, "--json"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "acli returned no error detail")
-        data = json.loads(result.stdout)
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError, RuntimeError) as e:
-        print(f"Error fetching {project} components: {e}", file=sys.stderr)
-        sys.exit(4)
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"Error reading {path}: {e}", file=sys.stderr)
+        sys.exit(2)
     return sorted(c["name"] for c in data.get("components", []) if c.get("name"))
 
 
@@ -89,6 +76,11 @@ def main():
         description="Validate fields.md components against live Jira data."
     )
     parser.add_argument(
+        "inputs",
+        nargs="+",
+        help="fetched Jira project-view JSON files (RHIDP, then RHDHPLAN)",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="json_output",
@@ -98,23 +90,17 @@ def main():
 
     # Find fields.md in the context skill that owns it
     script_dir = Path(__file__).resolve().parent
-    fields_path = script_dir.parent.parent / "rhdh-jira-context" / "references" / "fields.md"
+    fields_path = script_dir.parent / "references" / "fields.md"
     if not fields_path.exists():
         print(f"fields.md not found at {fields_path}", file=sys.stderr)
         sys.exit(2)
 
-    # Discover the authenticated adapter without inspecting its credential store.
-    acli = shutil.which("acli")
-    if not acli:
-        print("acli not found. Run /setup-rhdh-skills jira.", file=sys.stderr)
-        sys.exit(3)
-
     # Parse fields.md
     documented = parse_component_section(fields_path)
 
-    # Fetch live components from both projects
-    rhidp_components = set(fetch_components(acli, "RHIDP"))
-    rhdhplan_components = set(fetch_components(acli, "RHDHPLAN"))
+    # Read live components from the fetched project-view JSON files
+    rhidp_components = set(load_components(args.inputs[0]))
+    rhdhplan_components = set(load_components(args.inputs[1])) if len(args.inputs) > 1 else set()
     live = rhidp_components | rhdhplan_components
 
     # Compare

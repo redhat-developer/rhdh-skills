@@ -1,3 +1,0 @@
-interface:
-  display_name: "RHDH Jira API"
-  short_description: "Read RHDH Jira: acli, JQL, fields, workflow states"

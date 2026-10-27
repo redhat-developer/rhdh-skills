@@ -29,8 +29,8 @@ Which one answers a given version is a lookup, not a decision the user makes.
 - Which OCP, AKS, EKS, GKE, or PostgreSQL versions a release supports, and when
   they go end-of-life, is `/rhdh-platform-lifecycle`. Product lifecycle is not a
   release milestone.
-- Reading or editing the RHDHPLAN release Feature as a Jira issue is
-  `/rhdh-jira-api`.
+- What the RHDHPLAN release Feature's fields and statuses mean is
+  `/rhdh-jira-context`.
 - Ensuring the fix version for a release exists on RHIDP, RHDHPLAN, and
   RHDHBUGS is `/rhdh-release-fixversions`.
 

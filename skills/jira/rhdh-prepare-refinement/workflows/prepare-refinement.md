@@ -4,9 +4,8 @@ Produce a facilitator brief before a team's refinement ceremony. Fetch the
 team's queue, resolve release milestones, analyze every issue, present what
 matters for the session.
 
-Use `acli` for all Jira reads. `/rhdh-jira-api` owns auth and the reads;
-`/rhdh-jira-context` owns the field references, JQL patterns, and the
-board/team table.
+Use whichever Jira tool you have. `/rhdh-jira-context` owns the field
+references, JQL patterns, and the board/team table.
 
 ## Input
 
@@ -71,7 +70,7 @@ acli jira workitem view RHDHPLAN_KEY --fields description --json
 ```
 
 Extract **feature freeze**, **code freeze**, **GA date** from the ADF table
-rows. `/rhdh-jira-api` has `adf_milestones.py` for parsing — or read the
+rows. `/rhdh-jira-context` has `adf_milestones.py` for parsing — or read the
 date nodes directly from the JSON (type `date`, timestamp in
 `attrs.timestamp`).
 

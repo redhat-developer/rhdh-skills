@@ -4,10 +4,10 @@ Forecast whether a named team can take the `rhdh-X.Y-candidate` Features for a
 release: sample-sprint velocity and interrupt, Epic-first demand, and two
 capacity ledgers through Code Freeze.
 
-Use paginated `acli` for bulk reads. For Greenhopper sprint reports, invoke
-`/rhdh-jira-api` and let it run its token-file adapter; never `curl`, never
-`cat` a token file, never set `AUTH` in chat. `/rhdh-jira-api` owns both
-adapters. This workflow is read-only.
+Use whichever Jira tool you have for bulk reads. For Greenhopper sprint
+reports, invoke `/rhdh-jira-context` and let it run its token-file adapter;
+never `curl`, never `cat` a token file, never set `AUTH` in chat. This
+workflow is read-only.
 
 Feed the gathered snapshot to `uv run scripts/capacity.py`. Do not re-implement
 the arithmetic in prose.
@@ -15,8 +15,8 @@ the arithmetic in prose.
 ## Input
 
 1. **Team** — name or Jira team UUID. Resolve Cloud ID and board through
-   `/rhdh-release-teams` and `/rhdh-jira-api`. Never infer a team from member
-   names.
+   `/rhdh-release-teams` and `/rhdh-jira-context`. Never infer a team from
+   member names.
 2. **Release version** — e.g. `2.2`. Builds the candidate label
    `rhdh-2.2-candidate`. Ask if missing.
 3. **Availability** — default every `FULL_MEMBER` to 100% only when the shared
@@ -98,8 +98,8 @@ Record `startDate`. Include the human chart URL:
 
 ## Step 4 — Velocity and interrupt
 
-Try Greenhopper first. Invoke `/rhdh-jira-api`: run `uv run scripts/setup.py
---json` and use `token_file_found` / `token_file_status` (contents are never
+Try Greenhopper first. Invoke `/rhdh-jira-context`: run its `setup.py --json`
+and use `token_file_found` / `token_file_status` (contents are never
 printed). If the token file is missing or unreadable, skip Greenhopper in one
 line and reconstruct. If it is found, run:
 
@@ -123,8 +123,7 @@ acli jira workitem search \
   --fields "key,summary,status,issuetype,assignee" --paginate --json
 ```
 
-Ask `/rhdh-jira-api` to enrich with `parse_issues.py --enrich` (or `view
---fields '*all'`). Changelog via the host adapter `getJiraIssue
+Ask `/rhdh-jira-context` to enrich with `parse_issues.py --enrich`. Changelog via the host adapter `getJiraIssue
 expand=changelog` is a last-resort sample, not a loop over hundreds of issues.
 
 An issue is interrupt when Greenhopper `issueKeysAddedDuringSprint` (or a
