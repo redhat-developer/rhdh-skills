@@ -53,15 +53,7 @@ the Bug template filled with real reproduction steps. Link it to the customer
 case through SFDC Cases Links, then comment on the RHDHSUPP issue with the
 RHDHBUGS key so the customer learns when the fix lands.
 
-```bash
-# Single --from-json: versions + ADF description inside the JSON (not --description-file)
-acli jira workitem create --from-json "$BUG_CREATE_JSON"
-
-acli jira workitem link create --out RHDHSUPP-456 --in RHDHBUGS-789 --type "Related" --yes
-
-acli jira workitem comment create --key RHDHSUPP-456 \
-  --body "Defect captured in RHDHBUGS-789. Fix targeted for next y-stream release."
-```
+> Tooling: `references/tooling.md#support-case-links` (local mode only)
 
 ## Feature request: RHDHSUPP → RHDHPLAN
 
@@ -70,13 +62,7 @@ Request template, and a link to the customer case through SFDC Cases Links. Then
 encourage the customer to follow up with their account team so Product Management
 can prioritize it.
 
-```bash
-acli jira workitem create --project RHDHPLAN --type "Feature Request" \
-  --summary "Support OIDC token refresh in admin console" \
-  --description-file "$FEATURE_ADF"
-
-acli jira workitem link create --out RHDHSUPP-456 --in RHDHPLAN-123 --type "Related" --yes
-```
+> Tooling: `references/tooling.md#support-case-links` (local mode only)
 
 An accepted Feature Request is what a later Feature links back to — Step 7 of the
 create workflow looks for one.

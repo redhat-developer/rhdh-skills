@@ -9,13 +9,23 @@ description: >-
   this", "move this to Review", "close this out", "who should take this", or
   "assign RHIDP-1234". Edits existing work — it does not create issues, audit a
   backlog, or build a sprint.
-compatibility: "acli on PATH with a Jira session; git and gh optional for issue detection; an authenticated host Atlassian adapter for web links and roster reads."
+compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to read an issue with custom fields, read a team roster, and create remote (web) links. Windows, macOS, Linux."
+local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; git and gh for issue detection; the authenticated host Atlassian adapter for web links and roster reads. See references/tooling.md."
 ---
 
 # Update RHDH Jira work
 
 Small, precise changes to an issue that already exists. Two jobs live here
 because they are the same job: a field mutation on a known key.
+
+## Goals, not tools
+
+Every step below states what it needs, never which tool to use. Change Jira
+with whichever tool you actually have — an ADLC tool, the authenticated host
+adapter, or, when you have the local CLIs, the commands in
+[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
+wrapping a local CLI when both are available. The change — which fields, which
+transition, which gate — is the same either way.
 
 ## Route
 
@@ -51,8 +61,8 @@ one stated set so one approval covers them, rather than asking three times.
 - Sprint carryover, velocity, and fill suggestions are `/rhdh-jira-sprint-plan`;
   it invokes this skill for per-issue assignee recommendations rather than
   scoring them itself.
-- `acli` flags, field IDs, JQL, GraphQL roster queries, and workflow exit
-  criteria are `/rhdh-jira-api`.
+- Field IDs, JQL, GraphQL roster queries, workflow exit criteria, and the local
+  command reference are `/rhdh-jira-api`.
 - Creating a PR and attaching the Jira web link in one step is
   `/rhdh-jira-link`.
 

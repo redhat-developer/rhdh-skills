@@ -10,13 +10,23 @@ description: >-
   team and a sprint, not on one issue — a bare key such as RHIDP-1234 is not a
   sprint. Looks forward at the sprint that has not started; summarizing the one
   that just ended is a different job.
-compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv; a Jira team ID and board ID."
+compatibility: "Authenticated read access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search and read sprints and boards. A Jira team ID and board ID. Windows, macOS, Linux."
+local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts. An agent with ADLC Jira tooling uses that instead. See references/tooling.md."
 ---
 
 # Plan an RHDH sprint
 
 Produce the numbers a planning call needs, before the call. Read-only until the
 team decides something.
+
+## Goals, not tools
+
+Every step below states what it needs, never which tool to use. Read Jira with
+whichever tool you actually have — an ADLC tool, the authenticated host
+adapter, or, when you have the local CLIs, the commands in
+[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
+wrapping a local CLI when both are available. The numbers — carryover,
+velocity, capacity, fill — are the same either way.
 
 ## Route
 

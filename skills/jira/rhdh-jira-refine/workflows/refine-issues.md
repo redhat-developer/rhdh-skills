@@ -4,8 +4,9 @@ Analyze issues for readiness, missing fields, duplicates, stale comments, and
 relevance. Produces a refinement report with actionable recommendations and
 optional fixes.
 
-Use paginated `acli` for bulk reads and the authenticated host adapter only for
-fields `acli` cannot return. `/rhdh-jira-api` owns both.
+Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
+the enrichment rules, and the adapter order. In local mode the exact commands
+are in [references/tooling.md](../references/tooling.md).
 
 ## Input
 
@@ -68,12 +69,10 @@ Definitions the checks below use:
 
 Run every applicable check per issue.
 
-Fetch with enrichment. A plain `--json` search omits every custom field, so Story
-Points, Team, Size, and Sprint come back empty whether or not they are set:
+Fetch with enrichment. A plain search result omits every custom field, so Story
+Points, Team, Size, and Sprint come back empty whether or not they are set.
 
-```bash
-acli jira workitem search --jql "JQL_HERE" --fields "*all" --paginate --json
-```
+> Tooling: `references/tooling.md#bulk-read` (local mode only)
 
 ### Check 1 — Missing fields against exit criteria
 
@@ -85,7 +84,7 @@ Determine each issue's type and current status, look up the required fields in
 | All | Assignee | `assignee` is not null |
 | All | Priority | `priority.name` is not "Undefined" |
 | All | Component | At least one component in `JiraComponentsField` |
-| Feature/Epic | Team | Read `customfield_10001` from `--fields '*all'`; use the host adapter if absent |
+| Feature/Epic | Team | Read the Team custom field (`customfield_10001`) with all fields requested; use the host adapter if absent |
 | Feature/Epic | Size | The `Size` single-select has a value |
 | Story/Task/Bug | Story Points | `storyPoints` is not null |
 | Epic | Description | The Description rich-text field is not empty |
@@ -107,15 +106,16 @@ possibly-related duplicates.
 | Feature (Backlog+) | Has at least one child Epic | "Feature in Backlog+ has no child Epics. Create delivery Epics." |
 | Epic (To Do+) | Has at least one child Story/Task | "Epic in To Do+ has no children. Break it down." |
 
-Query children with `parent = {key} AND status != Closed`. Use `acli` for
-hierarchy lookups — cross-project `parent =` queries are unreliable through
-GraphQL and REST search.
+Query children with `parent = {key} AND status != Closed`.
+
+> Tooling: `references/tooling.md#hierarchy-lookups` (local mode only) — why
+> hierarchy lookups prefer the local search path
 
 ### Check 4 — Unaddressed comments
 
-```bash
-acli jira workitem view ISSUE_KEY --fields "comment" --json
-```
+Fetch the issue's comments.
+
+> Tooling: `references/tooling.md#comments` (local mode only)
 
 Flag when the most recent comment is a question from someone other than the
 assignee, when it contains an action item ("TODO", "action item", "follow up",
@@ -271,14 +271,16 @@ and the edited bodies included in the plan.
   issue with no resolution and no comment loses the decision trail entirely.
   `/rhdh-jira-update` applies the same rule when it closes an issue.
 
-Writes prefer `acli` for anything it supports and the authenticated host adapter
-for fields it cannot set. Reading through GraphQL does not change that order.
+Writes follow the adapter order in `/rhdh-jira-api` — the local CLI for
+anything it supports, the authenticated host adapter for the rest.
+
+> Tooling: `references/tooling.md#writes` (local mode only)
 
 ## Error handling
 
 | Error | Action |
 |---|---|
-| `issueSearchStable` returns errors | Fall back to paginated `acli` and say the beta endpoint failed. REST search is not an option. |
+| `issueSearchStable` returns errors | Fall back to the paginated local search and say the beta endpoint failed. REST search is not an option. |
 | Comment fetch fails (403) | Skip Check 4 for that issue and note "comments not accessible". |
 | GraphQL rate limit (429) | Wait 5 seconds, retry once, then report partial results. |
 | JQL returns 0 results | "No issues match. Check the JQL or the team/sprint filter." |
@@ -292,8 +294,8 @@ for fields it cannot set. Reading through GraphQL does not change that order.
 2. **Comment analysis is heuristic.** Detecting questions by looking for `?` has
    false positives — rhetorical questions, URLs with query strings. Treat it as a
    signal, not a verdict.
-3. **Team may need the host adapter.** Read `customfield_10001` through
-   `acli --fields '*all'` first.
+3. **Team may need the host adapter.** Read the Team custom field with all
+   fields requested first; fall back to the host adapter when it stays absent.
 4. **Exit criteria evolve.** They live in `/rhdh-jira-api`. If the process
    changes, that is the file to update.
 5. **Triage is automated separately.** An AI CronJob sets Component, Team, and

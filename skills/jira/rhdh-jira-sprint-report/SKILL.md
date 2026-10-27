@@ -9,13 +9,23 @@ description: >-
   "how did the sprint go", or "which demos do we owe". Looks back at work
   already done; preparing the sprint that has not started yet is a different
   job, and a single issue such as RHIDP-1234 is not a sprint.
-compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv; a Jira team ID and board ID."
+compatibility: "Authenticated read access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search and read sprints and boards. A Jira team ID and board ID. Windows, macOS, Linux."
+local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts. An agent with ADLC Jira tooling uses that instead. See references/tooling.md."
 ---
 
 # Report on an RHDH sprint
 
 Say what the sprint actually delivered, with the numbers traceable to a query.
 Read-only.
+
+## Goals, not tools
+
+Every step below states what it needs, never which tool to use. Read Jira with
+whichever tool you actually have — an ADLC tool, the authenticated host
+adapter, or, when you have the local CLIs, the commands in
+[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
+wrapping a local CLI when both are available. The report — committed,
+completed, carried over, epic progress — is the same either way.
 
 ## Route
 

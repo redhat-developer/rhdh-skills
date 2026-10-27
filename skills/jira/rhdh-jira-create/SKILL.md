@@ -10,7 +10,8 @@ description: >-
   into an RHDHBUGS defect or an RHDHPLAN feature request. Picking the issue type
   is this skill's job, not the caller's. Editing or transitioning an issue that
   already exists, such as RHIDP-1234, is not creation.
-compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv. Requires the external grilling skill — creation is blocked without it."
+compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP, including the ability to create issues, set fields, and link parents. Requires the external grilling skill — creation is blocked without it. Windows, macOS, Linux."
+local-tooling: "Optional: only for agents using the local CLI path — acli on PATH with a Jira session; Python 3.9+ and uv for the converter /rhdh-jira-api runs. An agent with ADLC Jira tooling uses that instead. See references/tooling.md."
 ---
 
 # Create RHDH Jira work
@@ -22,6 +23,15 @@ A caller who says "file this in Jira" almost never knows whether they want a
 Feature, an Epic, or a Story. Deciding that is this skill's job. Getting it wrong
 writes the wrong issue type into a public project, so the decision happens up
 front and out loud, and the user confirms it before anything is created.
+
+## Goals, not tools
+
+Every step in this skill states what it needs, never which tool to use. Create
+the issue with whichever tool you actually have for Jira — an ADLC tool, the
+authenticated host adapter, or, when you have the local CLIs, the commands in
+[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
+wrapping a local CLI when both are available. The process — which type, which
+project, which fields, which gates — is the same either way.
 
 ## Route
 
@@ -46,7 +56,7 @@ matrix, field inference, sizing, and templates. Invoke it by name.
 
 ## Every create is an external write
 
-Invoke `/mutation-gate` and follow it before any `acli` command that
+Invoke `/mutation-gate` and follow it before any operation that
 creates, links, comments, or edits. One create is rarely one operation — the
 create, the field update `create` could not carry, the parent link, and the
 comment go into the same stated set so a single approval covers them.
@@ -63,7 +73,7 @@ Never create-then-restrict. If `security` cannot be set when required, stop.
 
 - Judging whether an existing issue is ready is `/rhdh-jira-refine`.
 - Changing status, assignee, comments, or links on a known key is `/rhdh-jira-update`.
-- `acli` syntax, field IDs, the component catalog, and workflow exit criteria are
+- Field IDs, the component catalog, and the local command reference are
   `/rhdh-jira-api`.
 - Templates, the challenge matrix, sizing, duplicate detection, and decomposition
   rules are `/rhdh-jira-authoring`.

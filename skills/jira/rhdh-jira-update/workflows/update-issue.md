@@ -4,8 +4,9 @@ Detect the related issue, add a status comment summarizing the session, propose
 status transitions, and check upward through the hierarchy for parent
 transitions. On-demand — run at a natural stopping point, never proactively.
 
-Use `acli` through its native credential store. Use the authenticated host
-adapter only for what `acli` cannot do. `/rhdh-jira-api` owns both.
+Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
+and the adapter order. In local mode the exact commands are in
+[references/tooling.md](../references/tooling.md).
 
 ## Step 1 — Detect the issue
 
@@ -13,28 +14,17 @@ Check in priority order and stop at the first match:
 
 1. **Conversation context** — issue keys already mentioned (RHIDP-1234,
    RHDHPLAN-567, RHDHBUGS-890, RHDHSUPP-456).
-2. **Git branch name:**
+2. **Git branch name** — the branch often carries the issue key.
+3. **PR title or description** — the open PR for the current branch.
+4. **Recent commits** — commit subjects often reference the key.
 
-   ```bash
-   git branch --show-current 2>/dev/null | grep -oE '(RHIDP|RHDHPLAN|RHDHBUGS|RHDHSUPP)-[0-9]+'
-   ```
-
-3. **PR title or description:**
-
-   ```bash
-   gh pr view --json title,body 2>/dev/null
-   ```
-
-4. **Recent commits:**
-
-   ```bash
-   git log --oneline -10 2>/dev/null | grep -oE '(RHIDP|RHDHPLAN|RHDHBUGS|RHDHSUPP)-[0-9]+'
-   ```
+   > Tooling: `references/tooling.md#issue-detection` (local mode only) — the
+   > exact git and forge-CLI probes for steps 2–4
 
 5. **Keyword search** — extract topic keywords and search:
 
-   ```bash
-   jql: "project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND summary ~ \"KEYWORD1 KEYWORD2\" AND status != Closed AND assignee = currentUser() ORDER BY updated DESC"
+   ```jql
+   project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND summary ~ "KEYWORD1 KEYWORD2" AND status != Closed AND assignee = currentUser() ORDER BY updated DESC
    ```
 
    Present candidates: "I found these possibly related issues — which one?"
@@ -47,10 +37,9 @@ acting.
 
 ## Step 2 — Read the current state
 
-```bash
-acli jira workitem view ISSUE_KEY --json
-acli jira workitem view ISSUE_KEY --fields "*all" --json   # when custom fields matter
-```
+Read the issue with all fields when custom fields matter.
+
+> Tooling: `references/tooling.md#read` (local mode only)
 
 Note the current status; it determines which transitions exist. Note whether the
 issue has a parent — if it does not, skip Step 6 entirely.
@@ -83,9 +72,7 @@ edited body for both the preview and the write; the Jira adapter does not edit i
 
 Confirm before posting: "Proposed comment: {comment}. Post this? [y/N/edit]"
 
-```bash
-acli jira workitem comment create --key ISSUE_KEY --body "comment text"
-```
+> Tooling: `references/tooling.md#comment` (local mode only)
 
 ## Step 4 — Propose a transition
 
@@ -113,25 +100,21 @@ In Progress moves the parent Epic to In Progress, and an Epic moving moves the
 parent Feature. Fetch the parent's current status before suggesting anything for
 it — the transition may already have happened. `/rhdh-jira-api` lists the rules.
 
-Confirm, then apply:
+Confirm, then apply the transition.
 
-```bash
-acli jira workitem transition --key ISSUE_KEY --status "TARGET" --yes
-```
+> Tooling: `references/tooling.md#transition` (local mode only)
 
 If no transition applies, skip this step silently.
 
 ## Step 5 — Propose links
 
-If the session revealed dependencies not yet tracked, offer them:
+If the session revealed dependencies not yet tracked, offer an issue link.
 
-```bash
-acli jira workitem link create --out ISSUE_KEY --in TARGET_KEY --type "Blocks" --yes
-```
+> Tooling: `references/tooling.md#link` (local mode only)
 
 An **external URL** — a pull request, a design document, a support case — is not
-an issue link. It is a *remote link*, and `acli` cannot create one. Use the
-remote-link operation in `/rhdh-jira-api`, which takes the issue key plus a URL
+an issue link. It is a *remote link*. Use the remote-link operation in
+`/rhdh-jira-api`, which takes the issue key plus a URL
 and a title. A second link with the same URL replaces the first rather than
 duplicating it.
 
@@ -144,8 +127,8 @@ One level at a time, each confirmed separately.
 
 **Parent Epic.** Query the siblings:
 
-```bash
-jql: "parent = {epic_key}"
+```jql
+parent = {epic_key}
 ```
 
 If every sibling is terminal for its type — Closed for Stories and Tasks, Closed
@@ -155,8 +138,8 @@ comment recording why.
 
 **Parent Feature.** If the Epic transitioned, query its siblings:
 
-```bash
-jql: "parent = {feature_key} AND issuetype = Epic"
+```jql
+parent = {feature_key} AND issuetype = Epic
 ```
 
 If every sibling Epic is in Release Pending or Closed — Dev Complete is not
@@ -170,8 +153,7 @@ Pending." Transitioning a Feature is the Feature Owner's call.
 | Error | Action |
 |---|---|
 | No issue detected | Offer keyword search; then offer `/rhdh-jira-create` |
-| `git` unavailable | Skip git detection; continue with context and keyword search |
-| `gh` unavailable | Skip PR detection |
+| Local repository context unavailable | Skip branch, commit, and PR detection; continue with context and keyword search |
 | Issue already Closed | "This is already Closed. Open a new issue, or reopen it?" |
 | Transition rejected | Report which exit criteria are unmet |
 | Comment failed | Report it. Issue state is unchanged. |

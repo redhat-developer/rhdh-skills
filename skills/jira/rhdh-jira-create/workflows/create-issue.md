@@ -10,8 +10,8 @@ Invoke `grilling` by name. If it is unavailable, stop here and follow the hard
 gate in SKILL.md.
 
 Load `/rhdh-jira-authoring` for the challenge matrix, sizing scales, and
-templates. Load `/rhdh-jira-api` for field IDs, the component catalog, and `acli`
-syntax. Do not read either skill's files by path.
+templates. Load `/rhdh-jira-api` for field IDs, the component catalog, and the
+local command reference. Do not read either skill's files by path.
 
 ## Step 1 — Decide the type and project
 
@@ -70,9 +70,11 @@ Two entry modes, and they change how much you ask:
 
 Before drafting an Epic under a parent Feature, list what is already there:
 
-```bash
-jql: "parent = FEATURE-KEY AND issuetype = Epic AND status != Closed"
+```jql
+parent = FEATURE-KEY AND issuetype = Epic AND status != Closed
 ```
+
+> Tooling: `references/tooling.md#search` (local mode only)
 
 Present the siblings with summaries and sizes, then ask which the new Epic
 relates to and whether it overlaps any. Carry that list into the interview — the
@@ -206,29 +208,19 @@ rules but does not edit this caller's draft. Preserve template headings, field
 values, acceptance-criteria checkboxes, and customer-identity restrictions.
 
 Render the filled template and the inferred fields as a temporary markdown file
-and hand it to the user. Use a portable temp path (`$TMPDIR`, `%TEMP%`, or Python
-`tempfile`):
+in a portable temp location (`$TMPDIR`, `%TEMP%`, or Python `tempfile`) and hand
+it to the user.
 
-```bash
-REVIEW=$(mktemp "${TMPDIR:-/tmp}/jira-review.XXXXXX.md")  # Windows: %TEMP% or tempfile
-cat > "$REVIEW" << 'EOF'
-## {Type}: {summary}
+> Tooling: `references/tooling.md#review-file` (local mode only) — the exact
+> shell mechanics for creating and filling the file
 
-### Description
-{filled template content}
-
-### Fields
-- **Project**: {project}
-- **Priority**: {value} — {rationale}
-- **Team**: {value}
-- **Size / Story Points**: {value} — {rationale}
-- **Component**: {value}
-- **Assignee**: {value}
-- **Labels**: {values}
-- **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-api`)
-- **Security Level**: {value or public} — when private, must be on the create payload (see `/rhdh-jira-api`)
-EOF
-```
+The file shows, in this order: a `## {Type}: {summary}` heading; a
+`### Description` section with the filled template content; and a
+`### Fields` section listing every inferred field — Project, Priority (with
+rationale), Team, Size / Story Points (with rationale), Component, Assignee,
+Labels, Affects Version (RHDHBUGS Bugs only; required at create — see
+`/rhdh-jira-api`), and Security Level (or public; when private, it must be on
+the create payload — see `/rhdh-jira-api`).
 
 Present it: "Review before creating. Edit the file or tell me what to change.
 [approve / edit / cancel]"
@@ -242,9 +234,11 @@ issue instead?"
 
 **For a Feature, also look for the Feature Request it may satisfy:**
 
-```bash
-jql: "project = RHDHPLAN AND issuetype = 'Feature Request' AND status = Accepted AND summary ~ \"KEYWORD1 KEYWORD2\""
+```jql
+project = RHDHPLAN AND issuetype = 'Feature Request' AND status = Accepted AND summary ~ "KEYWORD1 KEYWORD2"
 ```
+
+> Tooling: `references/tooling.md#search` (local mode only)
 
 If one matches, offer to add a `Related` link after creation.
 
@@ -260,88 +254,23 @@ renders raw wiki markup and Markdown as literal characters when stuffed into ADF
 text nodes, so an unconverted description ships broken. Always use that helper —
 do not hand-split Markdown or wiki into ADF paragraphs, and do not reach into
 `/rhdh-jira-api`'s directory for the script; invoke the skill so it runs the
-converter. When creating through the Atlassian MCP instead of `acli`, pass
-`contentFormat: markdown` and skip the wiki→ADF step.
+converter. An ADLC tool that accepts a markdown description directly needs no
+conversion.
 
-`create` does **not** accept `--priority`, `--component`, `--yes`,
-`--version` / Affects Version, or `--security` flags; passing unknown flags
-fails. For most **public** types, create with `--description-file` (ADF from
-`/rhdh-jira-api`), then set the rest.
+The create operation carries only what must exist at birth. Everything else is
+set afterwards, in one update through the authenticated adapter:
 
-**Exception — RHDHBUGS Bug:** Affects Version must be on the create call. Use a
-single `--from-json` file that embeds both `versions` and the ADF `description`
-— do **not** also pass `--description-file` on that create. Scaffold with
-`acli jira workitem create --generate-json`, or create through the Atlassian MCP
-with Affects Version / `versions` set.
+- **Affects Version (RHDHBUGS Bug)** — required on the create itself.
+- **Security Level (private issue)** — on the create itself, never
+  create-then-restrict. On RHDHBUGS include Affects Version in the same create.
+  If `security` cannot be set when required, stop. Verify it on the read-back —
+  default reads omit `security`. RHDHSUPP: level optional. Details:
+  `/rhdh-jira-api` (`fields.md` — Private issues).
 
-**Exception — private issue (RHIDP / RHDHPLAN / RHDHBUGS):** put `security` on
-the create call — `acli --from-json` (`additionalAttributes.security`) or MCP
-`createJiraIssue` (`additional_fields.security`). On RHDHBUGS include `versions`
-in the same create. Never create-then-restrict. If `security` cannot be set when
-required, stop. Verify with `view KEY --fields '*all' --json` or MCP
-`getJiraIssue` requesting `security` (defaults omit it). RHDHSUPP: level
-optional. Details: `/rhdh-jira-api` (`fields.md` — Private issues).
-
-```bash
-# Feature
-acli jira workitem create --project RHDHPLAN --type Feature \
-  --summary "Feature summary" --description-file "$ISSUE_ADF" \
-  --assignee "ACCOUNT_ID" --label "rhdh-2.1-candidate"
-
-# Epic
-acli jira workitem create --project RHIDP --type Epic \
-  --summary "Epic summary" --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
-
-# Story
-acli jira workitem create --project RHIDP --type Story \
-  --summary "Story summary" --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
-
-# Bug — Affects Version + ADF description inside one JSON file
-acli jira workitem create --from-json "$BUG_CREATE_JSON"
-
-# Private issue — security on create (never create-then-restrict)
-acli jira workitem create --from-json "$PRIVATE_CREATE_JSON"
-
-# Spike
-acli jira workitem create --project RHIDP --type Task \
-  --summary "SPIKE: Research multi-source catalog merging" \
-  --description-file "$ISSUE_ADF" --assignee "ACCOUNT_ID"
-```
-
-Minimal RHDHBUGS Bug `--from-json` shape (ADF `description` from
-`/rhdh-jira-api` wiki→ADF conversion; start from `--generate-json` if unsure):
-
-```json
-{
-  "projectKey": "RHDHBUGS",
-  "type": "Bug",
-  "summary": "Bug summary",
-  "description": { "type": "doc", "version": 1, "content": [] },
-  "additionalAttributes": {
-    "versions": [{ "name": "1.10.0" }],
-    "components": [{ "name": "Actions" }]
-  }
-}
-```
-
-Minimal private-create `--from-json` shape (same ADF rules; usual level
-`"Red Hat Employee"`):
-
-```json
-{
-  "projectKey": "RHIDP",
-  "type": "Story",
-  "summary": "Private summary",
-  "description": { "type": "doc", "version": 1, "content": [] },
-  "additionalAttributes": {
-    "security": { "name": "Red Hat Employee" }
-  }
-}
-```
-
-Then set the fields `create` could not, in one update through the authenticated
-host adapter — **except Security Level on a private issue, which is not a
-post-create field.** Show the payload for approval alongside the create command:
+Show the payload for approval alongside the create. Then set the fields the
+create could not carry, in one update through the authenticated host adapter —
+**except Security Level on a private issue, which is not a post-create field.**
+For example:
 
 ```json
 {
@@ -370,8 +299,12 @@ for a cross-project parent:
 {"fields": {"customfield_10018": "RHDHPLAN-XXX"}}
 ```
 
-Team is one of the fields `acli` cannot set at all. Follow the adapter order and
-the Team payload in `/rhdh-jira-api`.
+Team is one of the fields not every adapter can set. Follow the adapter order
+and the Team payload in `/rhdh-jira-api`.
+
+> Tooling: `references/tooling.md#create` (local mode only) — the exact create
+> command per issue type, the single-file payload shapes for RHDHBUGS Bugs and
+> private issues, and the post-create update command.
 
 ## Step 9 — Comments
 
@@ -383,9 +316,7 @@ After choosing the comment set, invoke `/prose-editing` once on the complete set
 of proposed comment bodies in the **flavored** register. Use those edited bodies
 for the preview and write gate; the Jira adapter must not edit them again.
 
-```bash
-acli jira workitem comment create --key RHIDP-XXX --body "comment text"
-```
+> Tooling: `references/tooling.md#comment` (local mode only)
 
 Customer-identifying detail goes only in a restricted-visibility comment, and
 only when the project supports security levels.
@@ -449,7 +380,7 @@ The user merges, drops, or approves before any Epic is created.
 |---|---|
 | Target project inaccessible | Stop. The user lacks project access. |
 | Type inference ambiguous | Ask the user directly. Do not guess a hierarchy level. |
-| `acli create` fails | Retry via `/rhdh-jira-api` adapter; re-approve if the payload changes. Private retries must still carry `security` — never fall back to a public create. |
+| The create call fails | Retry via `/rhdh-jira-api` adapter; re-approve if the payload changes. Private retries must still carry `security` — never fall back to a public create. |
 | Private create cannot set `security` | Stop. Do not create-then-restrict. |
 | Private create OK but `security` null on read-back | Report failure; do not add sensitive content. Remediate only with user approval. |
 | Field update after create fails | Report it. The issue exists — say which fields are unset. |

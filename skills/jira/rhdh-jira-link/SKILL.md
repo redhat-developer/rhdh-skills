@@ -10,105 +10,56 @@ description: >-
   Web links merged", "mark closed PRs", replacing a hand-rolled remotelink or
   comment step, or a PR outside the rhdh-plugins and community-plugins monorepo
   flow. The full monorepo flow — build, changeset, recordings — is rhdh-pr-create.
-compatibility: "Node on PATH; gh for GitHub and glab for GitLab; a Jira API token via JIRA_API_TOKEN or the .jira-token file acli uses."
+compatibility: "Access to raise a PR or MR on the target GitHub or GitLab repository; write access to RHDH Jira (RHIDP, RHDHPLAN, RHDHBUGS, RHDHSUPP) for web links, comments, field edits, and project moves. Windows, macOS, Linux."
+local-tooling: "Optional: only for agents using the local CLI path — Node on PATH; gh for GitHub and glab for GitLab; a Jira API token via JIRA_API_TOKEN or the .jira-token file. An agent with ADLC forge and Jira tooling uses that instead. See references/tooling.md."
 ---
 
 # Jira PR / MR links
 
-Zero-token Node scripts for **GitHub and GitLab**: create the PR/MR, attach a
-Jira remote Web link, post or update a structured comment, and optionally fill
-empty issue fields.
+The protocol for tying a GitHub pull request or GitLab merge request to an RHDH
+Jira issue: raise the PR/MR when one does not exist, attach the Jira remote Web
+link, post or update the structured comment, optionally fill empty issue
+fields, and mark Web links merged or closed later.
 
-Scripts live under this skill's `scripts/` directory. Resolve that path from the
-installed skill root (agents already have it when reading this file):
+## Goals, not tools
 
-```bash
-SKILL="$(cd "$(dirname "$0")" && pwd)"   # or the absolute path to this skill root
-node "$SKILL/scripts/create-pr-mr.js" …
-node "$SKILL/scripts/link-pr-mr.js" …
-```
+Every step below states what it needs, never which tool to use. Raise the PR/MR
+and write to Jira with whichever tools you actually have — ADLC tools, or, when
+you have the local CLIs and scripts, the commands in
+[references/tooling.md](references/tooling.md). Prefer an ADLC tool over
+wrapping a local CLI when both are available. The protocol — which link, which
+title, which comment shape — is the same either way.
 
-Another skill that needs the link step invokes `/rhdh-jira-link` by name and
-lets this skill run its own scripts; it never calls into this directory by path.
+## Raise the PR/MR first
 
-## Preferred: one-shot create (`create-pr-mr.js`)
-
-After the feature branch is committed:
+When no PR/MR exists yet, the order is: commit on a feature branch, push, then
+create the PR/MR, then link. The push must happen before the create; the Jira
+link happens after and must not fail silently — missing Jira authentication is
+an error in the link step, not a reason to skip it.
 
 Compose the reviewer-facing PR or MR title and body, then invoke
 `/prose-editing` once on both in the **flavored** register. Preserve Jira keys,
 closing syntax, headings, checklists, links, and the required `Generated-by`
-line. Pass the edited strings to `create-pr-mr.js`; it is a transport layer and
-must not edit them. The structured Jira link comment created later is a protocol
-payload and does not receive this prose pass.
+line. The transport that posts them must not edit them further. The structured
+Jira link comment created later is a protocol payload and does not receive this
+prose pass.
 
-```bash
-node "$SKILL/scripts/create-pr-mr.js" \
-  --issue RHIDP-12345 \
-  --title 'fix: short summary' \
-  --target main \
-  --body "$(cat <<'EOF'
-## Summary
-- …
+The body carries the Jira browse URL (`Ref: https://…/browse/KEY`) and a
+`Generated-by:` line when missing. Skip the `Ref:` line for
+`community-plugins` remotes so that repo stays free of Jira browse URLs in git
+history and PR text.
 
-## Test plan
-- [ ] …
+## The link step
 
-Generated-by: cursor
-EOF
-)"
-```
+Given an existing PR/MR URL and the Jira key:
 
-1. `git push -u origin HEAD` (unless `--no-push`)
-2. Detects GitHub vs GitLab from `origin`
-3. Runs `gh pr create` or `glab mr create`
-4. Runs `link-pr-mr.js link` (unless `--no-link`). Missing Jira auth is an
-   error; pass `--no-link` to skip linking.
-5. Opens the diffs page (unless `--no-open`)
-
-Flags: `--draft`, `--no-push`, `--no-link`, `--no-open`, `--no-defaults`,
-`--no-comment`, `--no-jira-ref`, `--host github|gitlab`.
-
-### Auth
-
-Either works (same token either way):
-
-1. `JIRA_API_TOKEN` + `login`/`server` in `~/.config/.jira/.config.yml`, or
-2. `.jira-token` (`email:token`) next to `acli` — the same credential
-   `/rhdh-jira-api` uses. Invoke `/rhdh-jira-api` by name for the authoritative auth
-   setup instead of duplicating it here.
-
-`create-pr-mr.js` appends `Ref: https://redhat.atlassian.net/browse/KEY` and
-`Generated-by: cursor` to the **PR/MR body** when missing. It skips the Jira
-`Ref:` line for `community-plugins` remotes (or when `--no-jira-ref` is set) so
-that repo stays free of Jira browse URLs in git history / PR text.
-
-## Link-only: `link-pr-mr.js`
-
-When a PR/MR already exists:
-
-```bash
-node "$SKILL/scripts/link-pr-mr.js" link \
-  --issue RHIDP-12345 \
-  --url 'https://gitlab.cee.redhat.com/rhidp/example/-/merge_requests/817' \
-  --title 'example #817: fix: short summary' \
-  --host gitlab
-```
-
-- `--host` optional; inferred from URL when omitted.
-- `--no-defaults` skips In Progress + metadata fills (Web link + comment still run).
-- `--no-comment` skips the Jira comment.
-- If a comment already mentions the PR/MR URL, it is **updated** in place
-  (comments are paginated).
-
-### RHDHPLAN → RHIDP auto-move
-
-If the linked issue is an **Epic**, **Story**, or **Task** in **RHDHPLAN**,
-`link` moves it to **RHIDP** (same issue type) via the Jira bulk-move API, then
-continues Web link / defaults / comment on the **new** key. Features and other
-RHDHPLAN types are left alone.
-
-Stdout includes `move: …` and the post-move `issue:` key.
+1. Attach the Jira remote Web link titled `repo #N: <title>` — short repo
+   name, PR/MR number, full title. A second link with the same URL replaces
+   the first rather than duplicating it.
+2. Post the structured comment; if a comment already mentions the PR/MR URL,
+   update it in place instead of posting a new one (comments are paginated —
+   check before claiming absence).
+3. Optionally fill empty issue fields (see Defaults below).
 
 Comment shape (only **newly set** fields; omit `kept` values):
 
@@ -130,73 +81,41 @@ Adjusted fields:
 * Status: In Progress
 ```
 
-The Web link title remains `repo #N: <title>` (unchanged).
+## RHDHPLAN → RHIDP auto-move
 
-### Mark merged / closed
+If the linked issue is an **Epic**, **Story**, or **Task** in **RHDHPLAN**,
+the link step moves it to **RHIDP** (same issue type) via the Jira bulk-move
+API, then continues Web link / defaults / comment on the **new** key. Features
+and other RHDHPLAN types are left alone. Report the post-move key — the caller
+must use it, not the original one.
 
-```bash
-node "$SKILL/scripts/link-pr-mr.js" mark-merged --issue RHIDP-12345
-```
+## Defaults the link step applies (only if empty)
 
-Prefixes Web link titles with `[x] merged: ` when the PR/MR is merged, or
-`[!] closed: ` when it is closed without merging. Does not re-apply
-defaults/comment. Stdout lists each title **and** its PR/MR URL (indented under
-the title). Open PRs/MRs stay in `leftOpen` with no prefix.
+When defaults are enabled, empty fields are filled: assignee, team, board,
+story points, priority, and status. Status becomes **In Progress** unless the
+issue is already In Progress / Review / Closed. There are no built-in
+team/assignee values — the values come from configuration the operator sets.
+Team and sprint can be skipped together while the other defaults still apply.
+Missing values are an error only when applying defaults; the Web link and
+comment still succeed with defaults disabled.
 
-`mark-merged` checks status via `gh` / `glab`. Failed checks print a
-`warn:` line and leave the link in `leftOpen` (do not treat a failed check as
-closed). For GitLab remotelinks it passes `--hostname` from the URL
-(e.g. `gitlab.cee.redhat.com`), so CEE MRs resolve against the right host.
-Prefer `glab` default `host: gitlab.cee.redhat.com` in
-`~/.config/glab-cli/config.yml` for day-to-day CEE work.
+> Tooling: `references/tooling.md#defaults` (local mode only) — configuration
+> file locations, accepted keys, and precedence.
 
-When summarizing to the user, use markdown links (`[<title>](<url>)`).
+## Mark merged / closed
 
-## Title format (for `link --title`)
+Given an issue key, check each of its Web links against the forge. Prefix the
+titles with `[x] merged:` when the PR/MR is merged, or `[!] closed:` when it
+is closed without merging. Do not re-apply defaults or comment. Report each
+title **and** its PR/MR URL; open PRs/MRs stay unprefixed. A failed status
+check leaves the link unprefixed — never treat a failed check as closed.
+
+Title formats:
 
 ```
 <repo-short-name> #<id>: <full PR/MR title>
-```
-
-Merged: `[x] merged: <repo-short-name> #<id>: <full PR/MR title>`
-Closed (not merged): `[!] closed: <repo-short-name> #<id>: <full PR/MR title>`
-
-## Defaults `link` applies (only if empty)
-
-**No built-in team/assignee values.** First run with defaults enabled requires a
-config file (or env/CLI). Missing keys error **when applying defaults**; the Web
-link and comment still succeed with `--no-defaults`.
-
-```bash
-mkdir -p ~/.config/rhdh-jira-link
-cp "$SKILL/config.example.json" ~/.config/rhdh-jira-link/config.json
-# edit assigneeEmail, teamId, teamName, boardId, …
-```
-
-Also accepted: `$JIRA_PR_MR_CONFIG` or `$SKILL/config.local.json`
-(keep personal email out of the repo).
-
-Precedence: **CLI > env > config file > Jira CLI hints** (`login` / `board.id`
-from `~/.config/.jira/.config.yml` may fill assignee/board only).
-
-| Field | Required when applying defaults |
-|-------|----------------------------------|
-| `assigneeEmail` | yes (or Jira `login` email) |
-| `teamId` / `teamName` | yes, or set either to `NONE` to skip team **and** sprint |
-| `boardId` | yes (or jira CLI `board.id`), unless team/sprint skipped via `NONE` |
-| `storyPoints` | yes |
-| `priorityName` | yes (only fills when priority is empty) |
-| `storyPointsField` | yes |
-| `teamField` / `sprintField` | yes, unless team/sprint skipped via `NONE` |
-| Status | → **In Progress** unless already In Progress / Review / Closed |
-
-Skip all defaults: `--no-defaults` or `JIRA_PR_MR_APPLY_DEFAULTS=0`.
-
-Skip only team + sprint (still set points / assignee / priority / In Progress):
-
-```json
-"teamName": "NONE",
-"teamId": "NONE"
+[x] merged: <repo-short-name> #<id>: <full PR/MR title>
+[!] closed: <repo-short-name> #<id>: <full PR/MR title>
 ```
 
 ## Relationship to `/rhdh-pr-create`
@@ -207,30 +126,30 @@ comment (and optional defaults) for any repo. Invoke it by name; do not read or
 run its files.
 
 Once `/rhdh-pr-create` has created a PR, it hands the URL and title back and
-this skill runs the link step with `--no-defaults`, leaving `/rhdh-pr-create`
+this skill runs the link step with defaults disabled, leaving `/rhdh-pr-create`
 free to transition the issue to **Review** (see
 [references/raise-pr-integration.md](references/raise-pr-integration.md)).
 
 ## Agent checklist
 
-1. Resolve Jira key. Ask if missing (unless user skipped Jira).
-2. Commit on a feature branch. Put the Jira browse URL and `Generated-by: cursor`
-   in the **PR/MR body** (`create-pr-mr.js` appends them when missing; skips
-   `Ref:` for community-plugins).
-3. Run **`create-pr-mr.js`** once. Report `url:` / `diffs:` / `browserOpened:` /
-   `jiraLink:` from its stdout (`browserOpened: true` or `--no-open` means the
-   open step is already done).
-4. Fallback: raw create → run `link-pr-mr.js`, then open diffs yourself once.
-5. For mark-merged: `link-pr-mr.js mark-merged --issue KEY`. Report merged,
-   closed, and still-open Web links.
-6. In user-facing summaries, link PR/MRs as `[<title>](<url>)`.
+1. Resolve the Jira key. Ask if missing (unless the user skipped Jira).
+2. Commit on a feature branch and push. Put the Jira browse URL and
+   `Generated-by:` line in the PR/MR body.
+3. Raise the PR/MR (when it does not exist), then run the link step. Report
+   the PR/MR URL, the diffs page, and the resulting Jira link.
+4. For mark-merged: report merged, closed, and still-open Web links, each with
+   its PR/MR URL.
+5. In user-facing summaries, link PR/MRs as `[<title>](<url>)`.
+
+> Tooling: `references/tooling.md` (local mode only) — the exact raise, link,
+> mark-merged, and defaults commands.
 
 ## Every run here is an external write
 
 Creating a PR/MR, writing a Jira Web link, posting a comment, moving an issue to
 another project, and filling default fields all change something outside the
-session. Invoke `/mutation-gate` and follow it before the first command:
-one script invocation can perform several of these at once, so state them as one
+session. Invoke `/mutation-gate` and follow it before the first operation:
+one pass can perform several of these at once, so state them as one
 set — push, create, link, comment, defaults — and get a single approval covering
 all of them.
 
@@ -239,7 +158,7 @@ all of them.
 Complete when the answer names the PR/MR URL and diffs link, the Jira key it was
 linked to — including the post-move key when an RHDHPLAN Epic, Story, or Task
 moved to RHIDP — the Web link title, whether the comment was posted or updated,
-which default fields were newly set, and every `warn:` line the scripts printed.
-Report the fields the script left alone as kept, never as set. A Web link that
+which default fields were newly set, and every warning the tooling printed.
+Report the fields the pass left alone as kept, never as set. A Web link that
 succeeded followed by a defaults update that errored is a partial link, so say
 which half landed.

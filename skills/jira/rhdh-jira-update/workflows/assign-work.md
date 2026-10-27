@@ -13,7 +13,7 @@ JQL query, and an optional Jira team ID.
 
 ## Capability boundary
 
-Use paginated `acli` for issue reads. The team roster comes from the
+Issue reads go through `/rhdh-jira-api`. The team roster comes from the
 authenticated host GraphQL adapter — the `GetTeamRoster` query in
 `/rhdh-jira-api`. If that adapter is unavailable, say so, name
 `/setup-rhdh-skills atlassian-mcp`, and ask whether to continue in quick mode.
@@ -27,21 +27,21 @@ Never construct credentials or raw HTTP requests.
    account ID, and paginate past 50 members.
 2. Fetch up to 90 days of recent work per member:
 
-   ```bash
-   acli jira workitem search \
-     --jql "project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND updated >= -90d ORDER BY updated DESC" \
-     --fields "key,summary,status,issuetype,components" --limit 50 --json
+   ```jql
+   project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND updated >= -90d ORDER BY updated DESC
    ```
+
+   > Tooling: `references/tooling.md#bulk-read` (local mode only)
 
 3. Build an expertise profile: top components, issue-type counts, recurring
    domain phrases, and the share of work in the leading component.
 4. Fetch active and future sprint load:
 
-   ```bash
-   acli jira workitem search \
-     --jql "project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND sprint in (openSprints(), futureSprints()) AND status != Closed" \
-     --fields "key,summary,status,storypoints,sprint,parent,components" --paginate --json
+   ```jql
+   project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND assignee = ACCOUNT_ID AND sprint in (openSprints(), futureSprints()) AND status != Closed
    ```
+
+   > Tooling: `references/tooling.md#bulk-read` (local mode only)
 
 5. Mark a member overloaded at 10 open issues or 21 committed story points.
 6. Score context proximity: +3 per shared component, +1 per shared meaningful
@@ -67,20 +67,14 @@ metadata is missing, say the confidence is low — do not imply certainty.
 ## Apply the assignment
 
 Assignment is an external write. Invoke `/mutation-gate` and follow it, with
-one row per issue-to-person mapping, then apply:
+one row per issue-to-person mapping, then apply.
 
-```bash
-acli jira workitem assign --key RHIDP-1234 --assignee "ACCOUNT_ID" --yes
-```
+> Tooling: `references/tooling.md#assign` (local mode only)
 
-`assign` takes `--key`, not a positional issue key, and hangs on an interactive
-prompt without `--yes`. `/rhdh-jira-api` covers both, plus the flag differences
-between `assign`, `edit`, and `transition`. There is no GraphQL mutation for
-assignment — `acli` and the authenticated host adapter are the only two paths.
-
-For a batch, use the supported `--from-file` form and show the complete file
-content for approval. If `acli` cannot perform a required assignment, use the
-authenticated host adapter through `/rhdh-jira-api`; never fall back to raw HTTP.
+There is no GraphQL mutation for assignment — the local CLI and the
+authenticated host adapter are the only two paths. If the local CLI cannot
+perform a required assignment, use the authenticated host adapter through
+`/rhdh-jira-api`; never fall back to raw HTTP.
 
 Verify each assignee after execution and report successes, skips, and permission
 failures separately.
