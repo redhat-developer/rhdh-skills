@@ -4,27 +4,24 @@
     "mattpocock/skills": {
       "directory": "mattpocock-skills",
       "ref": "59db609eb1e18aaf59b63284d0e52255aff0c63c",
-      "license": "MIT"
+      "license": "MIT",
+      "skills": [
+        {
+          "name": "code-review",
+          "path": "skills/engineering/code-review",
+          "mode": "tracked"
+        },
+        {
+          "name": "grilling",
+          "path": "skills/productivity/grilling",
+          "mode": "tracked"
+        },
+        {
+          "name": "handoff",
+          "path": "skills/productivity/handoff",
+          "mode": "tracked"
+        }
+      ]
     }
-  },
-  "skills": [
-    {
-      "name": "code-review",
-      "source": "mattpocock/skills",
-      "path": "skills/engineering/code-review",
-      "mode": "tracked"
-    },
-    {
-      "name": "grilling",
-      "source": "mattpocock/skills",
-      "path": "skills/productivity/grilling",
-      "mode": "tracked"
-    },
-    {
-      "name": "handoff",
-      "source": "mattpocock/skills",
-      "path": "skills/productivity/handoff",
-      "mode": "tracked"
-    }
-  ]
+  }
 }

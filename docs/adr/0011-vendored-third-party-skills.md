@@ -26,9 +26,9 @@ category, grouped one directory per upstream source, with all provenance and
 sync policy in one registry: `skills/third-party/registry.json`.
 
 The registry's `sources` map records each upstream `owner/repo` with the
-`directory` its skills are vendored under, one pinned `ref`, and its `license`.
-Its `skills` array records each vendored skill's `name`, `source`, `path`
-inside that repository, and `mode`:
+`directory` its skills are vendored under, one pinned `ref`, its `license`,
+and the `skills` vendored from it — each with its `name`, `path` inside that
+repository, and `mode`:
 
 - `tracked` — vendored files must match the pinned ref; sync overwrites.
 - `adapted` — we forked it; sync never overwrites, drift is reported so a

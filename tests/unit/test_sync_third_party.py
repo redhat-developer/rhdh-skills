@@ -14,16 +14,19 @@ SYNC = PROJECT_ROOT / "scripts" / "sync_third_party.py"
 REGISTRY = {
     "schemaVersion": 1,
     "sources": {
-        "somebody/skills": {"directory": "somebody-skills", "ref": "abc123", "license": "MIT"},
+        "somebody/skills": {
+            "directory": "somebody-skills",
+            "ref": "abc123",
+            "license": "MIT",
+            "skills": [
+                {
+                    "name": "demo",
+                    "path": "skills/productivity/demo",
+                    "mode": "tracked",
+                }
+            ],
+        },
     },
-    "skills": [
-        {
-            "name": "demo",
-            "source": "somebody/skills",
-            "path": "skills/productivity/demo",
-            "mode": "tracked",
-        }
-    ],
 }
 
 
@@ -41,7 +44,7 @@ def sync():
 
 def write_registry(root: Path, mode: str = "tracked") -> Path:
     registry = json.loads(json.dumps(REGISTRY))
-    registry["skills"][0]["mode"] = mode
+    registry["sources"]["somebody/skills"]["skills"][0]["mode"] = mode
     registry_file = root / "registry.json"
     registry_file.write_text(json.dumps(registry, indent=2), encoding="utf-8")
     skill_dir = root / "somebody-skills" / "demo"
@@ -70,13 +73,27 @@ class TestLoadRegistry:
             }
         ]
 
-    def test_a_skill_with_no_source_metadata_is_rejected(self, sync, tmp_path):
+    def test_a_source_without_skills_is_rejected(self, sync, tmp_path):
         write_registry(tmp_path)
         registry_file = tmp_path / "registry.json"
         registry = json.loads(registry_file.read_text(encoding="utf-8"))
-        registry["skills"][0]["source"] = "someone-else/skills"
+        del registry["sources"]["somebody/skills"]["skills"]
         registry_file.write_text(json.dumps(registry), encoding="utf-8")
-        with pytest.raises(sync.SyncError, match="no sources"):
+        with pytest.raises(sync.SyncError, match="non-empty array"):
+            sync.load_registry(tmp_path)
+
+    def test_a_duplicate_name_across_sources_is_rejected(self, sync, tmp_path):
+        write_registry(tmp_path)
+        registry_file = tmp_path / "registry.json"
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+        registry["sources"]["someone-else/skills"] = {
+            "directory": "someone-else-skills",
+            "ref": "def456",
+            "license": "MIT",
+            "skills": [dict(registry["sources"]["somebody/skills"]["skills"][0])],
+        }
+        registry_file.write_text(json.dumps(registry), encoding="utf-8")
+        with pytest.raises(sync.SyncError, match="duplicate skill"):
             sync.load_registry(tmp_path)
 
     def test_a_source_without_a_directory_is_rejected(self, sync, tmp_path):
@@ -101,7 +118,9 @@ class TestLoadRegistry:
         write_registry(tmp_path)
         registry_file = tmp_path / "registry.json"
         registry = json.loads(registry_file.read_text(encoding="utf-8"))
-        registry["skills"][0]["ref"] = "per-skill refs are not allowed"
+        registry["sources"]["somebody/skills"]["skills"][0]["ref"] = (
+            "per-skill refs are not allowed"
+        )
         registry_file.write_text(json.dumps(registry), encoding="utf-8")
         with pytest.raises(sync.SyncError, match="unknown fields: ref"):
             sync.load_registry(tmp_path)

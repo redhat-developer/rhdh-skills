@@ -3,11 +3,9 @@
 
 ``skills/third-party/registry.json`` is the single metadata config for every
 vendored skill. ``sources`` maps each ``owner/repo`` to the subdirectory it is
-vendored under (``directory``), one pinned ``ref``, and its ``license`` —
-every skill from the same source is vendored at that one commit, under that
-one directory. ``skills`` lists each vendored skill: ``name`` (the vendored
-directory), ``source``, ``path`` (the skill's directory inside that
-repository), and ``mode``:
+vendored under (``directory``), one pinned ``ref``, its ``license``, and the
+``skills`` vendored from it — each with ``name`` (the vendored directory),
+``path`` inside that repository, and ``mode``:
 
 - ``tracked`` — the vendored files must match the pinned upstream ref exactly.
   ``--write`` overwrites them from upstream; ``--check`` fails on drift.
@@ -20,9 +18,10 @@ edit the source's ``ref`` in ``registry.json``, run ``--write``, review the
 diff. Bumping a source refreshes every skill vendored from it.
 
 Files this repo adds on top of upstream (harness metadata upstream does not
-ship) are preserved and never removed. The registry must list exactly the
-skill directories that exist under ``skills/third-party/``, one
-``<directory>/<name>`` pair per skill.
+ship) are preserved and never removed. The registry must list exactly the skill directories that exist under
+``skills/third-party/``, one ``<directory>/<name>`` pair per skill. Skill names
+are unique across sources: two vendors shipping the same name is a collision
+the catalog could not express.
 
     python scripts/sync_third_party.py           # report drift, exit 0
     python scripts/sync_third_party.py --check   # exit 1 on tracked drift
@@ -48,8 +47,8 @@ THIRD_PARTY_ROOT = REPO_ROOT / "skills" / "third-party"
 REGISTRY_FILE = "registry.json"
 MODES = ("tracked", "adapted")
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-SKILL_FIELDS = ("name", "source", "path", "mode")
-SOURCE_FIELDS = ("directory", "ref", "license")
+SKILL_FIELDS = ("name", "path", "mode")
+SOURCE_FIELDS = ("directory", "ref", "license", "skills")
 
 
 class SyncError(Exception):
@@ -57,7 +56,7 @@ class SyncError(Exception):
 
 
 def load_registry(root: Path) -> list[dict[str, str]]:
-    """Load the third-party skill registry and join skills with their source.
+    """Load the third-party skill registry and flatten sources into skill entries.
 
     Returns one flat entry per skill (name, source, path, directory, ref,
     license, mode). The ref lives on the source, so every skill from one
@@ -84,55 +83,50 @@ def load_registry(root: Path) -> list[dict[str, str]]:
             raise SyncError(f"{origin}: source key must be owner/repo")
         if not isinstance(meta, dict):
             raise SyncError(f"{origin}: must be an object")
-        missing = [field for field in SOURCE_FIELDS if not meta.get(field)]
+        missing = [field for field in SOURCE_FIELDS if field != "skills" and not meta.get(field)]
         if missing:
             raise SyncError(f"{origin}: missing or empty fields: {', '.join(missing)}")
-        unknown = sorted(set(meta) - set(SOURCE_FIELDS))
-        if unknown:
-            raise SyncError(f"{origin}: unknown fields: {', '.join(unknown)}")
         if not SKILL_NAME.fullmatch(meta["directory"]):
             raise SyncError(
                 f"{origin}: directory must be a single kebab-case segment, "
                 f"got {meta['directory']!r}"
             )
-
-    entries = registry.get("skills")
-    if not isinstance(entries, list) or not entries:
-        raise SyncError(f"{registry_file}: skills must be a non-empty array")
+        skills = meta.get("skills")
+        if not isinstance(skills, list) or not skills:
+            raise SyncError(f"{origin}: skills must be a non-empty array")
 
     loaded: list[dict[str, str]] = []
     seen: set[str] = set()
-    for index, entry in enumerate(entries):
-        origin = f"{registry_file} skills[{index}]"
-        if not isinstance(entry, dict):
-            raise SyncError(f"{origin}: must be an object")
-        missing = [field for field in SKILL_FIELDS if not entry.get(field)]
-        if missing:
-            raise SyncError(f"{origin}: missing or empty fields: {', '.join(missing)}")
-        unknown = sorted(set(entry) - set(SKILL_FIELDS))
-        if unknown:
-            raise SyncError(f"{origin}: unknown fields: {', '.join(unknown)}")
-        name = entry["name"]
-        if not SKILL_NAME.fullmatch(name):
-            raise SyncError(f"{origin}: name must be kebab-case, got {name!r}")
-        if name in seen:
-            raise SyncError(f"{origin}: duplicate skill {name!r}")
-        seen.add(name)
-        if entry["source"] not in sources:
-            raise SyncError(f"{origin}: source {entry['source']!r} has no sources[] metadata")
-        if entry["path"].startswith("/"):
-            raise SyncError(f"{origin}: path must be relative")
-        if entry["mode"] not in MODES:
-            raise SyncError(f"{origin}: mode must be one of {MODES}, got {entry['mode']!r}")
-        meta = sources[entry["source"]]
-        loaded.append(
-            {
-                **{field: entry[field] for field in SKILL_FIELDS},
-                "directory": meta["directory"],
-                "ref": meta["ref"],
-                "license": meta["license"],
-            }
-        )
+    for source, meta in sources.items():
+        for index, entry in enumerate(meta["skills"]):
+            origin = f"{registry_file} sources[{source!r}].skills[{index}]"
+            if not isinstance(entry, dict):
+                raise SyncError(f"{origin}: must be an object")
+            missing = [field for field in SKILL_FIELDS if not entry.get(field)]
+            if missing:
+                raise SyncError(f"{origin}: missing or empty fields: {', '.join(missing)}")
+            unknown = sorted(set(entry) - set(SKILL_FIELDS))
+            if unknown:
+                raise SyncError(f"{origin}: unknown fields: {', '.join(unknown)}")
+            name = entry["name"]
+            if not SKILL_NAME.fullmatch(name):
+                raise SyncError(f"{origin}: name must be kebab-case, got {name!r}")
+            if name in seen:
+                raise SyncError(f"{origin}: duplicate skill {name!r}")
+            seen.add(name)
+            if entry["path"].startswith("/"):
+                raise SyncError(f"{origin}: path must be relative")
+            if entry["mode"] not in MODES:
+                raise SyncError(f"{origin}: mode must be one of {MODES}, got {entry['mode']!r}")
+            loaded.append(
+                {
+                    **{field: entry[field] for field in SKILL_FIELDS},
+                    "source": source,
+                    "directory": meta["directory"],
+                    "ref": meta["ref"],
+                    "license": meta["license"],
+                }
+            )
     return loaded
 
 
