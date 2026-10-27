@@ -76,6 +76,7 @@ date nodes directly from the JSON (type `date`, timestamp in
 `attrs.timestamp`).
 
 Determine the active milestone window:
+
 - Today ≤ feature freeze → **Feature Freeze** window
 - Feature freeze < today ≤ code freeze → **Code Freeze** window
 - After code freeze → **GA** window
@@ -104,6 +105,7 @@ acli jira workitem view ISSUE_KEY --comments --json | jq '.fields.comment.commen
 ```
 
 Look for:
+
 - **Scope clarity**: Empty Epics, vague descriptions, "TBD" language
 - **Staleness**: Created >90 days ago but still in New/To Do
 - **Blockers**: Linked "blocked by" issues, comments mentioning blockers
