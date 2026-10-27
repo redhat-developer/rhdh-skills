@@ -12,8 +12,7 @@
     "release",
     "refinement",
     "reference",
-    "meta",
-    "third-party"
+    "meta"
   ],
   "skills": [
     {
@@ -21,7 +20,6 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "grilling",
         "mutation-gate",
         "prose-editing",
         "rhdh-jira-api",
@@ -140,7 +138,6 @@
       "category": "plugins",
       "invocation": "model",
       "requiresSkills": [
-        "grilling",
         "mutation-gate",
         "prose-editing",
         "rhdh-forge"
@@ -201,7 +198,6 @@
       "category": "plugins",
       "invocation": "model",
       "requiresSkills": [
-        "code-review",
         "mutation-gate",
         "prose-editing"
       ],
@@ -213,9 +209,7 @@
       "name": "rhdh-test-placement",
       "category": "plugins",
       "invocation": "model",
-      "requiresSkills": [
-        "grilling"
-      ]
+      "requiresSkills": []
     },
     {
       "name": "rhdh-backport",
@@ -517,7 +511,6 @@
       "category": "refinement",
       "invocation": "model",
       "requiresSkills": [
-        "grilling",
         "rhdh-spec-driven-schema"
       ]
     },
@@ -576,30 +569,7 @@
       "name": "skill-authoring",
       "category": "meta",
       "invocation": "model",
-      "requiresSkills": [
-        "grilling"
-      ]
-    },
-    {
-      "name": "code-review",
-      "category": "third-party",
-      "invocation": "model",
-      "requiresSkills": [],
-      "directory": "mattpocock-skills"
-    },
-    {
-      "name": "grilling",
-      "category": "third-party",
-      "invocation": "model",
-      "requiresSkills": [],
-      "directory": "mattpocock-skills"
-    },
-    {
-      "name": "handoff",
-      "category": "third-party",
-      "invocation": "human",
-      "requiresSkills": [],
-      "directory": "mattpocock-skills"
+      "requiresSkills": []
     }
   ]
 }

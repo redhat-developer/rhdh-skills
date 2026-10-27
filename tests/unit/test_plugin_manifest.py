@@ -1,7 +1,6 @@
 """The skills CLI marketplace manifest is a projection of the catalog, not a second inventory."""
 
 import importlib.util
-import json
 from pathlib import Path
 
 import pytest
@@ -47,19 +46,37 @@ def test_the_generator_can_read_its_inputs():
 def test_third_party_installs_as_one_selectable_group_per_source():
     """Each vendored source is its own installer group, not one third-party blob."""
     generator = load_generator()
-    catalog = json.loads(generator.CATALOG_PATH.read_text(encoding="utf-8"))
+    catalog = {
+        "categories": ["meta", "third-party"],
+        "skills": [
+            {"name": "alpha", "category": "meta"},
+            {
+                "name": "one",
+                "category": "third-party",
+                "directory": "vendor-one",
+            },
+            {
+                "name": "two",
+                "category": "third-party",
+                "directory": "vendor-one",
+            },
+            {
+                "name": "three",
+                "category": "third-party",
+                "directory": "vendor-two",
+            },
+        ],
+    }
+
     manifest = generator.build_manifest(catalog)
 
-    names = [plugin["name"] for plugin in manifest["plugins"]]
-    assert "third-party" not in names
-
-    mattpocock = [plugin for plugin in manifest["plugins"] if plugin["name"] == "mattpocock-skills"]
-    assert len(mattpocock) == 1
-    assert sorted(mattpocock[0]["skills"]) == [
-        "./skills/third-party/mattpocock-skills/code-review",
-        "./skills/third-party/mattpocock-skills/grilling",
-        "./skills/third-party/mattpocock-skills/handoff",
+    by_name = {plugin["name"]: plugin for plugin in manifest["plugins"]}
+    assert "third-party" not in by_name
+    assert sorted(by_name["vendor-one"]["skills"]) == [
+        "./skills/third-party/vendor-one/one",
+        "./skills/third-party/vendor-one/two",
     ]
+    assert by_name["vendor-two"]["skills"] == ["./skills/third-party/vendor-two/three"]
 
 
 def test_reference_is_not_an_installer_group():

@@ -7,16 +7,6 @@
   "description": "Projection of the promoted RHDH skill catalog for npx skills installer grouping. Not a Claude Code marketplace product. Reference skills are folded into each installable category that requires them.",
   "plugins": [
     {
-      "name": "mattpocock-skills",
-      "source": "./",
-      "description": "Third-party skills vendored from mattpocock-skills",
-      "skills": [
-        "./skills/third-party/mattpocock-skills/code-review",
-        "./skills/third-party/mattpocock-skills/grilling",
-        "./skills/third-party/mattpocock-skills/handoff"
-      ]
-    },
-    {
       "name": "meta",
       "source": "./",
       "description": "Meta skills from the RHDH pack",

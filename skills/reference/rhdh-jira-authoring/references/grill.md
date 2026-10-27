@@ -1,8 +1,8 @@
 # Grill Behavior
 
 The RHDH-specific half of an issue-creation interview. The general interview
-cadence belongs to the `grilling` skill, vendored into this pack; what is
-here is the part
+cadence belongs to the `grilling` skill, installed from `mattpocock/skills`;
+what is here is the part
 `grilling` cannot know — which challenges matter for an RHDH Feature, Epic,
 Story, Task, or Bug, and how to infer RHDH Jira fields from the conversation.
 

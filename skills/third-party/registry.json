@@ -1,27 +1,4 @@
 {
   "schemaVersion": 1,
-  "sources": {
-    "mattpocock/skills": {
-      "directory": "mattpocock-skills",
-      "ref": "59db609eb1e18aaf59b63284d0e52255aff0c63c",
-      "license": "MIT",
-      "skills": [
-        {
-          "name": "code-review",
-          "path": "skills/engineering/code-review",
-          "mode": "tracked"
-        },
-        {
-          "name": "grilling",
-          "path": "skills/productivity/grilling",
-          "mode": "tracked"
-        },
-        {
-          "name": "handoff",
-          "path": "skills/productivity/handoff",
-          "mode": "tracked"
-        }
-      ]
-    }
-  }
+  "sources": {}
 }

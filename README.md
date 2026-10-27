@@ -7,12 +7,13 @@ behind a small set of task-oriented interfaces.
 
 ## Install
 
-One command covers the complete pack, including the vendored third-party skills
-(`/grilling`, `/code-review`, `/handoff` from `mattpocock/skills`). The command
+Install the pack, then the external skills it leans on: `/grilling`,
+`/code-review`, and `/handoff` come from `mattpocock/skills`. Each command
 opens the skills wizard, which asks where to put them:
 
 ```bash
 npx skills add redhat-developer/rhdh-skills --global
+npx skills add mattpocock/skills --global
 ```
 
 Restart your agent client so it discovers them.

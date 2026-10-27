@@ -35,10 +35,10 @@ turn a case into a defect or a feature request.
 
 ## Grilling is a hard gate
 
-Creation runs its interview through `/grilling`; do not create anything
-without it. `/rhdh-jira-authoring` carries the RHDH half of the interview —
-the challenge matrix, field inference, sizing, and templates. Invoke it by
-name.
+Creation runs its interview through `/grilling`, which the user installs from
+`mattpocock/skills` alongside this pack; do not create anything without it.
+`/rhdh-jira-authoring` carries the RHDH half of the interview — the challenge
+matrix, field inference, sizing, and templates. Invoke it by name.
 
 ## Every create is an external write
 

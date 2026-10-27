@@ -131,12 +131,11 @@ def test_install_plan_fallback_installs_the_whole_pack_from_the_repo():
 
     assert result.returncode == 0, result.stderr or result.stdout
     operations = json.loads(result.stdout)["operations"]
-    # Third-party skills are vendored into the pack, so one command covers them.
     assert [operation["command"][3] for operation in operations] == [
         "redhat-developer/rhdh-skills",
     ]
     assert operations[0]["command"][4:6] == ["--skill", "*"]
-    assert {"code-review", "grilling", "handoff"}.issubset(set(operations[0]["installs"]))
+    assert "prose-editing" in operations[0]["installs"]
 
 
 def test_apply_runs_nothing_until_the_stated_plan_is_confirmed(monkeypatch):

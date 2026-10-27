@@ -21,7 +21,8 @@ Files this repo adds on top of upstream (harness metadata upstream does not
 ship) are preserved and never removed. The registry must list exactly the skill directories that exist under
 ``skills/third-party/``, one ``<directory>/<name>`` pair per skill. Skill names
 are unique across sources: two vendors shipping the same name is a collision
-the catalog could not express.
+the catalog could not express. An empty registry (no sources) is valid:
+nothing to sync, nothing on disk.
 
     python scripts/sync_third_party.py           # report drift, exit 0
     python scripts/sync_third_party.py --check   # exit 1 on tracked drift
@@ -74,8 +75,8 @@ def load_registry(root: Path) -> list[dict[str, str]]:
     if registry.get("schemaVersion") != 1:
         raise SyncError(f"{registry_file}: schemaVersion must be 1")
     sources = registry.get("sources")
-    if not isinstance(sources, dict) or not sources:
-        raise SyncError(f"{registry_file}: sources must be a non-empty object")
+    if not isinstance(sources, dict):
+        raise SyncError(f"{registry_file}: sources must be an object")
     for source, meta in sources.items():
         origin = f"{registry_file} sources[{source!r}]"
         owner, _, repo = source.partition("/")
