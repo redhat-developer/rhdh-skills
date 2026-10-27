@@ -80,20 +80,9 @@ A field you could not retrieve is reported as unretrieved, never as empty.
 This skill does not perform writes, but the payloads live here because the field
 IDs do. It hands the caller a payload, never an effect. Whichever skill owns the
 write invokes `/mutation-gate` and executes it from there. In local mode the
-caller may also receive the exact command from `references/tooling.md`.
-
-The write postconditions, binding whichever tool executes:
-
-- **Create private issues private at create** — `security` rides the create
-  payload itself, so the issue is never public even briefly; a create that
-  cannot carry it stops.
-- **Read back every write** — a create that succeeded followed by a field
-  update that silently failed is a half-created issue, reported as such.
-- **Close with a resolution and a rationale comment** — a closed issue with
-  neither loses the decision trail.
-- **Carry what create could not in one follow-up update** — priority,
-  components, size, points, and parent link go in a single update, approved
-  as one set.
+caller may also receive the exact command from `references/tooling.md`. The
+end state every write must reach — private-at-create, read-back, resolution
+with rationale on close, one follow-up update — is pinned in Completion.
 
 Credentials never appear in an argument, a preview, a log, or the answer. A
 command built here takes its credential from the authenticated adapter's own
@@ -122,3 +111,11 @@ result was truncated — a truncated result is an incomplete answer, not a
 finding. Name the adapter that produced each fact. In local mode also report
 the command. A field the API could not supply is named as unretrieved rather
 than reported as empty or carried over from an earlier query.
+
+A write is complete when the issue was read back after the change and every
+claimed field verified: a private issue was private from the moment of
+create, what create could not carry landed in one follow-up update, and a
+close carries both a resolution and a rationale comment. Name every
+operation that ran and every one that failed — a comment that posted
+followed by a transition that was rejected is a partial update, not a
+success.

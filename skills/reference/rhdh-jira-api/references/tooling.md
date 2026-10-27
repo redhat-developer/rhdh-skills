@@ -4,6 +4,23 @@
 for agents that have the local CLIs — typically an agent working in a
 repository checkout. An ADLC Jira tool may serve the same goals; the
 postconditions `SKILL.md` states bind whichever tool executes.
+
+## Environment
+
+Commands and scripts here assume tools on PATH — never assume back. This
+sidecar needs `acli` with a Jira session, Python 3.9+ with uv for the bundled
+scripts (stdlib only), and `gh`/`glab` only where a command names them. Check
+before relying on any of it:
+
+```bash
+acli jira --help
+uv run scripts/setup.py --json   # capability and auth detection
+```
+
+When a tool is missing from PATH, the command that needs it does not apply —
+say so and serve the goal with the tool you actually have. The goals and
+postconditions in `SKILL.md` are unchanged; only the commands here are
+tool-specific.
 Run the bundled scripts from this skill's directory. Stdlib only. Another skill
 invokes `/rhdh-jira-api` by name and lets this skill run them; it never reaches
 into this directory by path.

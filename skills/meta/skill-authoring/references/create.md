@@ -191,8 +191,14 @@ process and tooling separate:
   postcondition on the goal; it binds whichever tool executes.
 - **Tooling** — exact CLI commands, flags, traps, auth notes, script
   invocations — lives in one optional `references/tooling.md` sidecar, framed
-  for agents that actually have the CLIs. An ADLC tool may serve the same
-  goals; stated postconditions bind it too.
+  for agents that actually have the CLIs. A sidecar is per-skill only when
+  the skill owns its own scripts; command syntax shared across a domain
+  lives in the mechanics skill that owns it (`/rhdh-jira-api` for Jira), and
+  other skills point there by name. Whatever holds the commands opens with
+  its environment contract — what it assumes on PATH, how to check, and what
+  to do when a tool is missing — because a command reference with silent PATH
+  assumptions fails for every agent that lacks them. An ADLC tool may serve
+  the same goals; stated postconditions bind it too.
 - **Frontmatter splits accordingly**: `compatibility:` names process
   prerequisites (true in every mode); `local-tooling:` names the optional
   CLIs and says so.

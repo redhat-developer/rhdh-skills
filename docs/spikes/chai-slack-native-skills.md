@@ -1,8 +1,17 @@
 # Spike: Make skills chai-bot native (dual-mode: local + chai)
 
-Status: proposal, revision 5 after team feedback. No skill rewritten beyond
+Status: proposal, revision 6 after team feedback. No skill rewritten beyond
 the rhdh-jira-api pilot. Deliverable of the research card "Make skills more
 chai bot native".
+
+Revision 6 consolidates the tooling and names the disease underneath it:
+commands and scripts with silent assumptions about which tools are available
+on the PATH. The acli command reference now lives only in `rhdh-jira-api`'s
+sidecar, which opens with its environment contract (what it assumes on PATH,
+how to check, what to do when a tool is missing); the per-skill sidecars are
+deleted, and a skill keeps a sidecar only for its own scripts
+(`rhdh-jira-link`). Postconditions folded into Completion sections — the end
+state is where they bind.
 
 Revision 5 restores goals as the primary statement after revision 4
 over-corrected into a verb-contract apparatus restated in every skill. Skills
@@ -92,7 +101,8 @@ skill/
   SKILL.md            # process only; zero CLI names, zero script invocations
   workflows/*.md      # process steps, same rule
   references/         # process references (label priorities, fields, templates)
-  references/tooling.md   # optional: local-mode commands, keyed to process steps
+  references/tooling.md   # optional: own scripts only; shared command syntax
+                          # lives in the mechanics skill (/rhdh-jira-api)
   scripts/            # optional: exact implementations, invoked only from tooling.md
 ```
 

@@ -10,7 +10,7 @@ description: >-
   "assign RHIDP-1234". Edits existing work — it does not create issues, audit a
   backlog, or build a sprint.
 compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to read an issue with custom fields, read a team roster, and create remote (web) links. Windows, macOS, Linux."
-local-tooling: "Optional: acli on PATH with a Jira session; git and gh for issue detection; the authenticated host Atlassian adapter for web links and roster reads. See references/tooling.md."
+local-tooling: "Optional: acli on PATH with a Jira session; git and gh for issue detection; the authenticated host Atlassian adapter for web links and roster reads. The local command reference is /rhdh-jira-api."
 ---
 
 # Update RHDH Jira work
@@ -22,9 +22,8 @@ because they are the same job: a field mutation on a known key.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the optional local commands in [references/tooling.md](references/tooling.md).
-`/rhdh-jira-api` owns the JQL, the field IDs, and the postconditions that keep
-a silent failure from becoming a partial update reported as a success.
+the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
+the postconditions that keep a silent failure from becoming a partial update reported as a success.
 
 ## Route
 

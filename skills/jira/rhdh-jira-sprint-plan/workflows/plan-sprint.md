@@ -4,8 +4,7 @@ Generate a sprint planning package: carryover report, velocity trend, per-member
 capacity, ready-for-planning queue, and sprint fill suggestions.
 
 Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
-and the enrichment rules. The optional local commands are in
-[references/tooling.md](../references/tooling.md).
+and the enrichment rules. The optional local commands live behind `/rhdh-jira-api`.
 
 ## Input
 
@@ -22,7 +21,7 @@ List the board's sprints by state: the active sprint (source of carryover), the
 next sprint (planning target), and the last three closed sprints (source of
 velocity).
 
-> Tooling: `references/tooling.md#sprints`
+> > Local commands: `/rhdh-jira-api`
 
 ## Step 2 — Carryover
 
@@ -32,7 +31,7 @@ Issues in the active sprint that are not Closed or Release Pending:
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status not in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
 
-> Tooling: `references/tooling.md#bulk-read`
+> > Local commands: `/rhdh-jira-api`
 
 Flag any Epic in the sprint — only Bug, Task, and Story belong there: "RHIDP-1234
 is an Epic. Epics should be broken into Stories or Tasks, not added to sprints."
@@ -48,7 +47,7 @@ For each of the last three closed sprints, sum completed story points:
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
 
-> Tooling: `references/tooling.md#bulk-read`
+> > Local commands: `/rhdh-jira-api`
 
 Report points per sprint, the three-sprint average, and the trend — accelerating,
 stable, or decelerating.
@@ -173,4 +172,4 @@ Avg velocity {avg} SP − carryover {carry_sp} SP = **{available} SP available**
    sprint and counts toward capacity.
 4. **Team is not JQL-filterable in every context.** `/rhdh-jira-api` covers the
    `"Team[Team]"` syntax and the post-filter for cases where it fails
-   (tooling.md locally).
+   (`/rhdh-jira-api` locally).

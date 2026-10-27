@@ -5,8 +5,7 @@ breakdown, epic progress, demo checklist with naming conventions, and velocity
 trend.
 
 Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
-and the enrichment rules. The optional local commands are in
-[references/tooling.md](../references/tooling.md).
+and the enrichment rules. The optional local commands live behind `/rhdh-jira-api`.
 
 ## Input
 
@@ -20,7 +19,7 @@ and the enrichment rules. The optional local commands are in
 List the board's active and most recent closed sprints; extract sprint ID,
 name, start date, and end date.
 
-> Tooling: `references/tooling.md#sprints`
+> > Local commands: `/rhdh-jira-api`
 
 ## Step 2 — Fetch every issue in the sprint
 
@@ -28,7 +27,7 @@ name, start date, and end date.
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND "Team[Team]" = TEAM_ID
 ```
 
-> Tooling: `references/tooling.md#bulk-read`
+> > Local commands: `/rhdh-jira-api`
 
 ## Step 3 — Partition
 
@@ -90,7 +89,7 @@ Feature." That link is required at Release Pending.
 List the board's last three closed sprints, then run the completed-points query
 below per sprint.
 
-> Tooling: `references/tooling.md#sprints`
+> > Local commands: `/rhdh-jira-api`
 
 ```jql
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS)

@@ -5,8 +5,7 @@ relevance. Produces a refinement report with actionable recommendations and
 optional fixes.
 
 Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
-the enrichment rules, and the adapter order. In local mode the exact commands
-are in [references/tooling.md](../references/tooling.md).
+the enrichment rules, and the adapter order. The optional local commands live behind `/rhdh-jira-api`.
 
 ## Input
 
@@ -72,7 +71,7 @@ Run every applicable check per issue.
 Fetch with enrichment. A plain search result omits every custom field, so Story
 Points, Team, Size, and Sprint come back empty whether or not they are set.
 
-> Tooling: `references/tooling.md#bulk-read`
+> > Local commands: `/rhdh-jira-api`
 
 ### Check 1 — Missing fields against exit criteria
 
@@ -108,13 +107,13 @@ possibly-related duplicates.
 
 Query children with `parent = {key} AND status != Closed`.
 
-> Tooling: `references/tooling.md#hierarchy-lookups`
+> > Local commands: `/rhdh-jira-api`
 
 ### Check 4 — Unaddressed comments
 
 Fetch the issue's comments.
 
-> Tooling: `references/tooling.md#comments`
+> > Local commands: `/rhdh-jira-api`
 
 Flag when the most recent comment is a question from someone other than the
 assignee, when it contains an action item ("TODO", "action item", "follow up",
@@ -273,7 +272,7 @@ and the edited bodies included in the plan.
 Writes follow the adapter order in `/rhdh-jira-api` — the local CLI for
 anything it supports, the authenticated host adapter for the rest.
 
-> Tooling: `references/tooling.md#writes`
+> > Local commands: `/rhdh-jira-api`
 
 ## Error handling
 

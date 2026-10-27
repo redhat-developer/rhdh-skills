@@ -11,7 +11,7 @@ description: >-
   is this skill's job, not the caller's. Editing or transitioning an issue that
   already exists, such as RHIDP-1234, is not creation.
 compatibility: "Authenticated write access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP, including the ability to create issues, set fields, and link parents. Requires the external grilling skill — creation is blocked without it. Windows, macOS, Linux."
-local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv for the converter /rhdh-jira-api runs. See references/tooling.md."
+local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv for the converter. The local command reference is /rhdh-jira-api."
 ---
 
 # Create RHDH Jira work
@@ -28,9 +28,8 @@ front and out loud, and the user confirms it before anything is created.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the optional local commands in [references/tooling.md](references/tooling.md).
-`/rhdh-jira-api` owns the JQL, the field IDs, and the postconditions that keep
-a silent failure from becoming a half-created issue.
+the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
+the postconditions that keep a silent failure from becoming a half-created issue.
 
 ## Route
 

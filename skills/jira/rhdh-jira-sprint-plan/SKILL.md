@@ -11,7 +11,7 @@ description: >-
   sprint. Looks forward at the sprint that has not started; summarizing the one
   that just ended is a different job.
 compatibility: "Authenticated read access to redhat.atlassian.net covering RHIDP, RHDHPLAN, RHDHBUGS and RHDHSUPP; ability to run a JQL search and read sprints and boards. A Jira team ID and board ID. Windows, macOS, Linux."
-local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv for the bundled scripts. See references/tooling.md."
+local-tooling: "Optional: acli on PATH with a Jira session; Python 3.9+ and uv. The local command reference is /rhdh-jira-api."
 ---
 
 # Plan an RHDH sprint
@@ -23,9 +23,8 @@ team decides something.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the optional local commands in [references/tooling.md](references/tooling.md).
-`/rhdh-jira-api` owns the JQL, the field IDs, and the postconditions that keep
-a silent failure from becoming a wrong velocity number.
+the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
+the postconditions that keep a silent failure from becoming a wrong velocity number.
 
 ## Route
 
