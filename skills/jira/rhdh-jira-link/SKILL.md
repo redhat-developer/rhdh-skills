@@ -103,7 +103,7 @@ comment still succeed with defaults disabled.
 
 Given an issue key, check each of its Web links against the forge — the agent
 checks PR/MR state itself; no script does. Prefix the titles with
-`[x] merged: ` when the PR/MR is merged, or `[!] closed: ` when it is closed
+`[x] merged:` when the PR/MR is merged, or `[!] closed:` when it is closed
 without merging. Do not re-apply defaults or comment. Report each title
 **and** its PR/MR URL; open PRs/MRs stay unprefixed. A failed status check
 leaves the link unprefixed — never treat a failed check as closed.
