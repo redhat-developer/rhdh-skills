@@ -19,7 +19,7 @@ and the enrichment rules. The optional local commands live behind `/rhdh-jira-ap
 List the board's active and most recent closed sprints; extract sprint ID,
 name, start date, and end date.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ## Step 2 — Fetch every issue in the sprint
 
@@ -27,7 +27,7 @@ name, start date, and end date.
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND "Team[Team]" = TEAM_ID
 ```
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ## Step 3 — Partition
 
@@ -89,7 +89,7 @@ Feature." That link is required at Release Pending.
 List the board's last three closed sprints, then run the completed-points query
 below per sprint.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ```jql
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS)

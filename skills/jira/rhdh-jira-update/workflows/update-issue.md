@@ -35,7 +35,7 @@ acting.
 
 Read the issue with all fields when custom fields matter.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 Note the current status; it determines which transitions exist. Note whether the
 issue has a parent — if it does not, skip Step 6 entirely.
@@ -68,7 +68,7 @@ edited body for both the preview and the write; the Jira adapter does not edit i
 
 Confirm before posting: "Proposed comment: {comment}. Post this? [y/N/edit]"
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ## Step 4 — Propose a transition
 
@@ -98,7 +98,7 @@ it — the transition may already have happened. `/rhdh-jira-api` lists the rule
 
 Confirm, then apply the transition.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 If no transition applies, skip this step silently.
 
@@ -106,7 +106,7 @@ If no transition applies, skip this step silently.
 
 If the session revealed dependencies not yet tracked, offer an issue link.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 An **external URL** — a pull request, a design document, a support case — is not
 an issue link. It is a *remote link*. Use the remote-link operation in

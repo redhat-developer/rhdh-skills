@@ -69,7 +69,7 @@ metadata is missing, say the confidence is low — do not imply certainty.
 Assignment is an external write. Invoke `/mutation-gate` and follow it, with
 one row per issue-to-person mapping, then apply.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 There is no GraphQL mutation for assignment — the local CLI and the
 authenticated host adapter are the only two paths. If the local CLI cannot

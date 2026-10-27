@@ -21,7 +21,7 @@ List the board's sprints by state: the active sprint (source of carryover), the
 next sprint (planning target), and the last three closed sprints (source of
 velocity).
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ## Step 2 — Carryover
 
@@ -31,7 +31,7 @@ Issues in the active sprint that are not Closed or Release Pending:
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status not in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 Flag any Epic in the sprint — only Bug, Task, and Story belong there: "RHIDP-1234
 is an Epic. Epics should be broken into Stories or Tasks, not added to sprints."
@@ -47,7 +47,7 @@ For each of the last three closed sprints, sum completed story points:
 project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND sprint = SPRINT_ID AND status in (Closed, "Release Pending") AND "Team[Team]" = TEAM_ID
 ```
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 Report points per sprint, the three-sprint average, and the trend — accelerating,
 stable, or decelerating.

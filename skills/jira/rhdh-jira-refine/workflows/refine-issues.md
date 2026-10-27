@@ -71,7 +71,7 @@ Run every applicable check per issue.
 Fetch with enrichment. A plain search result omits every custom field, so Story
 Points, Team, Size, and Sprint come back empty whether or not they are set.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ### Check 1 — Missing fields against exit criteria
 
@@ -107,13 +107,13 @@ possibly-related duplicates.
 
 Query children with `parent = {key} AND status != Closed`.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ### Check 4 — Unaddressed comments
 
 Fetch the issue's comments.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 Flag when the most recent comment is a question from someone other than the
 assignee, when it contains an action item ("TODO", "action item", "follow up",
@@ -272,7 +272,7 @@ and the edited bodies included in the plan.
 Writes follow the adapter order in `/rhdh-jira-api` — the local CLI for
 anything it supports, the authenticated host adapter for the rest.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ## Error handling
 

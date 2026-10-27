@@ -53,7 +53,7 @@ the Bug template filled with real reproduction steps. Link it to the customer
 case through SFDC Cases Links, then comment on the RHDHSUPP issue with the
 RHDHBUGS key so the customer learns when the fix lands.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 ## Feature request: RHDHSUPP → RHDHPLAN
 
@@ -62,7 +62,7 @@ Request template, and a link to the customer case through SFDC Cases Links. Then
 encourage the customer to follow up with their account team so Product Management
 can prioritize it.
 
-> > Local commands: `/rhdh-jira-api`
+> Local commands: `/rhdh-jira-api`
 
 An accepted Feature Request is what a later Feature links back to — Step 7 of the
 create workflow looks for one.
