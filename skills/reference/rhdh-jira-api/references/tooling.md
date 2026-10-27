@@ -1,4 +1,25 @@
-# acli Jira Command Reference
+# Local tooling: acli Jira commands
+
+**For agents that have the local CLIs.** This reference maps every goal in
+`SKILL.md` to exact `acli` commands. Reach for it only when you actually have
+`acli` — typically an agent working in a repository checkout. An agent with
+ADLC Jira tooling should use that instead and ignore this file: an ADLC tool
+is preferred over wrapping a CLI, and the process — which query, which fields,
+which rules — is the same either way.
+
+Run the bundled scripts from this skill's directory. Stdlib only. Another skill
+invokes `/rhdh-jira-api` by name and lets this skill run them; it never reaches
+into this directory by path.
+
+| Script | Purpose |
+|---|---|
+| `scripts/setup.py` | Capability and auth detection; `--json` reports `token_file_found` / `token_file_status` without printing file contents |
+| `scripts/parse_issues.py` | Enrich, flatten, select, filter, or CSV-export `acli` JSON |
+| `scripts/greenhopper.py` | GET Greenhopper sprintreport / scopechange using the local token file in-process |
+| `scripts/validate_components.py` | Compare the documented component catalog against live Jira |
+| `scripts/jira-wiki-to-adf.py` | Convert a filled wiki-markup template to ADF JSON |
+
+Auth and capability detection: [auth.md](auth.md).
 
 Cheat sheet for `acli jira` commands. For full flag details, run `acli jira <subcommand> --help`.
 
@@ -9,6 +30,29 @@ Cheat sheet for `acli jira` commands. For full flag details, run `acli jira <sub
 3. **Use `--json`** when you need fields beyond `key`, `summary`, `status`, `assignee`, `issuetype`, `priority`, `description`. The `--fields` flag rejects `components`, `sprint`, `labels`, `fixVersions`, `storypoints`, and `parent`. Custom fields such as Story Points (`customfield_10028`) and Sprint (`customfield_10020`) are not on that allowlist — search with allowed fields, then enrich with `view --fields '*all'` or `parse_issues.py --enrich`.
 4. **Use `--csv`** for search results you want to pipe or parse.
 5. **Use `--paginate`** to fetch all results beyond the default page size.
+
+## Read traps
+
+The two process rules in `SKILL.md` — never report a truncated read as
+complete, never report an unrequested field as empty — are enforced locally by
+these flags:
+
+- **Default page size is 30 results.** Results beyond 30 are silently dropped
+  with no warning. Always pass `--limit 500` or `--paginate` for bulk queries.
+  Use `--count` first to verify the total matches before fetching.
+- **Default JSON reads omit custom fields.** Both `search --json` and
+  `view KEY --json` (without `--fields "*all"`) return only basic fields:
+  assignee, issuetype, priority, status, summary. Custom fields (story_points,
+  team, sprint, size) are NOT included. To get custom fields, you MUST either:
+
+  1. Use `view KEY --fields "*all" --json` (what `--enrich` does internally per
+     issue), or
+  2. Use `parse_issues.py --enrich` (recommended — handles batching and
+     flattening)
+
+  Without `--enrich`, custom fields appear as empty strings — making it look
+  like data isn't set when it is. This is the #1 source of false "missing data"
+  reports.
 
 ## Work Items
 
@@ -290,11 +334,5 @@ invent ADF from Markdown. When reading, `--json` returns ADF too — don't try t
 
 ## Custom Fields and `--enrich`
 
-**Critical:** Both `search --json` and `view KEY --json` (without `--fields "*all"`) return only basic fields: assignee, issuetype, priority, status, summary. Custom fields (story_points, team, sprint, size) are NOT included.
-
-To get custom fields, you MUST either:
-
-1. Use `view KEY --fields "*all" --json` (what `--enrich` does internally per issue), or
-2. Use `parse_issues.py --enrich` (recommended — handles batching and flattening)
-
-Without `--enrich`, custom fields appear as empty strings — making it look like data isn't set when it is. This is the #1 source of false "missing data" reports.
+See [Read traps](#read-traps) above — the rules and remedies are stated there
+and in `SKILL.md`; nothing in this section contradicts them.
