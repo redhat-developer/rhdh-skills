@@ -117,10 +117,17 @@ def test_repository_catalog_exposes_the_approved_composable_skill_set():
     # assert they agree rather than restating the roster here, where it only rots.
     assert set(report["promotedSkills"]) == {entry["name"] for entry in catalog["skills"]}
 
-    # These two are contracts rather than inventory: exactly three entry points are
-    # human-invoked, and the pack depends on exactly three external skills.
-    assert set(report["humanInvokedSkills"]) == {"ask-rhdh", "setup-rhdh-skills", "clean-prose"}
-    assert set(report["requiredExternalSkills"]) == {"code-review", "grilling", "handoff"}
+    # These two are contracts rather than inventory: exactly four entry points
+    # are human-invoked (three authored plus the vendored handoff), and the pack
+    # requires no external skills — the former mattpocock externals are vendored
+    # under skills/third-party/ (ADR-0011).
+    assert set(report["humanInvokedSkills"]) == {
+        "ask-rhdh",
+        "setup-rhdh-skills",
+        "clean-prose",
+        "handoff",
+    }
+    assert set(report["requiredExternalSkills"]) == set()
     assert every_promoted_skill_lives_in_a_domain_category(catalog)
 
 
@@ -162,7 +169,7 @@ def test_operator_pr_test_is_split_from_pr_review():
     assert operator.get("optionalSkills", []) == []
     assert operator.get("requiresExternalSkills", []) == []
 
-    assert "code-review" in review["requiresExternalSkills"]
+    assert "code-review" in review["requiresSkills"]
     assert "rhdh-operator-pr-test" not in review.get("requiresSkills", [])
     assert "rhdh-operator-pr-test" not in review.get("optionalSkills", [])
 

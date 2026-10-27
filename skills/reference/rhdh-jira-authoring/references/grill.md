@@ -22,8 +22,8 @@ Domain-specific challenges below stay in this skill. If the conversation already
 
 ### Grilling prerequisite
 
-The external `grilling` skill is a hard prerequisite for creating an issue. It is
-not bundled with this pack — the user installs it separately.
+The `grilling` skill is a hard prerequisite for creating an issue. It ships
+with this pack as a vendored third-party skill.
 
 If the host reports `grilling` unavailable, stop before creating anything. Say
 that `grilling` is missing, that issue creation is gated on it, and that the fix
@@ -34,7 +34,7 @@ can be invoked by name.
 Creation is the only gated path, and deliberately so. **Do not gate
 `/rhdh-jira-refine`, `/rhdh-jira-update`, `/rhdh-jira-sprint-plan`, or
 `/rhdh-jira-sprint-report` on grilling** — those read or adjust work that already
-exists, and blocking them on an optional external skill would take a whole
+exists, and blocking them on an optional skill would take a whole
 capability offline for no benefit.
 
 ## Field Inference

@@ -76,13 +76,10 @@ def test_doctor_discovers_dependencies_across_supported_host_layouts(tmp_path):
     report = json.loads(result.stdout)
     assert "contract" not in report
     assert set(report["installedSkills"]) == {"ask-rhdh", "grilling", "mutation-gate"}
-    # code-review and handoff are required but not present in this fixture, so
-    # doctor must report them rather than silently passing.
-    assert report["requiredExternalSkills"] == {
-        "code-review": "missing",
-        "grilling": "installed",
-        "handoff": "missing",
-    }
+    # The former externals (code-review, grilling, handoff) are vendored into
+    # the pack, so nothing is required from outside it anymore; grilling in
+    # this fixture counts as an installed pack skill.
+    assert report["requiredExternalSkills"] == {}
     assert report["capabilities"]["tools"]["oc"] == "not-probed"
     assert report["capabilities"]["tools"]["gog"] == "not-probed"
     assert "setup-rhdh-skills" in report["missingSkills"]
@@ -127,7 +124,7 @@ def test_install_plan_uses_one_pack_command_for_the_whole_collection():
     assert operation["onFailure"].strip()
 
 
-def test_install_plan_fallback_includes_the_repo_and_the_external_source():
+def test_install_plan_fallback_installs_the_whole_pack_from_the_repo():
     result = run_setup(
         "install-plan",
         "--catalog",
@@ -141,14 +138,12 @@ def test_install_plan_fallback_includes_the_repo_and_the_external_source():
 
     assert result.returncode == 0, result.stderr or result.stdout
     operations = json.loads(result.stdout)["operations"]
+    # Third-party skills are vendored into the pack, so one command covers them.
     assert [operation["command"][3] for operation in operations] == [
         "redhat-developer/rhdh-skills",
-        "mattpocock/skills",
     ]
     assert operations[0]["command"][4:6] == ["--skill", "*"]
-    assert ["--skill", "code-review", "--skill", "grilling", "--skill", "handoff"] == operations[1][
-        "command"
-    ][4:10]
+    assert {"code-review", "grilling", "handoff"}.issubset(set(operations[0]["installs"]))
 
 
 def test_apply_runs_nothing_until_the_stated_plan_is_confirmed(monkeypatch):
@@ -289,7 +284,7 @@ def test_apply_executes_argument_arrays_without_a_command_shell(monkeypatch):
 def test_apply_reports_an_outcome_for_every_operation_including_skipped_ones(monkeypatch):
     setup = load_setup_module()
     plan = setup.install_plan(read_catalog(), agent="codex", scope="project", pack_url=None)
-    assert len(plan["operations"]) == 2
+    assert len(plan["operations"]) == 1
 
     monkeypatch.setattr(
         setup,
@@ -306,10 +301,8 @@ def test_apply_reports_an_outcome_for_every_operation_including_skipped_ones(mon
 
     assert returncode == 1
     assert report["valid"] is False
-    assert [outcome["order"] for outcome in report["outcomes"]] == [1, 2]
+    assert [outcome["order"] for outcome in report["outcomes"]] == [1]
     assert [outcome["status"] for outcome in report["outcomes"]] == [
         "failed",
-        "skipped",
     ]
     assert report["outcomes"][0]["stderr"] == "network unreachable"
-    assert report["outcomes"][1]["returnCode"] is None

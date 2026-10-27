@@ -1,2 +1,6 @@
 *.sh text eol=lf
 .githooks/* text eol=lf
+# Vendored third-party skills must stay byte-identical to their pinned
+# upstream ref (scripts/sync_third_party.py compares bytes); CRLF conversion
+# on checkout would read as drift.
+skills/third-party/** text eol=lf

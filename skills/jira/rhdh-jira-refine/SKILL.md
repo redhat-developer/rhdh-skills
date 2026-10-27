@@ -26,9 +26,9 @@ points in a Feature's life.
 
 ## Not gated on grilling
 
-Unlike `/rhdh-jira-create`, this skill does **not** require the external
+Unlike `/rhdh-jira-create`, this skill does **not** require the
 `grilling` skill and must not be blocked on it. Refinement reads work that
-already exists. Gating it on an optional external skill would take a whole
+already exists. Gating it on an optional skill would take a whole
 capability offline for no benefit.
 
 ## Reads by default, writes only on request

@@ -67,7 +67,8 @@ project-specific knowledge in the owning skill reference.
 ## Skill architecture
 
 Skills are grouped by domain: `skills/jira/`, `skills/plugins/`, `skills/ci/`,
-`skills/release/`, `skills/refinement/`, `skills/reference/`, `skills/meta/`.
+`skills/release/`, `skills/refinement/`, `skills/reference/`, `skills/meta/`,
+plus `skills/third-party/` for vendored upstream skills.
 Those folders are editorial and are stripped at install. Compose through `/skill-name`, never
 through sibling category paths.
 
@@ -87,10 +88,12 @@ model-invoked skill, the way `clean-prose` delegates to `prose-editing`;
 promoted skill is model-invoked and omits both flags. Every promoted skill has
 an `agents/openai.yaml` interface entry.
 
-The complete pack also requires three external skills. Creation and interview
-flows use `/grilling`; every `/rhdh-pr-review` run uses `/code-review`;
-`/handoff` carries context into a later session, which is why no artifact
-store does.
+The pack vendors three third-party skills under `skills/third-party/`, each with
+an `UPSTREAM.toml` recording its source, pinned ref, and sync mode. Creation
+and interview flows use `/grilling`; every `/rhdh-pr-review` run uses
+`/code-review`; `/handoff` carries context into a later session, which is why
+no artifact store does. Refresh them with `scripts/sync_third_party.py`
+(ADR-0011); an `adapted` skill is a deliberate fork that sync never overwrites.
 
 Keep drafts and retired skills outside the promoted discovery root:
 

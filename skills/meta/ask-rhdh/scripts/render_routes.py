@@ -77,7 +77,10 @@ def build_rows() -> list[str]:
         skill_md = REPO_ROOT / "skills" / entry["category"] / name / "SKILL.md"
         if not skill_md.is_file():
             raise FileNotFoundError(f"catalog names {name} but {skill_md} is missing")
-        description = read_description(skill_md).replace("|", "\\|")
+        # Escape pipes (table cell separators) and asterisks (markdownlint's
+        # MD037 reads `release-* ... task-*` as spaced emphasis and its --fix
+        # hook would rewrite the generated table away from the catalog).
+        description = read_description(skill_md).replace("|", "\\|").replace("*", "\\*")
         rows.append(f"| {description} | `/{name}` |")
     return rows
 

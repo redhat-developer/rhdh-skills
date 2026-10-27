@@ -15,7 +15,16 @@ from pathlib import Path
 from typing import Any
 
 CATALOG_PATH = Path("skills/meta/setup-rhdh-skills/assets/catalog.json")
-PROMOTED_CATEGORIES = ("jira", "plugins", "ci", "release", "refinement", "reference", "meta")
+PROMOTED_CATEGORIES = (
+    "jira",
+    "plugins",
+    "ci",
+    "release",
+    "refinement",
+    "reference",
+    "meta",
+    "third-party",
+)
 # A cited skill, as `/name`. It must follow a space, a line start, or an opening
 # bracket or backtick, never another path segment, so `~/rhdh-local-setup` and
 # `redhat-developer/rhdh-plugin-catalog` stay paths. Matching only the rhdh-
@@ -29,7 +38,15 @@ NAMED_INVOCATION = re.compile(
     r"""(?:^|(?<=[\s(\[`'"]))/([a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])(?![/.])""",
     re.MULTILINE,
 )
-EXTERNAL_SKILLS = {"code-review", "grilling", "handoff"}
+# Vendored third-party skills (ADR-0011) are exempt from authoring rules that
+# would require editing upstream SKILL.md prose. Names, descriptions, harness
+# metadata, and invocation flags still apply.
+THIRD_PARTY_CATEGORY = "third-party"
+# Skills required from outside this pack. Empty today: the former externals
+# (code-review, grilling, handoff from mattpocock/skills) are vendored under
+# skills/third-party/ with UPSTREAM.toml provenance. A future external
+# dependency lands here and in pack.requiredExternalSkills.
+EXTERNAL_SKILLS: set[str] = set()
 RETIRED_SKILLS = {"humanizer"}
 # A bundled script reading a file that ships *with it*, such as
 # `_DATA_DIR / "jql-release.md"`. Anchored to the handful of names that mean
@@ -521,6 +538,10 @@ def validate_repository(root: Path) -> dict[str, Any]:
             # so restating one here would put the same rule in two places. What it
             # owes instead is that the delegate exists and can be reached.
             wrapper_delegations[name] = (delegates_to, skill_file)
+        elif category == THIRD_PARTY_CATEGORY:
+            # Vendored skill: upstream's authoring standard governs its SKILL.md,
+            # and editing it would break tracked-mode sync (ADR-0011).
+            pass
         elif not re.search(r"(?m)^##\s+Completion\s*$", body):
             errors.append(
                 {

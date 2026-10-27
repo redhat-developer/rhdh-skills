@@ -52,8 +52,9 @@ removed as "leftover marketplace" scaffolding.
 
 ## Consequences
 
-- `npx skills add redhat-developer/rhdh-skills` shows six collapsible groups
-  (Jira, Plugins, CI, Release, Refinement, Meta). Selecting a group lists that
+- `npx skills add redhat-developer/rhdh-skills` shows collapsible groups
+  (Jira, Plugins, CI, Release, Refinement, Meta, and the Third-party group
+  added by ADR-0011). Selecting a group lists that
   domain's skills plus the reference skills they require.
 - The `reference/` folder and catalog category remain for authors and
   validators; they are not an installer group.
