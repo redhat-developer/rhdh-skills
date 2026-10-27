@@ -84,7 +84,7 @@ def _adf_to_text(issue):
 # missing data instead of an error. `_sprint_name` above carries one too
 # (customfield_10020).
 #
-# Authoritative table:  skills/reference/rhdh-jira-api/references/fields.md
+# Authoritative table:  skills/reference/rhdh-jira-context/references/fields.md
 # Check a copy against live Jira:
 #     acli jira workitem view RHIDP-1 --fields '*all' --json
 #

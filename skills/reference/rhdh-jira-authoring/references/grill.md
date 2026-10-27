@@ -9,7 +9,7 @@ Load this alongside the caller's type-specific questions. Apply every applicable
 behavior during the grill — don't skip challenges to be polite.
 
 Sizing scales are in [sizing.md](sizing.md) alongside this file. Field IDs,
-labels, and the component catalog are in `/rhdh-jira-api`.
+labels, and the component catalog are in `/rhdh-jira-context`.
 
 ## Cadence
 
@@ -61,10 +61,10 @@ After the grill questions are complete, present all inferred fields at once:
 | **Priority** | Severity of the problem, customer impact, blocker language, urgency words. Default to Major unless clear signals suggest otherwise. |
 | **Team** | Components mentioned, domain area, who the user is, parent issue's team, which team owns the affected code. |
 | **Size** | AC count, dependency count, complexity signals from the grill ("need to investigate", "multiple PRs", "cross-team"). Use the scales in [sizing.md](sizing.md). |
-| **Component** | Technical domain discussed (RBAC, plugins, catalog, helm, operator, CI/CD, docs). Match against the component catalog in `/rhdh-jira-api`. Also check codebase context — if the user has been editing files during the session, infer from file paths (see below). |
+| **Component** | Technical domain discussed (RBAC, plugins, catalog, helm, operator, CI/CD, docs). Match against the component catalog in `/rhdh-jira-context`. Also check codebase context — if the user has been editing files during the session, infer from file paths (see below). |
 | **Assignee** | If the user is describing their own work, suggest them. Otherwise, run a lightweight expertise match from the conversation context (component + domain keywords against team roster). For a real roster-and-capacity analysis, hand off to `/rhdh-jira-update`. |
 | **Labels** | Customer-facing → `demo`. Release target mentioned → `rhdh-X.Y-candidate`. Stretch goal language → `stretch`. Support/customer origin → single `RHDH-Customer` (never also apply `rhdh-customer`). |
-| **Affects Version** | RHDHBUGS Bugs only. Infer from Build Details / prerequisites. Required at create — see `/rhdh-jira-api` (`fields.md`, Bug workflow). Confirm before the write gate. Not Fix Version. |
+| **Affects Version** | RHDHBUGS Bugs only. Infer from Build Details / prerequisites. Required at create — see `/rhdh-jira-context` (`fields.md`, Bug workflow). Confirm before the write gate. Not Fix Version. |
 
 ### Codebase-aware component inference
 

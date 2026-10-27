@@ -22,8 +22,9 @@ Read-only.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
-the postconditions that keep a silent failure from becoming a wrong completion rate.
+the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+the field IDs, and the end-state rules that keep a silent failure from
+becoming a wrong completion rate.
 
 ## Route
 
@@ -35,7 +36,8 @@ review and demo meeting.
 - Preparing the sprint that has not started — carryover, capacity, ready queue —
   is `/rhdh-jira-sprint-plan`. This skill looks back; that one looks forward.
 - Judging whether individual issues are in good shape is `/rhdh-jira-refine`.
-- Board IDs, sprint naming, JQL, and custom field IDs are `/rhdh-jira-api`.
+- Board IDs, sprint naming, JQL, and custom field IDs are
+  `/rhdh-jira-context`.
 - Whether a team can fit `rhdh-X.Y-candidate` Features through Code Freeze is
   `/rhdh-release-capacity-plan`.
 - Release-level readiness across sprints is `/rhdh-release-status`.

@@ -4,8 +4,9 @@ Analyze issues for readiness, missing fields, duplicates, stale comments, and
 relevance. Produces a refinement report with actionable recommendations and
 optional fixes.
 
-Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
-the enrichment rules, and the adapter order. The optional local commands live behind `/rhdh-jira-api`.
+Reads and writes go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL,
+the field IDs, and the exit criteria. The optional local commands live behind
+`/rhdh-jira-api`.
 
 ## Input
 
@@ -52,9 +53,9 @@ inform its T-shirt size.
 
 ## Exit criteria
 
-`/rhdh-jira-api` holds the exit criteria tables per issue type and status. It is
-the single source of truth for which fields a status requires. Load it before
-Check 1 and do not restate its tables here.
+`/rhdh-jira-context` holds the exit criteria tables per issue type and status.
+It is the single source of truth for which fields a status requires. Load it
+before Check 1 and do not restate its tables here.
 
 Definitions the checks below use:
 
@@ -76,7 +77,7 @@ Points, Team, Size, and Sprint come back empty whether or not they are set.
 ### Check 1 — Missing fields against exit criteria
 
 Determine each issue's type and current status, look up the required fields in
-`/rhdh-jira-api`, and report what is missing.
+`/rhdh-jira-context`, and report what is missing.
 
 | Issue type | Field | How to verify |
 |---|---|---|
@@ -149,7 +150,7 @@ This is the full checklist, and it doubles as the agenda for the meeting.
 | Team set | The owning scrum team | error |
 | Assignee set as Feature Owner | Single point of contact | error |
 | Candidate label | Labels include `rhdh-X.Y-candidate` | error — the Feature is invisible to release tracking without it |
-| Components set and valid | At least one, validated against `/rhdh-jira-api` | error — components drive Feature Freeze and Code Freeze queries |
+| Components set and valid | At least one, validated against `/rhdh-jira-context` | error — components drive Feature Freeze and Code Freeze queries |
 | Child Epics exist, one per scrum team | `parent = {key}` returns Epics | error if status ≥ Backlog |
 | Each Epic has Team, Epic Owner, Component, Size | Epic Owner sizes their own Epic | error |
 | Size set on the Feature | Based on the sizing guide and the aggregate of Epic sizes | error at Refinement+ |
@@ -294,7 +295,7 @@ anything it supports, the authenticated host adapter for the rest.
    signal, not a verdict.
 3. **Team may need the host adapter.** Read the Team custom field with all
    fields requested first; fall back to the host adapter when it stays absent.
-4. **Exit criteria evolve.** They live in `/rhdh-jira-api`. If the process
+4. **Exit criteria evolve.** They live in `/rhdh-jira-context`. If the process
    changes, that is the file to update.
 5. **Triage is automated separately.** An AI CronJob sets Component, Team, and
    Priority on new issues. This check complements it — it validates deeper

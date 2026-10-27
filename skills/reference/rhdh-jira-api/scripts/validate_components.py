@@ -96,9 +96,9 @@ def main():
     )
     args = parser.parse_args()
 
-    # Find fields.md relative to this script
+    # Find fields.md in the context skill that owns it
     script_dir = Path(__file__).resolve().parent
-    fields_path = script_dir.parent / "references" / "fields.md"
+    fields_path = script_dir.parent.parent / "rhdh-jira-context" / "references" / "fields.md"
     if not fields_path.exists():
         print(f"fields.md not found at {fields_path}", file=sys.stderr)
         sys.exit(2)

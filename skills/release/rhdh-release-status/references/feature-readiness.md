@@ -123,8 +123,8 @@ Count Epics by status. Compute percent complete. Flag mismatches:
 - Feature is "In Progress" but no child Epics are in progress → "Stale Feature status"
 - Feature is "Backlog" but child Epics are "In Progress" → "Feature status behind Epics"
 
-Invoke `/rhdh-jira-api` for the exit criteria of each Feature and Epic status; it owns the
-workflow states and what each transition requires.
+Invoke `/rhdh-jira-context` for the exit criteria of each Feature and Epic
+status; it owns the workflow states and what each transition requires.
 
 ### Step 8 — Dependency Map
 
@@ -166,7 +166,7 @@ Flag missing: "RN fields not set — required before closing."
 
 For each Feature, assess:
 
-1. Are exit criteria met for current status? (ask `/rhdh-jira-api`)
+1. Are exit criteria met for current status? (ask `/rhdh-jira-context`)
 2. Are all child Epics sized?
 3. Are child Epics assigned to teams?
 4. Are there child Epics without Stories/Tasks (if Epic is in To Do+)?
@@ -270,7 +270,7 @@ This route does not write to Jira. After presenting the report, offer the fixes 
 implies and hand each accepted one to `/rhdh-jira-update`, which states the target and
 exact command, gets approval, and reports the outcome.
 
-**⚠ Automation warning:** Setting fix version on a Feature cascades to all child Epics automatically (Jira automation rule). Setting Epic status also cascades to parent Feature. Ask `/rhdh-jira-api` for the automation rules. Warn the user before any fix version change.
+**⚠ Automation warning:** Setting fix version on a Feature cascades to all child Epics automatically (Jira automation rule). Setting Epic status also cascades to parent Feature. Ask `/rhdh-jira-context` for the automation rules. Warn the user before any fix version change.
 
 Fixes worth offering:
 

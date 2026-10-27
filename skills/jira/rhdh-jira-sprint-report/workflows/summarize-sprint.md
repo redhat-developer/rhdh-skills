@@ -4,15 +4,16 @@ Generate a sprint review summary: committed versus completed, per-member
 breakdown, epic progress, demo checklist with naming conventions, and velocity
 trend.
 
-Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
-and the enrichment rules. The optional local commands live behind `/rhdh-jira-api`.
+Reads go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL and the
+board and sprint IDs. The optional local commands live behind
+`/rhdh-jira-api`.
 
 ## Input
 
 1. **Team ID** — the Jira team UUID. Ask if it was not given.
 2. **Sprint** — defaults to the active sprint. Accepts `previous` for the last
    closed one, or a sprint name or ID.
-3. **Board ID** — optional. Look it up in `/rhdh-jira-api` or ask.
+3. **Board ID** — optional. Look it up in `/rhdh-jira-context` or ask.
 
 ## Step 1 — Resolve the sprint
 

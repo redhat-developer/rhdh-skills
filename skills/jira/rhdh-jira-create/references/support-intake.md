@@ -48,7 +48,7 @@ communication stays controlled by the support team.
 ## Product defect: RHDHSUPP → RHDHBUGS
 
 Create a Bug in RHDHBUGS with Priority, Component (`Documentation` for doc
-defects), **Affects Version** (required at create — see `/rhdh-jira-api`), and
+defects), **Affects Version** (required at create — see `/rhdh-jira-context`), and
 the Bug template filled with real reproduction steps. Link it to the customer
 case through SFDC Cases Links, then comment on the RHDHSUPP issue with the
 RHDHBUGS key so the customer learns when the fix lands.

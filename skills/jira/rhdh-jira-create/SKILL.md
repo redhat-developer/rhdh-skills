@@ -28,8 +28,9 @@ front and out loud, and the user confirms it before anything is created.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
-the postconditions that keep a silent failure from becoming a half-created issue.
+the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+the field IDs, and the end-state rules that keep a silent failure from
+becoming a half-created issue.
 
 ## Route
 
@@ -64,15 +65,15 @@ update that silently failed is a half-created issue, not a success.
 
 **Private issues are not "set after create."** On public projects (RHIDP,
 RHDHPLAN, RHDHBUGS), put `security` on the create payload
-(`/rhdh-jira-api` — Private issues). RHDHSUPP is project-private; level optional.
+(`/rhdh-jira-context` — Private issues). RHDHSUPP is project-private; level optional.
 Never create-then-restrict. If `security` cannot be set when required, stop.
 
 ## Boundary with the neighbouring skills
 
 - Judging whether an existing issue is ready is `/rhdh-jira-refine`.
 - Changing status, assignee, comments, or links on a known key is `/rhdh-jira-update`.
-- Field IDs, the component catalog, and the local command reference are
-  `/rhdh-jira-api`.
+- Field IDs, the component catalog, and the workflow exit criteria are
+  `/rhdh-jira-context`; the local command reference is `/rhdh-jira-api`.
 - Templates, the challenge matrix, sizing, duplicate detection, and decomposition
   rules are `/rhdh-jira-authoring`.
 - Creating a PR and linking it back to an issue is `/rhdh-jira-link`.

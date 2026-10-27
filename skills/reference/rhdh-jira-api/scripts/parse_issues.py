@@ -130,7 +130,7 @@ def _walk_adf(node, parts):
 # yields "" or None, and the caller reports missing data rather than an error.
 # _sprint_name carries one of them too (customfield_10020).
 #
-# Authoritative table:  references/fields.md
+# Authoritative table:  ../rhdh-jira-context/references/fields.md
 #
 # The duplication is deliberate — this script must run installed alone. Guard:
 #     scripts/validate_field_ids.py

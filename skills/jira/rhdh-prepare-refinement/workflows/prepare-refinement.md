@@ -4,13 +4,14 @@ Produce a facilitator brief before a team's refinement ceremony. Fetch the
 team's queue, resolve release milestones, analyze every issue, present what
 matters for the session.
 
-Use `acli` for all Jira reads. `/rhdh-jira-api` owns auth, field references,
-JQL patterns, and the board/team table.
+Use `acli` for all Jira reads. `/rhdh-jira-api` owns auth and the reads;
+`/rhdh-jira-context` owns the field references, JQL patterns, and the
+board/team table.
 
 ## Input
 
 1. **Team name** — ask if not provided. Look up the board ID from
-   `/rhdh-jira-api` references/jql-patterns.md:
+   `/rhdh-jira-context` references/jql-patterns.md:
 
    | Board | ID | Team |
    |-------|----|------|

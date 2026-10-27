@@ -91,15 +91,9 @@ REST/MCP field shape: `{"security": {"name": "Red Hat Employee"}}` (or
 `{"id": "10034"}`). On RHDHBUGS, put `versions` and `security` on the same
 create. Omitting `security` leaves the issue public on every pathway.
 
-**Verify before reporting success.** Create receipts and default acli
-`search`/`view` JSON omit `security` (private looks public).
-`search --fields security` is rejected. MCP `compact`/`evidence` omit it unless
-`fields` includes `security`.
-
-```bash
-acli jira workitem view KEY --fields '*all' --json
-# assert fields.security.name
-```
+**Verify before reporting success.** Default read receipts omit `security`
+(private looks public). Read the issue with all fields requested and assert
+`security.name`.
 
 Or JQL `key = KEY AND level = "Red Hat Employee"`. If `security` is null when
 required, treat as a privacy failure — do not add more sensitive content.
@@ -299,14 +293,9 @@ Jira UI action (**Feature → More → Create Doc EPIC from RHDHPlan**) availabl
 
 ### Component Validation (live)
 
-The component catalog above is maintained manually. Components may be added or renamed in Jira without updating this file. Run the validation script to detect drift:
+The component catalog above is maintained manually. Components may be added or renamed in Jira without updating this file. `/rhdh-jira-api` runs a component validator against live Jira to detect drift.
 
-```bash
-python scripts/validate_components.py        # human-readable report
-python scripts/validate_components.py --json  # structured output
-```
-
-The script compares this catalog against live components in RHIDP and RHDHPLAN. It reports components that exist in Jira but are missing from this file (add them), and components listed here that no longer exist in Jira (remove them).
+It reports components that exist in Jira but are missing from this file (add them), and components listed here that no longer exist in Jira (remove them).
 
 Note: Jira may contain legacy or duplicate components that were never cleaned up. Not every Jira component needs to be in this catalog — only components that are actively used for issue routing and freeze queries.
 

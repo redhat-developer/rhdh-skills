@@ -62,8 +62,8 @@ wiki→ADF conversion; do not hand-build ADF from Markdown paragraphs.
 
 - Running the interview and creating the issue is `/rhdh-jira-create`.
 - Auditing issues that already exist is `/rhdh-jira-refine`.
-- Field IDs, the component catalog, JQL, the local command reference, and
-  workflow exit criteria are `/rhdh-jira-api`.
+- Field IDs, the component catalog, JQL, and workflow exit criteria are
+  `/rhdh-jira-context`; the local command reference is `/rhdh-jira-api`.
 - The general interview cadence is the external `grilling` skill, invoked by
   name. What is here is only the RHDH-specific half.
 

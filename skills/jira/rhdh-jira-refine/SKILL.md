@@ -23,8 +23,9 @@ and say what is missing rather than guessing at it.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
-the postconditions that keep a silent failure from becoming a false finding.
+the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+the field IDs, and the end-state rules that keep a silent failure from
+becoming a false finding.
 
 ## Route
 
@@ -55,7 +56,7 @@ and exact command per row — rather than approving them one at a time.
 - Building the next sprint from the refined backlog is `/rhdh-jira-sprint-plan`.
 - Pre-refinement ceremony brief with smart analysis is `/rhdh-prepare-refinement`.
 - Exit criteria tables, field IDs, JQL, and the component catalog are
-  `/rhdh-jira-api`.
+  `/rhdh-jira-context`.
 - Sizing scales, duplicate detection, and decomposition rules are
   `/rhdh-jira-authoring`.
 - What is still open against a release is `/rhdh-release-status`.

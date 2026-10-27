@@ -4,6 +4,15 @@ Status: proposal, revision 6 after team feedback. No skill rewritten beyond
 the rhdh-jira-api pilot. Deliverable of the research card "Make skills more
 chai bot native".
 
+Revision 7 splits context from tool usage into two skills:
+`/rhdh-jira-context` owns the what (field IDs, JQL patterns, workflow states
+and exit criteria, component catalog, board and sprint IDs, private-issue
+rules, the read and write end-state rules); `/rhdh-jira-api` owns the how
+(acli commands, REST and GraphQL fallbacks, auth, scripts, adapter traps).
+"What is this field" and "how do I run this query" route to different skills,
+so an agent with a native Jira path loads the context and never the CLI
+reference.
+
 Revision 6 consolidates the tooling and names the disease underneath it:
 commands and scripts with silent assumptions about which tools are available
 on the PATH. The acli command reference now lives only in `rhdh-jira-api`'s

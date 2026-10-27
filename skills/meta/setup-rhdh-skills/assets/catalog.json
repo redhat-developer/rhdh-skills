@@ -37,7 +37,8 @@
         "rhdh-jira-api",
         "rhdh-jira-authoring",
         "mutation-gate",
-        "prose-editing"
+        "prose-editing",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": [
         "grilling"
@@ -60,7 +61,8 @@
       "requiresSkills": [
         "rhdh-jira-api",
         "rhdh-jira-authoring",
-        "prose-editing"
+        "prose-editing",
+        "rhdh-jira-context"
       ],
       "optionalSkills": [
         "mutation-gate"
@@ -72,7 +74,8 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api"
+        "rhdh-jira-api",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },
@@ -81,7 +84,8 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api"
+        "rhdh-jira-api",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },
@@ -92,7 +96,8 @@
       "requiresSkills": [
         "rhdh-jira-api",
         "mutation-gate",
-        "prose-editing"
+        "prose-editing",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },
@@ -110,7 +115,8 @@
       "category": "jira",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api"
+        "rhdh-jira-api",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },
@@ -392,7 +398,9 @@
       "name": "rhdh-release-status",
       "category": "release",
       "invocation": "model",
-      "requiresSkills": [],
+      "requiresSkills": [
+        "rhdh-jira-context"
+      ],
       "requiresExternalSkills": []
     },
     {
@@ -502,7 +510,15 @@
       "name": "rhdh-jira-api",
       "category": "reference",
       "invocation": "model",
-      "requiresSkills": [],
+      "requiresSkills": [
+        "rhdh-jira-context"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
+      "name": "rhdh-jira-context",
+      "category": "reference",
+      "invocation": "model",
       "requiresExternalSkills": []
     },
     {
@@ -510,7 +526,8 @@
       "category": "reference",
       "invocation": "model",
       "requiresSkills": [
-        "prose-editing"
+        "prose-editing",
+        "rhdh-jira-context"
       ],
       "requiresExternalSkills": []
     },

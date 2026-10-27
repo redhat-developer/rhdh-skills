@@ -34,8 +34,8 @@ the arithmetic in prose.
 
 ## Step 1 — Resolve team, board, roster, and dates
 
-Invoke `/rhdh-release-teams` for Cloud ID. Look up the board in `/rhdh-jira-api`
-(the board table). Fetch `FULL_MEMBER` only via the `GetTeamRoster` query;
+Invoke `/rhdh-release-teams` for Cloud ID. Look up the board in
+`/rhdh-jira-context` (the board table). Fetch `FULL_MEMBER` only via the `GetTeamRoster` query;
 drop `INVITED` and `ALUMNI`.
 
 Invoke `/rhdh-release-schedule` for Feature Freeze and Code Freeze. Remaining

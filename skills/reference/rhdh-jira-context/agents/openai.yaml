@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Jira Context"
+  short_description: "What RHDH Jira work is made of: fields, JQL, states, components"

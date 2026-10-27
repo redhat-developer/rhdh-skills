@@ -4,8 +4,8 @@ Detect the related issue, add a status comment summarizing the session, propose
 status transitions, and check upward through the hierarchy for parent
 transitions. On-demand — run at a natural stopping point, never proactively.
 
-Reads and writes go through `/rhdh-jira-api` — it owns the JQL, the field IDs,
-and the adapter order. The optional local commands live behind `/rhdh-jira-api`.
+Reads and writes go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL
+and the field IDs. The optional local commands live behind `/rhdh-jira-api`.
 
 ## Step 1 — Detect the issue
 
@@ -80,7 +80,7 @@ Confirm before posting: "Proposed comment: {comment}. Post this? [y/N/edit]"
 | Work done, awaiting release | In Progress / Review → Release Pending |
 | Descoped or won't fix | Any → Closed, with a resolution |
 
-Check the target status's exit criteria in `/rhdh-jira-api` **before** proposing.
+Check the target status's exit criteria in `/rhdh-jira-context` **before** proposing.
 If something is missing, say what: "To move to Review, you need: {fields}. Set
 them first?"
 
@@ -94,7 +94,8 @@ rule when it closes stale issues.
 **Check for Jira automation first.** Automation rules cascade: a child moving to
 In Progress moves the parent Epic to In Progress, and an Epic moving moves the
 parent Feature. Fetch the parent's current status before suggesting anything for
-it — the transition may already have happened. `/rhdh-jira-api` lists the rules.
+it — the transition may already have happened. `/rhdh-jira-context` lists the
+automation rules.
 
 Confirm, then apply the transition.
 

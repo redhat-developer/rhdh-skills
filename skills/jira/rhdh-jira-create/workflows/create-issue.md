@@ -10,8 +10,9 @@ Invoke `grilling` by name. If it is unavailable, stop here and follow the hard
 gate in SKILL.md.
 
 Load `/rhdh-jira-authoring` for the challenge matrix, sizing scales, and
-templates. Load `/rhdh-jira-api` for field IDs, the component catalog, and the
-local command reference. Do not read either skill's files by path.
+templates. Load `/rhdh-jira-context` for field IDs and the component catalog,
+and `/rhdh-jira-api` for the local commands. Do not read their files by
+path.
 
 ## Step 1 — Decide the type and project
 
@@ -99,8 +100,8 @@ Out of Scope, or note them for a comment after creation, so they are not lost.
 Keep the RHDH template. Do not substitute a generic PRD.
 
 When drafting anything customer-derived, check it against the customer-identity
-rules in `/rhdh-jira-api`: support case key, persona, and use case only — no
-customer names.
+rules in `/rhdh-jira-context`: support case key, persona, and use case only —
+no customer names.
 
 Present the draft: "Based on our conversation, here's what I have. Review and
 tell me what's missing or wrong."
@@ -159,26 +160,26 @@ By type, the fields that matter most:
 | Feature | Priority, Team, Size (T-shirt), Assignee as Feature Owner, Components, Labels, Security Level when private |
 | Epic | Team, Priority, Size (T-shirt), Component, Assignee as Epic Owner, Security Level when private |
 | Story / Task / Spike | Priority, Component, Assignee, Story Points (required for Spikes), Security Level when private |
-| Bug (RHDHBUGS) | Priority, Component, Assignee, **Affects Version** (required at create — see `/rhdh-jira-api`), Security Level when the bug must not be project-public |
+| Bug (RHDHBUGS) | Priority, Component, Assignee, **Affects Version** (required at create — see `/rhdh-jira-context`), Security Level when the bug must not be project-public |
 
 When chained, inherit Priority, Team, and Component from the parent unless the
 conversation contradicts them.
 
 **Components** are required on an Epic at New status and affect Feature Freeze
 and Code Freeze queries, so they are not a detail to skip. Infer them, validate
-them against the component catalog in `/rhdh-jira-api`, and confirm with the user
+them against the component catalog in `/rhdh-jira-context`, and confirm with the user
 — never auto-set a component.
 
 **Affects Version** (RHDHBUGS Bugs): required at create. Infer from Build Details /
 prerequisites, confirm with the user, and put it on the create payload (Step 8).
-Authoritative constraint and payload field name: `/rhdh-jira-api` (`fields.md`,
-Bug workflow).
+Authoritative constraint and payload field name: `/rhdh-jira-context`
+(`fields.md`, Bug workflow).
 
 **Security Level:** RHIDP / RHDHPLAN / RHDHBUGS are public — set `security` on
 create when the issue must stay private (user asks; internal/embargoed security;
 identifying/private data that must live on the issue). Usual value:
 `"Red Hat Employee"`. RHDHSUPP is project-private; level is optional. Never
-create-then-restrict. Details: `/rhdh-jira-api` (`fields.md` — Private issues).
+create-then-restrict. Details: `/rhdh-jira-context` (`fields.md` — Private issues).
 
 **Labels — ask about each during the interview:**
 
@@ -224,8 +225,8 @@ in a portable temp location and hand it to the user:
 - **Component**: {value}
 - **Assignee**: {value}
 - **Labels**: {values}
-- **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-api`)
-- **Security Level**: {value or public} — when private, must be on the create payload (see `/rhdh-jira-api`)
+- **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-context`)
+- **Security Level**: {value or public} — when private, must be on the create payload (see `/rhdh-jira-context`)
 ```
 
 Present it: "Review before creating. Edit the file or tell me what to change.
@@ -271,7 +272,7 @@ set afterwards, in one update through the authenticated adapter:
   create-then-restrict. On RHDHBUGS include Affects Version in the same create.
   If `security` cannot be set when required, stop. Verify it on the read-back —
   default reads omit `security`. RHDHSUPP: level optional. Details:
-  `/rhdh-jira-api` (`fields.md` — Private issues).
+  `/rhdh-jira-context` (`fields.md` — Private issues).
 
 Show the payload for approval alongside the create. Then set the fields the
 create could not carry, in one update through the authenticated host adapter —
@@ -417,5 +418,5 @@ The user merges, drops, or approves before any Epic is created.
 8. **After creating a Feature**, it should pass the full Feature Exploration
    checklist in `/rhdh-jira-refine` before it moves to Backlog.
 9. **Private at create** in public projects (RHIDP, RHDHPLAN, RHDHBUGS). Set
-   Security Level on create (`/rhdh-jira-api`); never create-then-restrict. Stop
+   Security Level on create (`/rhdh-jira-context`); never create-then-restrict. Stop
    if it cannot be set when required. RHDHSUPP: level optional.

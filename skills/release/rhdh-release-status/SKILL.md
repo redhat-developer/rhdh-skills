@@ -46,7 +46,8 @@ restating the setup.
 - The SoS check-in report for team leads is `/rhdh-release-sos`.
 - The team roster, leads, and Cloud IDs are `/rhdh-release-teams`. This skill
   counts issues per team; it does not publish the roster.
-- Reading a single issue, a board, or a sprint is `/rhdh-jira-api`. Any Jira
+- Reading a single issue, a board, or a sprint is `/rhdh-jira-api`; what the
+  fields and statuses mean is `/rhdh-jira-context`. Any Jira
   write is `/rhdh-jira-update`.
 - Creating, aligning, or deleting **project** fix versions across RHIDP,
   RHDHPLAN, and RHDHBUGS is `/rhdh-release-fixversions`. This skill only

@@ -118,7 +118,7 @@ acli jira workitem view RHIDP-123 --web
 > link (`customfield_10018`) in one update through the authenticated adapter in
 > [rest-api-fallback.md](rest-api-fallback.md).
 >
-> **RHDHBUGS Bug exception:** Affects Version is required at create (see [fields.md](fields.md)).
+> **RHDHBUGS Bug exception:** Affects Version is required at create (see `/rhdh-jira-context`).
 > There is no `--version` flag. Put `versions` (and the ADF `description`) inside a `--from-json`
 > payload — do **not** combine `--from-json` with `--description-file` on the same create.
 > `acli jira workitem create --generate-json` prints a starter shape. Create without `versions`
@@ -126,7 +126,7 @@ acli jira workitem view RHIDP-123 --web
 >
 > **Private issue exception:** On public projects (RHIDP, RHDHPLAN, RHDHBUGS),
 > put `security` on create when the issue must stay private
-> ([fields.md](fields.md) — Private issues). RHDHSUPP: optional. No `--security`
+> (`/rhdh-jira-context` — Private issues). RHDHSUPP: optional. No `--security`
 > flag — use `--from-json` `additionalAttributes.security` (plus `versions` on
 > RHDHBUGS Bugs), or MCP `additional_fields.security`. Never create-then-restrict.
 > Verify with `view KEY --fields '*all' --json` (defaults omit `security`).

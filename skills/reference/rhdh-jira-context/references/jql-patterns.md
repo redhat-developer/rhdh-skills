@@ -116,15 +116,11 @@ project = RHDHPAI
 
 ## Team Filtering
 
-The Team field (`customfield_10001`) cannot be used in JQL. Use `scripts/parse_issues.py`:
+The Team field (`customfield_10001`) cannot be used in JQL. Search without
+the team clause and post-filter on the team field — `/rhdh-jira-api` runs the
+post-filter locally with `parse_issues.py`.
 
-```bash
-acli jira workitem search --jql "project = RHIDP AND sprint in openSprints()" --limit 500 --json \
-  | uv run scripts/parse_issues.py --enrich -f team="RHDH Install" -s key,summary,status,story_points
-```
-
-For local command syntax, see `references/tooling.md`.
-For custom field IDs and `cf[]` JQL syntax, see `references/fields.md`.
+For custom field IDs and `cf[]` JQL syntax, see [fields.md](fields.md).
 
 ---
 
@@ -169,31 +165,18 @@ Sprints follow: `{Team Name} {Sprint Number}` (e.g., "RHDH COPE 3291", "RHDH Ins
 
 ### Finding Current Sprint
 
-```bash
-# List active sprints for a board
-acli jira board list-sprints --id 11374 --state active
-
-# Closed sprints (history for velocity). acli has no --recent; take the tail.
-acli jira board list-sprints --id 11374 --state closed --json
-
-# Sprint dates (startDate is the interrupt cutoff)
-acli jira sprint view --id 47486 --json
-
-# List work items in a sprint
-acli jira sprint list-workitems --sprint 65456 --board 11374 --limit 500
-```
+A board's sprints are listed by state — active (the current sprint), closed
+(velocity history), future (the planning target) — and a sprint view carries
+its dates (`startDate` is the interrupt cutoff). The exact local commands are
+`/rhdh-jira-api`'s.
 
 Release-horizon velocity reconstructs completed story points and mid-sprint
 additions from those issues. The unofficial Greenhopper sprint-report path lives
-in [rest-api-fallback.md](rest-api-fallback.md); skip it when the host adapter
+in `/rhdh-jira-api`'s REST fallback; skip it when the host adapter
 cannot GET it.
 
 ### Saved Filters
 
-Pre-built JQL filters exist in the instance. Search for them:
-
-```bash
-acli jira filter search --name "RHDH" --limit 500
-```
-
-These may be more efficient than building JQL from scratch for common queries.
+Pre-built JQL filters exist in the instance, searchable by name. These may be
+more efficient than building JQL from scratch for common queries; the search
+command is `/rhdh-jira-api`'s.

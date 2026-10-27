@@ -16,14 +16,14 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-JIRA_API = PROJECT_ROOT / "skills" / "reference" / "rhdh-jira-api"
-VALIDATOR = JIRA_API / "scripts" / "validate_field_ids.py"
+JIRA_CONTEXT = PROJECT_ROOT / "skills" / "reference" / "rhdh-jira-context"
+VALIDATOR = JIRA_CONTEXT / "scripts" / "validate_field_ids.py"
 
 
 def run_validator(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(VALIDATOR), *args],
-        cwd=JIRA_API,
+        cwd=JIRA_CONTEXT,
         capture_output=True,
         text=True,
         check=False,

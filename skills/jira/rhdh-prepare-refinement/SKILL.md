@@ -19,7 +19,7 @@ Load `workflows/prepare-refinement.md`.
 ## Inputs
 
 1. **Team** — e.g. "Install", "Plugins", "Frontend". Resolve the board ID
-   from `/rhdh-jira-api` (references/jql-patterns.md, Boards table).
+   from `/rhdh-jira-context` (references/jql-patterns.md, Boards table).
 2. **Fix version(s)** — e.g. "2.1.0" or "all 2.1.x and 2.2.0". Scopes the queue.
 
 If either is missing, ask.

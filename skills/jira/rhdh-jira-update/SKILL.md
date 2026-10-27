@@ -22,8 +22,9 @@ because they are the same job: a field mutation on a known key.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
-the postconditions that keep a silent failure from becoming a partial update reported as a success.
+the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+the field IDs, and the end-state rules that keep a silent failure from
+becoming a partial update reported as a success.
 
 ## Route
 
@@ -59,8 +60,8 @@ one stated set so one approval covers them, rather than asking three times.
 - Sprint carryover, velocity, and fill suggestions are `/rhdh-jira-sprint-plan`;
   it invokes this skill for per-issue assignee recommendations rather than
   scoring them itself.
-- Field IDs, JQL, GraphQL roster queries, workflow exit criteria, and the local
-  command reference are `/rhdh-jira-api`.
+- Field IDs, JQL, and workflow exit criteria are `/rhdh-jira-context`; GraphQL
+  roster queries and the local command reference are `/rhdh-jira-api`.
 - Creating a PR and attaching the Jira web link in one step is
   `/rhdh-jira-link`.
 

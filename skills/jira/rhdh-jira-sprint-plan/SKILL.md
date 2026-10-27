@@ -23,8 +23,9 @@ team decides something.
 
 Every step below states its goal, never which tool to use. Use whichever tool
 you actually have for Jira — an ADLC tool, the authenticated host adapter, or
-the local commands `/rhdh-jira-api` holds. It owns the JQL, the field IDs, and
-the postconditions that keep a silent failure from becoming a wrong velocity number.
+the local commands `/rhdh-jira-api` holds. `/rhdh-jira-context` owns the JQL,
+the field IDs, and the end-state rules that keep a silent failure from
+becoming a wrong velocity number.
 
 ## Route
 
@@ -42,7 +43,7 @@ call.
 - Picking and setting an assignee is `/rhdh-jira-update`. This skill invokes it
   for fill suggestions rather than scoring assignees itself.
 - Board IDs, sprint naming, JQL, and the Team field's JQL limitation are
-  `/rhdh-jira-api`.
+  `/rhdh-jira-context`.
 - Whether a team can fit `rhdh-X.Y-candidate` Features through Code Freeze is
   `/rhdh-release-capacity-plan`. This skill fills the next sprint only.
 - Release-level readiness is `/rhdh-release-status`.

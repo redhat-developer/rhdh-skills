@@ -3,15 +3,16 @@
 Generate a sprint planning package: carryover report, velocity trend, per-member
 capacity, ready-for-planning queue, and sprint fill suggestions.
 
-Reads go through `/rhdh-jira-api` — it owns the JQL, the board and sprint IDs,
-and the enrichment rules. The optional local commands live behind `/rhdh-jira-api`.
+Reads go through `/rhdh-jira-api`; `/rhdh-jira-context` owns the JQL and the
+board and sprint IDs. The optional local commands live behind
+`/rhdh-jira-api`.
 
 ## Input
 
 1. **Team ID** — the Jira team UUID. Ask if it was not given; never infer a team
    from names.
-2. **Board ID** — optional. Look it up in the board table in `/rhdh-jira-api`, or
-   ask.
+2. **Board ID** — optional. Look it up in the board table in `/rhdh-jira-context`,
+   or ask.
 3. **Sprint** — optional. Defaults to planning the next one: the active sprint
    supplies carryover, the future sprint is the target.
 
@@ -155,7 +156,7 @@ Avg velocity {avg} SP − carryover {carry_sp} SP = **{available} SP available**
 
 | Error | Action |
 |---|---|
-| Board ID not found | Ask. Look it up in the board table in `/rhdh-jira-api`. |
+| Board ID not found | Ask. Look it up in the board table in `/rhdh-jira-context`. |
 | No active sprint | "No active sprint found. Is the team between sprints?" |
 | No closed sprints | Skip velocity and say "no historical data — velocity unavailable". |
 | Bulk search fails | Retry the paginated search once through the same adapter. Do not fall back to raw REST search. |
@@ -170,6 +171,6 @@ Avg velocity {avg} SP − carryover {carry_sp} SP = **{available} SP available**
    points or a time-box; bugs in the ready queue without points appear, flagged.
 3. **Release Pending stays in the sprint.** Per team convention it remains in the
    sprint and counts toward capacity.
-4. **Team is not JQL-filterable in every context.** `/rhdh-jira-api` covers the
-   `"Team[Team]"` syntax and the post-filter for cases where it fails
-   (`/rhdh-jira-api` locally).
+4. **Team is not JQL-filterable in every context.** `/rhdh-jira-context` covers
+   the `"Team[Team]"` syntax and its limits; the post-filter for cases where it
+   fails is `/rhdh-jira-api`'s, run locally.

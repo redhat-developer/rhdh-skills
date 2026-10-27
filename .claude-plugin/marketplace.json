@@ -51,6 +51,7 @@
         "./skills/release/rhdh-release-announce",
         "./skills/reference/prose-editing",
         "./skills/release/rhdh-release-capacity-plan",
+        "./skills/reference/rhdh-jira-context",
         "./skills/reference/rhdh-jira-api",
         "./skills/release/rhdh-release-schedule",
         "./skills/release/rhdh-release-status",
@@ -115,6 +116,7 @@
       "description": "Jira skills from the RHDH pack",
       "skills": [
         "./skills/jira/rhdh-jira-create",
+        "./skills/reference/rhdh-jira-context",
         "./skills/reference/rhdh-jira-api",
         "./skills/reference/prose-editing",
         "./skills/reference/rhdh-jira-authoring",
