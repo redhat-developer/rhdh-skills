@@ -19,14 +19,6 @@ local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or a
 Answer "is this ready" with the criteria the RHDH workflow actually enforces,
 and say what is missing rather than guessing at it.
 
-## Goals, not tools
-
-Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
-how to drive. `/rhdh-jira-context` owns the JQL,
-the field IDs, and the end-state rules that keep a silent failure from
-becoming a false finding.
-
 ## Route
 
 Load `workflows/refine-issues.md`. It covers both the per-issue readiness audit

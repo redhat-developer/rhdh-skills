@@ -4,8 +4,7 @@ Detect the related issue, add a status comment summarizing the session, propose
 status transitions, and check upward through the hierarchy for parent
 transitions. On-demand — run at a natural stopping point, never proactively.
 
-Reads and writes use whichever Jira tool you have; `/rhdh-jira-context` owns the
-JQL and the field IDs.
+`/rhdh-jira-context` owns the JQL and the field IDs.
 
 ## Step 1 — Detect the issue
 

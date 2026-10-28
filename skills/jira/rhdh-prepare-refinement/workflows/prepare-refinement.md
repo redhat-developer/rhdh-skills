@@ -4,7 +4,7 @@ Produce a facilitator brief before a team's refinement ceremony. Fetch the
 team's queue, resolve release milestones, analyze every issue, present what
 matters for the session.
 
-Use whichever Jira tool you have. `/rhdh-jira-context` owns the field
+`/rhdh-jira-context` owns the field
 references, JQL patterns, and the board/team table.
 
 ## Input

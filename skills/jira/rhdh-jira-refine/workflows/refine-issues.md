@@ -4,8 +4,7 @@ Analyze issues for readiness, missing fields, duplicates, stale comments, and
 relevance. Produces a refinement report with actionable recommendations and
 optional fixes.
 
-Reads and writes use whichever Jira tool you have; `/rhdh-jira-context` owns the
-JQL, the field IDs, and the exit criteria.
+`/rhdh-jira-context` owns the JQL, the field IDs, and the exit criteria.
 
 ## Input
 
@@ -263,8 +262,7 @@ and the edited bodies included in the plan.
   issue with no resolution and no comment loses the decision trail entirely.
   `/rhdh-jira-update` applies the same rule when it closes an issue.
 
-Writes use whichever Jira tool you have; the end-state rules in
-`/rhdh-jira-context` bind whichever tool executes.
+Write end states are pinned in `/rhdh-jira-context`.
 
 ## Error handling
 

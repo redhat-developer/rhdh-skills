@@ -3,8 +3,7 @@
 Generate a sprint planning package: carryover report, velocity trend, per-member
 capacity, ready-for-planning queue, and sprint fill suggestions.
 
-Reads use whichever Jira tool you have; `/rhdh-jira-context` owns the JQL and
-the board and sprint IDs.
+`/rhdh-jira-context` owns the JQL and the board and sprint IDs.
 
 ## Input
 

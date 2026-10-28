@@ -12,7 +12,7 @@ Run this read-only check before creating work and during refinement audits.
    project in (RHIDP, RHDHPLAN, RHDHSUPP, RHDHBUGS) AND summary ~ "KEYWORD1 KEYWORD2" AND status != Closed ORDER BY updated DESC
    ```
 
-   The caller runs the search with whichever Jira tool it has; `/rhdh-jira-context`
+   `/rhdh-jira-context`
    owns the read rules, including the silent truncation that would make this
    check look clean when it is not.
 

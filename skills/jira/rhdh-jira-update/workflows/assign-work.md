@@ -13,7 +13,7 @@ JQL query, and an optional Jira team ID.
 
 ## Capability boundary
 
-Issue reads use whichever Jira tool you have. The team roster comes from the
+The team roster comes from the
 authenticated host GraphQL adapter — the `GetTeamRoster` query in
 `/rhdh-jira-context`. If that adapter is unavailable, say so, name
 `/setup-rhdh-skills atlassian-mcp`, and ask whether to continue in quick mode.

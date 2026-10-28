@@ -24,14 +24,6 @@ Feature, an Epic, or a Story. Deciding that is this skill's job. Getting it wron
 writes the wrong issue type into a public project, so the decision happens up
 front and out loud, and the user confirms it before anything is created.
 
-## Goals, not tools
-
-Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
-how to drive. `/rhdh-jira-context` owns the JQL,
-the field IDs, and the end-state rules that keep a silent failure from
-becoming a half-created issue.
-
 ## Route
 
 Load `workflows/create-issue.md`. One workflow covers every level of the

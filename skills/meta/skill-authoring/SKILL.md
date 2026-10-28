@@ -116,12 +116,10 @@ Rules that follow:
   Setup skills are the exception that keeps concrete steps — configuring
   tools is their outcome and their audience is the human.
 
-Each skill restates a short goals paragraph in its own words — an installed
-skill cannot rely on a host repository's conventions — and never names the
-bot or platform: shipped prose says "ADLC tools". Rule of thumb: if an agent
-using only native integrations still needs to know it, it is process; if it
-is how one particular tool runs, it is nowhere. The full authoring pattern,
-with the paragraph to adapt, is in
+Never name the bot or platform in shipped prose — say "ADLC tools". Rule of
+thumb: if an agent using only native integrations still needs to know it, it
+is process; if it is how one particular tool runs, it is nowhere. The full
+authoring pattern is in
 [references/create.md](references/create.md) → Two skill types.
 
 ## Working inside a host repository

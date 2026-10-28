@@ -167,7 +167,7 @@ Sprints follow: `{Team Name} {Sprint Number}` (e.g., "RHDH COPE 3291", "RHDH Ins
 
 A board's sprints are listed by state — active (the current sprint), closed
 (velocity history), future (the planning target) — and a sprint view carries
-its dates (`startDate` is the interrupt cutoff). Use whichever Jira tool you have for the calls.
+its dates (`startDate` is the interrupt cutoff).
 
 Release-horizon velocity reconstructs completed story points and mid-sprint
 additions from those issues. The unofficial Greenhopper sprint-report path lives

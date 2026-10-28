@@ -207,15 +207,6 @@ Rules that follow:
   Setup skills are the exception that keeps concrete steps — configuring
   tools is their outcome and their audience is the human.
 
-Restate a short goals paragraph in the skill's own words — it must travel with
-the installed skill, so it cannot live only in a host repository's
-conventions:
-
-> Every step below states its goal, never which tool to use. Use whichever
-> tool you actually have — an ADLC tool, an MCP server, or a CLI you know
-> how to drive. Verifications stated on a goal bind whichever tool executes
-> it.
-
 The discriminator is **tool availability, not shell access**: an agent with a
 shell and a native integration should use the integration, not wrap a CLI.
 Rule of thumb: if an agent using only native integrations still needs to know
@@ -335,8 +326,7 @@ Before presenting the final skill, verify against this checklist:
       one on PATH; checkers consume input the agent fetched
 - [ ] Frontmatter carries the split: `compatibility:` names prerequisites
       true in every mode; `local-tooling:` names the optional tools
-- [ ] The goals paragraph is restated in the skill's own words, and shipped prose
-      says "ADLC tools", never a bot or platform name
+- [ ] Shipped prose says "ADLC tools", never a bot or platform name
 - [ ] Material shared with another skill is extracted, enforced, or documented, never copied
 - [ ] Skills compose by stable name — no sibling paths, no imports, no host layout probing
 - [ ] Handoffs are prose the producer states and the consumer reads; an external write invokes the skill that owns the write gate

@@ -18,14 +18,6 @@ local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or a
 Small, precise changes to an issue that already exists. Two jobs live here
 because they are the same job: a field mutation on a known key.
 
-## Goals, not tools
-
-Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
-how to drive. `/rhdh-jira-context` owns the JQL,
-the field IDs, and the end-state rules that keep a silent failure from
-becoming a partial update reported as a success.
-
 ## Route
 
 | Intent | Load |

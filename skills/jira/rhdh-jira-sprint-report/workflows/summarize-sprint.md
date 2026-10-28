@@ -4,8 +4,7 @@ Generate a sprint review summary: committed versus completed, per-member
 breakdown, epic progress, demo checklist with naming conventions, and velocity
 trend.
 
-Reads use whichever Jira tool you have; `/rhdh-jira-context` owns the JQL and
-the board and sprint IDs.
+`/rhdh-jira-context` owns the JQL and the board and sprint IDs.
 
 ## Input
 

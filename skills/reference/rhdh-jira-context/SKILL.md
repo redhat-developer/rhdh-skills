@@ -10,7 +10,7 @@ description: >-
   end-state rules that keep a silent failure from becoming a wrong answer.
   Use to answer "what is this field", "which JQL answers this", "what does
   this status require", or "which components exist". Knowledge and bundled
-  helpers only — use whichever Jira tool you have to act on it.
+  helpers only.
 compatibility: "Knowledge needs no access; acting on it needs a Jira path you have: an ADLC tool, an Atlassian MCP server, or a CLI. Windows, macOS, Linux."
 ---
 

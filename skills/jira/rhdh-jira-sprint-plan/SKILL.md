@@ -19,14 +19,6 @@ local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or a
 Produce the numbers a planning call needs, before the call. Read-only until the
 team decides something.
 
-## Goals, not tools
-
-Every step below states its goal, never which tool to use. Use whichever tool
-you actually have for Jira — an ADLC tool, an MCP server, or a CLI you know
-how to drive. `/rhdh-jira-context` owns the JQL,
-the field IDs, and the end-state rules that keep a silent failure from
-becoming a wrong velocity number.
-
 ## Route
 
 Load `workflows/plan-sprint.md`. Run it before each bi-weekly sprint planning

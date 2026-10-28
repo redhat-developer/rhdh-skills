@@ -19,16 +19,8 @@ local-tooling: "Optional: a Jira session — acli, an Atlassian MCP server, or a
 The protocol for tying a GitHub pull request or GitLab merge request to an RHDH
 Jira issue: raise the PR/MR when one does not exist, attach the Jira remote Web
 link, post or update the structured comment, optionally fill empty issue
-fields, and mark Web links merged or closed later.
-
-## Goals, not tools
-
-Every step below states its goal, never which tool to use. Raise the PR/MR and
-write to Jira with whichever tools you actually have — an ADLC tool, an MCP
-server, or a CLI you know how to drive; the tool's own help covers its syntax.
-The protocol — link titles, comment shape, defaults policy, the post-move key —
-is pinned here and binds whichever tool runs it. Field and payload context is
-`/rhdh-jira-context`.
+fields, and mark Web links merged or closed later. Field and payload
+context is `/rhdh-jira-context`.
 
 ## Raise the PR/MR first
 

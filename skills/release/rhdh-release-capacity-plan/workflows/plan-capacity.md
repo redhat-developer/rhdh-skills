@@ -4,7 +4,7 @@ Forecast whether a named team can take the `rhdh-X.Y-candidate` Features for a
 release: sample-sprint velocity and interrupt, Epic-first demand, and two
 capacity ledgers through Code Freeze.
 
-Use whichever Jira tool you have for bulk reads. For Greenhopper sprint
+For Greenhopper sprint
 reports, invoke `/rhdh-jira-context` and let it run its token-file adapter;
 never `curl`, never `cat` a token file, never set `AUTH` in chat. This
 workflow is read-only.
