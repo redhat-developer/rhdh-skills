@@ -57,6 +57,10 @@ To confirm a z-stream has GA'd, check all of:
 
 1. `git ls-remote --tags` against **each repo that has open PRs** for the
    expected tag (e.g. `1.10.5`). Tags in these repos do not carry a `v` prefix.
+   The match must be **exact**: a tag named `redhat-developer-hub-2.1.0` is a
+   chart-version tag, not the `2.1.0` release tag — the upstream rhdh-chart repo
+   bumps the chart version for every changed chart, so these tags exist
+   independently of the RHDH release cycle. Only `refs/tags/<x.y.z>` counts.
    A tag present in one repo but absent in another means the release is not
    fully rolled out — hold PRs in repos where the tag is missing.
 2. Release notes: check **both** pages for a section covering that z-stream —
