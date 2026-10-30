@@ -1,0 +1,11 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: partner-plugin
+  namespace: rhdh
+  title: Partner Plugin
+spec:
+  support:
+    provider: Example
+    level: community
+  lifecycle: active

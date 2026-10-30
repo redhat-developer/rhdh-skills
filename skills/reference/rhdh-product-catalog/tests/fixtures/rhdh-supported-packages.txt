@@ -1,0 +1,5 @@
+# fixture supported export list
+example-tp/plugins/example-tech-preview
+adoption-insights/plugins/adoption-insights
+adoption-insights/plugins/adoption-insights-backend
+todo/plugins/todo

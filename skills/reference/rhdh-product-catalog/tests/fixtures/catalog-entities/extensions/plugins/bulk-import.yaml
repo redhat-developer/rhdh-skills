@@ -1,0 +1,13 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: bulk-import
+  namespace: rhdh
+  title: Bulk Import
+  annotations:
+    extensions.backstage.io/pre-installed: 'true'
+spec:
+  support:
+    provider: Red Hat
+    level: generally-available
+  lifecycle: active
