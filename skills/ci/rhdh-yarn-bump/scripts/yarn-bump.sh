@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Multi-repo Yarn Berry 4.x bump. Mutator: bump-yarn.js.
-# Opens PRs/MRs via sibling skills/ci/rhdh-pr-mr (no Jira key for bot bumps).
+# Opens PRs/MRs via sibling skills/ci/rhdh-pr-mr with linked Jira and attribution.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -18,6 +18,8 @@ WORKDIR=""
 RC=0
 GH_BIN_ROOT=""
 YARN_BIN=""
+ISSUE="${JIRA_ISSUE:-}"
+ASSISTED_BY="${RHDH_ASSISTED_BY:-yarn-bump.sh (rhdh-yarn-bump)}"
 
 GH_REPOS=(
   redhat-developer/rhdh-plugins
@@ -33,15 +35,17 @@ GL_REPOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  yarn-bump.sh [--to VER] [--branch main] [--dry-run] [--no-push] [--workdir DIR]
+  yarn-bump.sh [--to VER] [--branch main] [--issue KEY] [--assisted-by ATTR]
+               [--dry-run] [--no-push] [--workdir DIR]
 
 Resolves latest Yarn 4.x when --to is omitted. Clones GitHub then GitLab CEE,
 runs bump-yarn.js --from-all. Downloads the Yarn CLI once and passes --bin so
 each PR/MR commits yarn-<to>.cjs. If that download fails, GitLab falls back to
 copying the binary from a GitHub bump. Commits as rhdh-bot and opens PRs/MRs on
-chore/automated-yarn-bump via rhdh-pr-mr (no Jira).
+chore/automated-yarn-bump via rhdh-pr-mr with linked Jira and attribution.
 
-Env: GITHUB_TOKEN or GH_TOKEN; PRIVATE_TOKEN (GitLab CEE); CREATE_PR_MR (optional).
+Env: GITHUB_TOKEN or GH_TOKEN; PRIVATE_TOKEN (GitLab CEE); CREATE_PR_MR (optional);
+     JIRA_ISSUE (required); RHDH_ASSISTED_BY (default: yarn-bump.sh (rhdh-yarn-bump)).
 EOF
 }
 
@@ -50,6 +54,8 @@ while [[ $# -gt 0 ]]; do
     -h | --help) usage; exit 0 ;;
     --to) TO="${2:?}"; shift 2 ;;
     --branch) BRANCH="${2:?}"; shift 2 ;;
+    --issue) ISSUE="${2:?}"; shift 2 ;;
+    --assisted-by) ASSISTED_BY="${2:?}"; shift 2 ;;
     --workdir) WORKDIR="${2:?}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --no-push) PUSH=0; shift ;;
@@ -62,6 +68,20 @@ for bin in node npm jq git curl; do
 done
 [[ -f "${BUMP_JS}" ]] || { echo "[ERROR] missing ${BUMP_JS}" >&2; exit 1; }
 [[ -f "${CREATE_PR_MR}" ]] || { echo "[ERROR] missing ${CREATE_PR_MR} (rhdh-pr-mr skill)" >&2; exit 1; }
+
+# Require Jira and attribution before expensive clone/bump work.
+[[ "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || {
+  echo "[ERROR] --issue KEY or JIRA_ISSUE env required (standing ticket for bot bumps)" >&2
+  exit 1
+}
+[[ -n "${ASSISTED_BY}" ]] || {
+  echo "[ERROR] --assisted-by ATTRIBUTION or RHDH_ASSISTED_BY env required" >&2
+  exit 1
+}
+if [[ "${ASSISTED_BY}" =~ $'\n' ]] || [[ ! "${ASSISTED_BY}" =~ [^[:space:]] ]]; then
+  echo "[ERROR] --assisted-by must be a single non-blank line" >&2
+  exit 1
+fi
 
 if [[ -z "${TO}" ]]; then
   TO=$(npm view @yarnpkg/cli versions --json \
@@ -185,7 +205,8 @@ commit_and_pr() {
     return 0
   fi
   git add -A
-  git commit -s -m "$(printf 'chore(deps): bump Yarn to %s\n\nOpened by yarn-bump.sh (rhdh-yarn-bump skill).\n' "${TO}")"
+  git commit -s -m "$(printf 'chore(deps): bump Yarn to %s\n\nOpened by yarn-bump.sh (rhdh-yarn-bump skill).\n' "${TO}")" \
+    -m "Assisted-By: ${ASSISTED_BY}"
   if [[ "${PUSH}" -eq 0 ]]; then
     echo "[INFO] ${slug}: committed, --no-push"
     popd >/dev/null
@@ -201,6 +222,8 @@ commit_and_pr() {
     --head "${TOPIC}" \
     --title "${title}" \
     --body-file "${body_file}" \
+    --issue "${ISSUE}" \
+    --assisted-by "${ASSISTED_BY}" \
     --label ok-to-test \
     --no-open \
     || echo "[WARN] create-pr-mr failed for ${slug}" >&2

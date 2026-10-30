@@ -70,6 +70,10 @@ done
   echo "[ERROR] --assisted-by ATTRIBUTION is required" >&2
   exit 1
 }
+if [[ "${ASSISTED_BY}" =~ $'\n' ]] || [[ ! "${ASSISTED_BY}" =~ [^[:space:]] ]]; then
+  echo "[ERROR] --assisted-by must be a single non-blank line" >&2
+  exit 1
+fi
 if [[ -n "${BODY_FILE}" ]]; then
   [[ -f "${BODY_FILE}" ]] || { echo "[ERROR] --body-file not found: ${BODY_FILE}" >&2; exit 1; }
   BODY=$(cat "${BODY_FILE}")

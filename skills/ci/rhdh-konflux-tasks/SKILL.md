@@ -153,10 +153,9 @@ writes. Follow `/mutation-gate`.
   brackets, for example `chore: update Konflux Tekton tasks [release-2.1]`.
   Include `[main]` on `main`. `/rhdh-pr-mr` appends that suffix when it is missing.
 - Always include https://github.com/redhat-developer/rhdh-skills/tree/main/skills/ci/rhdh-konflux-tasks in the body.
-  Before opening, ask which Jira key to cite. If the user gives a key, add
-  `https://redhat.atlassian.net/browse/<KEY>` and pass `--issue`. If they omit
-  it or say "no jira", omit the Jira line and do not pass `--issue`. Do not
-  look a key up and do not invent one.
+  Before opening, resolve the Jira key from the conversation and pass `--issue`
+  and `--assisted-by`. Stop before pushing when no Jira key is known; do not
+  invent one.
 - When replacing a legacy task with `-oci-ta`, edit templates and shared
   pipelines first, then regenerate PLRs (or patch inline `pipelineSpec` PLRs by
   hand). Editing only PLRs leaves the source of truth stale.

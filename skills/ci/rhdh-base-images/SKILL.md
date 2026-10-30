@@ -50,9 +50,9 @@ tree is clean before writing.
 
 When the user asks to push and open a PR/MR after approval, invoke `/rhdh-pr-mr`
 by name (or its `create-pr-mr.sh`) instead of hand-rolling `gh pr create` /
-`glab mr create`. Pass `--issue` when a Jira key is already known; omit it to
-skip linking. Midstream `updateBaseImages.sh` still uses distgit `createPR.sh`
-until that path is migrated.
+`glab mr create`. Pass `--issue` and `--assisted-by`; stop before pushing when
+no Jira key is known. Midstream `updateBaseImages.sh` still uses distgit
+`createPR.sh` until that path is migrated.
 
 ## Repository invariants
 

@@ -103,6 +103,11 @@ jobs:
       - name: Lint shell skill scripts
         run: find skills -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 
+      - name: Smoke-test PR/MR opener and caller metadata
+        run: |
+          bash skills/ci/rhdh-pr-mr/tests/smoke.sh
+          bash skills/ci/rhdh-yarn-bump/tests/smoke-caller.sh
+
       - name: Build and smoke-test the standalone rhdh CLI
         run: |
           uv build
