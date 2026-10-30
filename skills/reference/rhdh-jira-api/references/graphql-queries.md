@@ -1,21 +1,26 @@
 # Jira bulk-read adapter
 
-Use `acli` for bulk reads unless the agent host exposes an already-authenticated Atlassian
-GraphQL capability. This reference owns query semantics, not credentials or HTTP transport.
+This reference owns GraphQL query semantics and the adapter decision for bulk reads. It does not
+own credentials or HTTP transport. See [auth.md](auth.md) for the full adapter decision table.
 
 ## Capability gate
 
 1. Run the capability check in [auth.md](auth.md).
-2. If `acli` is ready, prefer its paginated JSON search:
+2. For single-issue reads, prefer the host adapter (`getJiraIssue`) — it avoids the silent
+   empty-field trap that `acli` carries without `--fields '*all'`. Custom fields still have to be
+   asked for: pass `view: 'evidence'` or `'full'`, or name the site's `customfield_*` IDs, and read
+   them from `fields.customFields`.
+3. For bulk JQL where all pages must auto-walk without explicit looping, use `acli --paginate`:
 
    ```bash
    acli jira workitem search --jql "<JQL>" --paginate \
      --fields "key,summary,status,issuetype,priority,assignee,parent,labels,fixVersions" --json
    ```
 
-3. Use GraphQL only when the host exposes a ready authenticated Atlassian adapter and the branch
-   needs relationship or custom-field data that `acli` cannot return efficiently.
-4. If neither adapter satisfies the branch, say so and tell the human to run
+4. Use GraphQL only when the host exposes a ready authenticated Atlassian adapter and the branch
+   needs relationship or custom-field data that neither `acli` nor the host adapter's standard
+   tools can return efficiently.
+5. If neither adapter satisfies the branch, say so and tell the human to run
    `/setup-rhdh-skills atlassian-mcp`.
 
 The agent never creates an `AUTH` variable, reads a token file into context, builds an
@@ -159,12 +164,21 @@ known; it avoids fetching an issue to reach the roster.
 
 | Need | Adapter |
 |---|---|
-| Normal or bulk JQL search | `acli jira workitem search --paginate --json` |
-| Single issue with custom fields | `acli jira workitem view KEY --fields '*all' --json` |
+| JQL search, all pages auto-walk | `acli jira workitem search --paginate --json` |
+| JQL search, explicit pagination | Host adapter (`searchJiraIssuesUsingJql`, `nextPageToken`) |
+| Single issue with custom fields | Host adapter (`getJiraIssue`, with `view: 'evidence'`/`'full'` or explicit `customfield_*` IDs) — avoids silent empty-field trap; values land in `fields.customFields` |
+| Single issue + comments in one call | Host adapter (include `"comment"` in `fields`) |
+| Issue create/edit with custom fields | Host adapter — native `fields` dict; no REST fallback needed |
+| Remote link / PR web-link | Host adapter (`createJiraIssueRemoteIssueLink` via `discover` + `executeWrite`) — `acli` has no equivalent |
+| Worklog | Host adapter (`addOrEditJiraIssueWorklog` via `discover` + `executeWrite`) — `acli` has no equivalent |
+| Batch transition or edit by JQL | `acli --jql ... --yes` — host adapter has no batch capability |
+| Board and sprint reads | `acli` — host adapter reaches them only via `discover` + `executeRead` (`listJiraBoardSprints`) |
 | Relationship-heavy bulk read | Authenticated host GraphQL adapter |
 | Team roster by team id | Authenticated host GraphQL adapter, `team.teamV2` |
-| Unsupported custom-field read or write | [rest-api-fallback.md](rest-api-fallback.md) |
+| Cross-product graph links (Atlas, Goals) | Host adapter (`getGraphContext`, `getGraphObject`) |
+| Compass components, metrics, scorecards | [rest-api-fallback.md](rest-api-fallback.md) — MCP v2 dropped the Compass tools |
 | Sprint report / burndown | Bundled `scripts/greenhopper.py` (local token file). Host REST adapter only if that script cannot run |
+| Unsupported field — no native tool | [rest-api-fallback.md](rest-api-fallback.md) |
 | No capable authenticated adapter | Name the missing capability and `/setup-rhdh-skills atlassian-mcp` |
 
 `issueSearchStable` is an evolving API. When it fails, fall back to paginated `acli`, not raw REST

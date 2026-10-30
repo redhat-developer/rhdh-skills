@@ -1,22 +1,27 @@
 # Jira authenticated API fallback
 
-Use this seam only when `acli` cannot read or update a required Jira field. This reference defines
-payload semantics. Credentials stay inside an already-authenticated host adapter or the bundled
-token-file adapter (`scripts/greenhopper.py`). Public output never includes them.
+Use this seam when `acli` cannot read or update a required Jira field **and** the host adapter does
+not expose a native tool for it. This reference defines payload semantics. Credentials stay inside an
+already-authenticated host adapter or the bundled token-file adapter (`scripts/greenhopper.py`).
+Public output never includes them.
 
 ## Capability gate
 
-1. Try the supported `acli` operation first. For broad reads, use paginated search; for a single
-   issue, use `acli jira workitem view KEY --fields '*all' --json`.
+1. Check the adapter decision table in [auth.md](auth.md). Many operations that formerly required
+   a REST fallback are now native host-adapter (MCP) tool calls — prefer those first. Only a handful
+   of those are primary tools; the rest are reached with `discover` to resolve the operation name,
+   then `executeRead` / `executeWrite` / `executeDestructive` with `cloudId` as a top-level argument.
+   Run `discover` before treating anything as missing from the host adapter, and never guess an
+   operation name.
 2. For Greenhopper sprint reports, run `uv run scripts/setup.py --json` and, when
    `token_file_found` is true, `uv run scripts/greenhopper.py sprintreport --board ID --sprint ID`.
    That script reads the token file in-process. The agent never `cat`s the file, never sets `AUTH`,
    and never calls `curl`.
-3. For other fields `acli` cannot handle, use REST only through an already-authenticated host
-   Atlassian adapter. The adapter owns the site, credential store, request headers, retries, and
+3. If the host adapter exposes no matching native tool, use REST only through the already-authenticated
+   host Atlassian adapter. The adapter owns the site, credential store, request headers, retries, and
    secret redaction.
 4. If that adapter is unavailable and the bundled Greenhopper script cannot run, say which field
-   could not be read and tell the human to run `/setup-rhdh-skills atlassian-mcp` (host adapter) or
+   could not be handled and tell the human to run `/setup-rhdh-skills atlassian-mcp` (host adapter) or
    skip Greenhopper and reconstruct.
 
 Do not create token files, shell `AUTH` variables, Authorization headers, or credential-bearing
@@ -26,6 +31,12 @@ request previews in model context. Do not fall back from a native tool to raw `c
 that manage project versions (e.g. `rhdh-release-fixversions`) use the invoker's
 Jira API token via their own authenticated client. Credentials stay in the
 environment or token file and never appear in the conversation or plan output.
+
+**Compass has no MCP tool in v2.** MCP v1 exposed Compass component, relationship,
+custom-field-definition, metric and scorecard tools; v2 removed them. `discover` will not find a
+replacement — a query for "compass component" returns `listJiraProjectComponents`, which is a Jira
+component, not a Compass one. Compass work therefore goes through this seam (or GraphQL where a
+query exists). `acli` has no Compass commands at all.
 
 ## Supported semantic operations
 
@@ -68,7 +79,9 @@ covers the set. `/rhdh-jira-update` owns that flow.
 
 ## Custom-field payloads
 
-These are payload fragments for an authenticated adapter. They are not standalone HTTP commands.
+> **Prefer the host adapter's native edit tool.** When a `editJiraIssue`-equivalent tool is
+> available, pass custom fields directly in its `fields` dict — no REST call needed. The payloads
+> below are the raw REST form; use them only when no native tool covers the operation.
 
 ```json
 {"fields": {"customfield_10028": 5}}
