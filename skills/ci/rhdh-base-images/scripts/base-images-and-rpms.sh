@@ -7,6 +7,12 @@
 
 set -euo pipefail
 
+# In-place edits use `sed -i.bak` followed by `rm -f` of that backup. GNU sed
+# accepts a bare -i, but BSD sed (macOS) requires a suffix and otherwise reads
+# the next flag as that suffix: the edit then runs without -E and leaves a
+# stray backup file. Keeping `rm` on its own line preserves `set -e`, so a
+# failed edit aborts instead of being swallowed by an `&&` list.
+
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 BRANCH=""
@@ -491,8 +497,8 @@ bump_openshift_rpm_repos_in_file() {
         sed -i.bak \
             -e "s|dependencies/rpms/${old_stream}|dependencies/rpms/${new_stream}|g" \
             -e "s|rhocp-${old_ver}-for-rhel-9-|rhocp-${new_ver}-for-rhel-9-|g" \
-            "${file}" \
-            && rm -f "${file}.bak"
+            "${file}"
+        rm -f "${file}.bak"
     done < <(grep -oE '[0-9]+\.[0-9]+-el9-beta' "${file}" | sort -u)
 }
 
@@ -524,8 +530,8 @@ bump_rhocp_version_in_file() {
     [[ -f "${file}" ]] || return 0
     [[ "${new_ver}" =~ ^4\.[0-9]+$ ]] || return 0
     grep -qE '/rhocp/4\.[0-9]+/' "${file}" || return 0
-    sed -i.bak -E "s|/rhocp/4\\.[0-9]+/|/rhocp/${new_ver}/|g" "${file}" \
-        && rm -f "${file}.bak"
+    sed -i.bak -E "s|/rhocp/4\\.[0-9]+/|/rhocp/${new_ver}/|g" "${file}"
+    rm -f "${file}.bak"
 }
 
 bump_catalog_builder_rhocp() {
@@ -827,13 +833,15 @@ update_nvm_releases_readme() {
 
     [[ -f "${readme}" ]] || return 0
 
-    sed -i \
+    sed -i.bak \
         -e "s|^As of [0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9], this version is \`v[^']*\`|As of ${today}, this version is \`${node_version}\`|" \
         -e "s|^The latest RPM is \`v[^']*\`\.|The latest RPM is \`${node_version}\`.|" \
         -e "s|^NODE_HEADERS_VERSION=v[0-9].*|NODE_HEADERS_VERSION=${node_version}|" \
         "${readme}"
+    rm -f "${readme}.bak"
     # Example `node --version` output in the first code block.
-    sed -i -E "s/^v[0-9]+\\.[0-9]+\\.[0-9]+$/$(printf '%s' "${node_version}")/" "${readme}"
+    sed -i.bak -E "s/^v[0-9]+\\.[0-9]+\\.[0-9]+$/$(printf '%s' "${node_version}")/" "${readme}"
+    rm -f "${readme}.bak"
 }
 
 nvm_readme_documents_version() {
@@ -941,7 +949,8 @@ PY
 rewrite_catalog_additional_tags() {
     local catalog_cf="$1"
     local node_plain="$2"
-    sed -i -E "s/node-v[0-9]+\\.[0-9]+\\.[0-9]+/node-v${node_plain}/" "${catalog_cf}"
+    sed -i.bak -E "s/node-v[0-9]+\\.[0-9]+\\.[0-9]+/node-v${node_plain}/" "${catalog_cf}"
+    rm -f "${catalog_cf}.bak"
 }
 
 # Increment LABEL release="N" and the matching X.Y-N token in konflux.additional-tags.
@@ -1252,15 +1261,17 @@ write_go_mod_versions() {
     local bump_go="$3"
     local bump_toolchain="$4"
     if [[ ${bump_go} -eq 1 ]]; then
-        sed -i -e "s/^go .*/go ${go_lang}/" go.mod
+        sed -i.bak -e "s/^go .*/go ${go_lang}/" go.mod
+        rm -f go.mod.bak
     fi
     if [[ ${bump_toolchain} -eq 1 ]]; then
         if grep -qE '^toolchain ' go.mod; then
-            sed -i -e "s/^toolchain .*/toolchain go${go_full}/" go.mod
+            sed -i.bak -e "s/^toolchain .*/toolchain go${go_full}/" go.mod
+            rm -f go.mod.bak
         else
             sed -i.bak -e "/^go /a\\
-toolchain go${go_full}" go.mod \
-                && rm -f go.mod.bak
+toolchain go${go_full}" go.mod
+            rm -f go.mod.bak
         fi
     fi
 }
@@ -1519,16 +1530,18 @@ order_repo_dirs
 RHDH_NODE_REPO=""
 RHDH_NODE_PLAIN=""
 
-declare -A SEEN_KIND=()
+SEEN_KINDS=()
 for repo_dir in "${REPO_DIRS[@]}"; do
     repo_dir=$(cd "${repo_dir}" && pwd)
     kind=$(detect_repo_kind "${repo_dir}")
     [[ "${kind}" != "unknown" ]] || die "${repo_dir}: cannot detect repo type (rhdh, rhdh-operator, rhdh-must-gather, rhdh-plugin-catalog, or rhdh-plugin-export-overlays)"
-    if [[ -n "${SEEN_KIND[${kind}]:-}" ]]; then
-        warn "Skipping duplicate ${kind} repo: ${repo_dir}"
-        continue
-    fi
-    SEEN_KIND[${kind}]=1
+    case " ${SEEN_KINDS[*]-} " in
+        *" ${kind} "*)
+            warn "Skipping duplicate ${kind} repo: ${repo_dir}"
+            continue
+            ;;
+    esac
+    SEEN_KINDS+=("${kind}")
 
     local_git_branch="${BRANCH}"
     if [[ "${kind}" == "rhdh-plugin-catalog" ]]; then

@@ -544,8 +544,9 @@ if [[ "$APPLY" -eq 1 ]]; then
     [[ "$status" == "trusted" ]] && continue
     while IFS= read -r file; do
       [[ -z "$file" ]] && continue
-      sed -i.bak -E -e "s|${old}|${suggested}|g" "$file" \
-      && rm -f "${file}.bak"
+      # BSD sed (macOS) requires a backup suffix on -i; drop it on success.
+      sed -i.bak -E -e "s|${old}|${suggested}|g" "$file"
+      rm -f "${file}.bak"
     done < <(jq -r '.files[]' <<<"$row")
     log_err "applied ${old} -> ${suggested}"
   done < <(jq -c '.[]' <<<"$RESULTS_JSON")
