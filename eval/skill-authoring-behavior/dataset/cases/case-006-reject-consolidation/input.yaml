@@ -1,0 +1,4 @@
+prompt: |
+  Decide whether fixture/deployment-create and fixture/deployment-status should
+  be consolidated merely because both concern deployments. Write the decision
+  and recommended next action to output/decision.md. Do not modify the fixtures.

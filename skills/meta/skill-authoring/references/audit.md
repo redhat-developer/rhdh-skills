@@ -6,7 +6,8 @@ Use this workflow when reviewing, improving, or debugging an existing skill.
 
 Read the full `SKILL.md` and list every file in the skill directory
 (`references/`, `workflows/`, `scripts/`, `templates/`, `assets/`). Record the
-total line count of the directory, not only of `SKILL.md`.
+total line count of the directory, not only of `SKILL.md`. Discover any
+repository-level agent-eval-harness configs for the skill separately.
 
 ## Step 2: Run the audit checklist
 
@@ -97,6 +98,26 @@ misfires or bloats.
 - [ ] Changed Python passes the host formatter and linter (`ruff format` and
       `ruff check` when the host uses ruff)
 
+**Evaluations:**
+
+- [ ] Read `evaluation-guide.md`; evaluation assets use agent-eval-harness rather
+      than a skill-local case format
+- [ ] Separate prompt-mode routing from explicitly invoked skill behavior
+- [ ] Cases test outcome, relevant process, style, and efficiency without
+      inspecting hidden chain of thought
+- [ ] Model-invoked skills test intended activation and keyword-sharing
+      near-misses; user-invoked skills do not pretend routing is under test
+- [ ] Runs use isolated case workspaces and repeat stochastic judges
+- [ ] The report uses a recorded baseline or pairwise comparison when claiming
+      that the skill improved behavior
+- [ ] Existing failures and production traces become regression cases
+- [ ] Judge logic is deterministic where possible and uses a narrow semantic
+      rubric only where necessary
+- [ ] Thresholds are calibrated from a successful baseline rather than presented
+      as validated guesses
+- [ ] Capability skills have retirement evidence; preference skills state the
+      durable convention that still requires enforcement
+
 Read `anti-patterns.md` for the full catalog of common failures.
 
 ## Step 3: Generate the report
@@ -114,7 +135,8 @@ recommend a fix.
 
 Ask the user which findings to fix. Apply changes surgically — don't rewrite
 sections that aren't broken. Before finishing, verify modified skills against the
-Phase 5 review checklist in `create.md`, Basics through Quality.
+Phase 5 review checklist in `create.md`, Basics through Quality, and run the
+applicable agent-eval-harness configs from `evaluation-guide.md`.
 
 An audit that only reads and reports does not need the `grilling` skill. Invoke
 it only when the audit opens an interview, such as clarifying ambiguous scope

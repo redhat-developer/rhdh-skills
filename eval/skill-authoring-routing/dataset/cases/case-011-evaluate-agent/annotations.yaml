@@ -1,0 +1,3 @@
+should_trigger: false
+category: near-miss-evaluation
+rationale: Evaluating a general agent belongs directly to agent-eval-harness, not skill authoring.

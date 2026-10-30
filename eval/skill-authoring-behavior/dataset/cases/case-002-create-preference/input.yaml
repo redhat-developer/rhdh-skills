@@ -1,0 +1,9 @@
+prompt: |
+  Create a portable preference skill named release-note-tone under
+  output/release-note-tone. The grilling interview is complete and these choices
+  are confirmed: it activates when asked to edit an existing release note into
+  our house voice; preserves technical claims; uses short direct sentences;
+  removes hype; never invents compatibility promises; returns edited Markdown;
+  has no scripts or external APIs; and should remain useful even when base models
+  become better writers because the house convention is durable. Include an
+  agent-eval-harness evaluation design and do not ask more questions.

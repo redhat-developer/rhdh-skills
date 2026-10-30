@@ -1,0 +1,3 @@
+should_trigger: true
+category: explicit-consolidate
+rationale: Explicitly requests consolidation of Agent Skills.
