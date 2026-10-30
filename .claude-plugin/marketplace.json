@@ -63,7 +63,8 @@
         "./skills/release/rhdh-smoke-tests",
         "./skills/release/rhdh-translation-upload",
         "./skills/release/rhdh-translation-deploy",
-        "./skills/release/rhdh-test-plan-review"
+        "./skills/release/rhdh-test-plan-review",
+        "./skills/release/rhdh-kb-theme-analysis"
       ]
     },
     {
