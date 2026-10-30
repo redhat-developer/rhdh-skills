@@ -488,10 +488,11 @@ bump_openshift_rpm_repos_in_file() {
         [[ -n "${old_stream}" ]] || continue
         [[ "${old_stream}" != "${new_stream}" ]] || continue
         old_ver="${old_stream%-el9-beta}"
-        sed -i \
+        sed -i.bak \
             -e "s|dependencies/rpms/${old_stream}|dependencies/rpms/${new_stream}|g" \
             -e "s|rhocp-${old_ver}-for-rhel-9-|rhocp-${new_ver}-for-rhel-9-|g" \
-            "${file}"
+            "${file}" \
+            && rm -f "${file}.bak"
     done < <(grep -oE '[0-9]+\.[0-9]+-el9-beta' "${file}" | sort -u)
 }
 
@@ -523,7 +524,8 @@ bump_rhocp_version_in_file() {
     [[ -f "${file}" ]] || return 0
     [[ "${new_ver}" =~ ^4\.[0-9]+$ ]] || return 0
     grep -qE '/rhocp/4\.[0-9]+/' "${file}" || return 0
-    sed -i -E "s|/rhocp/4\\.[0-9]+/|/rhocp/${new_ver}/|g" "${file}"
+    sed -i.bak -E "s|/rhocp/4\\.[0-9]+/|/rhocp/${new_ver}/|g" "${file}" \
+        && rm -f "${file}.bak"
 }
 
 bump_catalog_builder_rhocp() {
@@ -1256,7 +1258,9 @@ write_go_mod_versions() {
         if grep -qE '^toolchain ' go.mod; then
             sed -i -e "s/^toolchain .*/toolchain go${go_full}/" go.mod
         else
-            sed -i -e "/^go /a toolchain go${go_full}" go.mod
+            sed -i.bak -e "/^go /a\\
+toolchain go${go_full}" go.mod \
+                && rm -f go.mod.bak
         fi
     fi
 }
