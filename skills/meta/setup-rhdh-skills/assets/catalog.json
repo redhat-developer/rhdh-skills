@@ -453,6 +453,12 @@
       ]
     },
     {
+      "name": "rhdh-kb-theme-analysis",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": []
+    },
+    {
       "name": "openspec-journal",
       "category": "reference",
       "invocation": "model",

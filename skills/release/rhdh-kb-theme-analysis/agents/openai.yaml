@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH KB Theme Analysis"
+  short_description: "Compare RHDH KB article themes across rolling windows"
