@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push a topic branch and open a GitHub PR or GitLab CEE MR.
-# Optionally link Jira via sibling rhdh-jira-link when --issue / JIRA_ISSUE is set.
+# Require attribution and Jira metadata, then link via sibling rhdh-jira-link.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -15,6 +15,7 @@ TITLE=""
 BODY=""
 BODY_FILE=""
 ISSUE="${JIRA_ISSUE:-}"
+ASSISTED_BY="${RHDH_ASSISTED_BY:-}"
 LABEL=""
 NO_OPEN=1
 DRY_RUN=0
@@ -24,14 +25,16 @@ usage() {
 Usage:
   create-pr-mr.sh --cwd DIR --base BRANCH --head BRANCH --title TITLE
                   [--body TEXT | --body-file FILE]
-                  [--issue KEY] [--label LABEL] [--open] [--dry-run]
+                  --issue KEY --assisted-by ATTRIBUTION
+                  [--label LABEL] [--open] [--dry-run]
 
 Caller owns the commit. This script pushes --head and opens a GitHub PR or
-GitLab CEE MR. If --issue or JIRA_ISSUE is set, links via rhdh-jira-link;
-otherwise skips linking.
+GitLab CEE MR. It verifies the latest commit's Assisted-By trailer, adds the
+same attribution and a Markdown Jira link to the description, and links Jira
+via rhdh-jira-link.
 
 Env: GITHUB_TOKEN|GH_TOKEN; PRIVATE_TOKEN; CI_SERVER_HOST; GITLAB_PIPELINE;
-     JIRA_ISSUE; JIRA_API_TOKEN; RHDH_JIRA_LINK_SCRIPTS.
+     JIRA_ISSUE; RHDH_ASSISTED_BY; JIRA_API_TOKEN; RHDH_JIRA_LINK_SCRIPTS.
 EOF
 }
 
@@ -45,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --body) BODY="${2:?}"; shift 2 ;;
     --body-file) BODY_FILE="${2:?}"; shift 2 ;;
     --issue) ISSUE="${2:?}"; shift 2 ;;
+    --assisted-by) ASSISTED_BY="${2:?}"; shift 2 ;;
     --label) LABEL="${2:?}"; shift 2 ;;
     --no-open) NO_OPEN=1; shift ;;
     --open) NO_OPEN=0; shift ;;
@@ -58,11 +62,38 @@ done
   echo "[ERROR] --base, --head, and --title are required" >&2
   exit 1
 }
+[[ "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || {
+  echo "[ERROR] --issue KEY is required (for example RHIDP-12345)" >&2
+  exit 1
+}
+[[ -n "${ASSISTED_BY}" ]] || {
+  echo "[ERROR] --assisted-by ATTRIBUTION is required" >&2
+  exit 1
+}
 if [[ -n "${BODY_FILE}" ]]; then
   [[ -f "${BODY_FILE}" ]] || { echo "[ERROR] --body-file not found: ${BODY_FILE}" >&2; exit 1; }
   BODY=$(cat "${BODY_FILE}")
 fi
 [[ -n "${BODY}" ]] || BODY="${TITLE}"
+
+append_body_line() {
+  local line="$1"
+  if ! printf '%s\n' "${BODY}" | grep -Fqx "${line}"; then
+    if [[ -n "${BODY}" ]]; then
+      BODY="${BODY}"$'\n\n'
+    fi
+    BODY="${BODY}${line}"
+  fi
+}
+
+jira_url="https://redhat.atlassian.net/browse/${ISSUE}"
+jira_line="Related Jira: [${ISSUE}](${jira_url})"
+assisted_by_line="Assisted-By: ${ASSISTED_BY}"
+ensure_body_metadata() {
+  append_body_line "${jira_line}"
+  append_body_line "${assisted_by_line}"
+}
+ensure_body_metadata
 
 # Keep parallel stream MRs distinct: "chore: … [release-2.1]".
 branch_suffix=" [${BASE}]"
@@ -75,6 +106,11 @@ if [[ "${GITLAB_PIPELINE:-}" == "true" ]]; then
 fi
 
 cd "${CWD}"
+
+if ! git log -1 --format=%B | git interpret-trailers --parse | grep -Fqx "${assisted_by_line}"; then
+  echo "[ERROR] latest commit must contain trailer: ${assisted_by_line}" >&2
+  exit 1
+fi
 
 origin=$(git remote get-url origin 2>/dev/null || true)
 [[ -n "${origin}" ]] || { echo "[ERROR] no origin remote in ${CWD}" >&2; exit 1; }
@@ -91,11 +127,10 @@ repo_short=$(basename "${repo_slug}")
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "[INFO] dry-run: would push ${HEAD} → ${BASE} on ${host} ${repo_slug}"
   echo "[INFO] dry-run: title=${TITLE}"
-  if [[ -n "${ISSUE}" ]]; then
-    echo "[INFO] dry-run: would link Jira ${ISSUE}"
-  else
-    echo "[INFO] no Jira issue; skip link"
-  fi
+  echo "[INFO] dry-run: description metadata:"
+  echo "${jira_line}"
+  echo "${assisted_by_line}"
+  echo "[INFO] dry-run: would link Jira ${ISSUE}"
   exit 0
 fi
 
@@ -111,6 +146,21 @@ if [[ "${host}" == "github" ]]; then
   existing=$(gh pr list --base "${BASE}" --head "${HEAD}" --state open --json url -q '.[0].url // empty' 2>/dev/null || true)
   if [[ -n "${existing}" ]]; then
     url="${existing}"
+    if [[ ! "${url}" =~ /pull/([0-9]+)$ ]]; then
+      echo "[ERROR] could not parse existing PR number: ${url}" >&2
+      exit 1
+    fi
+    existing_pr_id="${BASH_REMATCH[1]}"
+    if ! BODY=$(gh api "repos/${repo_slug}/pulls/${existing_pr_id}" --jq .body 2>/dev/null); then
+      echo "[ERROR] could not read existing PR description: ${url}" >&2
+      exit 1
+    fi
+    ensure_body_metadata
+    if ! gh api "repos/${repo_slug}/pulls/${existing_pr_id}" --method PATCH \
+      --raw-field body="${BODY}" >/dev/null 2>&1; then
+      echo "[ERROR] could not update existing PR description: ${url}" >&2
+      exit 1
+    fi
     echo "[INFO] existing PR ${url}"
   else
     create_args=(pr create --base "${BASE}" --head "${HEAD}" --title "${TITLE}" --body "${BODY}")
@@ -144,31 +194,44 @@ else
     exit 1
   fi
   enc=$(printf '%s' "${repo_slug}" | jq -sRr @uri)
-  existing=$(curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
+  existing_json=$(curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
     "https://${glab_host}/api/v4/projects/${enc}/merge_requests?state=opened&source_branch=${HEAD}" \
-    | jq -r '.[0].web_url // empty' 2>/dev/null || true)
-  if [[ -n "${existing}" ]]; then
-    url="${existing}"
+    | jq -c '.[0] // empty' 2>/dev/null || true)
+  if [[ -n "${existing_json}" ]]; then
+    url=$(jq -r '.web_url // empty' <<<"${existing_json}")
+    mr_iid=$(jq -r '.iid // empty' <<<"${existing_json}")
+    BODY=$(jq -r '.description // ""' <<<"${existing_json}")
+    [[ -n "${url}" && -n "${mr_iid}" ]] || {
+      echo "[ERROR] incomplete existing GitLab MR response" >&2
+      exit 1
+    }
+    ensure_body_metadata
+    updated_json=$(curl -fsS --request PUT --header "PRIVATE-TOKEN: ${tok}" \
+      --header "Content-Type: application/json" \
+      --data "$(jq -n --arg body "${BODY}" '{description:$body,remove_source_branch:true}')" \
+      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/${mr_iid}" || true)
+    if [[ "$(jq -r '.should_remove_source_branch // false' <<<"${updated_json}" 2>/dev/null)" != "true" ]]; then
+      echo "[ERROR] existing GitLab MR did not enable source-branch deletion: ${url}" >&2
+      exit 1
+    fi
     echo "[INFO] existing MR ${url}"
   else
-    url=$(curl -fsS --request POST --header "PRIVATE-TOKEN: ${tok}" \
+    created_json=$(curl -fsS --request POST --header "PRIVATE-TOKEN: ${tok}" \
       --header "Content-Type: application/json" \
       --data "$(jq -n --arg s "${HEAD}" --arg t "${BASE}" --arg title "${TITLE}" --arg body "${BODY}" \
         '{source_branch:$s,target_branch:$t,title:$title,description:$body,remove_source_branch:true}')" \
-      "https://${glab_host}/api/v4/projects/${enc}/merge_requests" \
-      | jq -r '.web_url // empty' 2>/dev/null || true)
+      "https://${glab_host}/api/v4/projects/${enc}/merge_requests" || true)
+    url=$(jq -r '.web_url // empty' <<<"${created_json}" 2>/dev/null || true)
     [[ -n "${url}" ]] || { echo "[ERROR] GitLab MR create failed" >&2; exit 1; }
+    if [[ "$(jq -r '.should_remove_source_branch // false' <<<"${created_json}" 2>/dev/null)" != "true" ]]; then
+      echo "[ERROR] new GitLab MR did not enable source-branch deletion: ${url}" >&2
+      exit 1
+    fi
     echo "[INFO] opened ${url}"
   fi
 fi
 
 echo "url: ${url}"
-
-# Optional Jira link
-if [[ -z "${ISSUE}" ]]; then
-  echo "[INFO] no Jira issue; skip link"
-  exit 0
-fi
 
 link_js="${JIRA_LINK_SCRIPTS}/link-pr-mr.js"
 if [[ ! -f "${link_js}" ]]; then
