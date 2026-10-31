@@ -102,9 +102,20 @@ instead of closing. The security fix may need to land via a manual patch that
 does not bump the directive.
 
 To avoid spamming on repeated triage runs, only post a new flag comment when the
-PR has had new commits or review activity since the last flag comment. If a
-previous triage run already left a flag comment and nothing has changed since,
-skip the PR silently.
+PR's actual diff has changed since the last flag comment — not merely when
+Renovate rebased the branch. Renovate force-pushes on rebase, creating a new
+commit SHA without changing the dependency update itself.
+
+To detect a meaningful diff change: compare the dependency target version in the
+current PR diff against the version recorded in the last flag comment. If the
+versions match, the rebase did not change the update — skip silently. If they
+differ, Renovate updated the PR to a newer dependency version — post a new flag.
+
+Flag comments must always include the dependency target version (e.g.
+"golang.org/x/net v0.62.0") so subsequent triage runs can compare.
+
+If a previous triage run already left a flag comment and the dependency version
+has not changed since, skip the PR silently.
 
 On main, Go directive and toolchain bumps are allowed and follow normal
 main-branch rules.
