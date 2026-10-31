@@ -112,6 +112,10 @@ decision table for any PR whose CI status has changed before proceeding.
 
 Skipped in dry-run mode.
 
+Always show the triage report table and action-count summary from Step 3 in the
+conversation **before** invoking `/mutation-gate`. The user must be able to
+review the full decision set before being asked to approve mutations.
+
 Invoke `/mutation-gate` with the full operation list. Each operation states:
 
 - **Target:** repository and PR number
