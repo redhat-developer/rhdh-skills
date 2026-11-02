@@ -54,7 +54,7 @@ node "$SKILL/scripts/create-pr-mr.js" \
 ## Test plan
 - [ ] …
 
-Generated-by: cursor
+Generated-by: paseo (pi + DeepSeek V4.1 Flash (EnMaaS), thinking: off)
 EOF
 )"
 ```
@@ -78,8 +78,11 @@ Either works (same token either way):
    `/rhdh-jira-api` uses. Invoke `/rhdh-jira-api` by name for the authoritative auth
    setup instead of duplicating it here.
 
-`create-pr-mr.js` appends `Ref: https://redhat.atlassian.net/browse/KEY` and
-`Generated-by: cursor` to the **PR/MR body** when missing. It skips the Jira
+`create-pr-mr.js` appends `Ref: https://redhat.atlassian.net/browse/KEY` and an
+attribution trailer to the **PR/MR body** when missing — `Generated-by:` for any
+harness it can identify (`PI_MODEL`, `PI_REASONING_LEVEL`), `Generated-by: cursor`
+otherwise, and nothing at all when the body already carries a
+`Generated-by:`/`Assisted-By:` line. It skips the Jira
 `Ref:` line for `community-plugins` remotes (or when `--no-jira-ref` is set) so
 that repo stays free of Jira browse URLs in git history / PR text.
 
@@ -214,8 +217,9 @@ free to transition the issue to **Review** (see
 ## Agent checklist
 
 1. Resolve Jira key. Ask if missing (unless user skipped Jira).
-2. Commit on a feature branch. Put the Jira browse URL and `Generated-by: cursor`
-   in the **PR/MR body** (`create-pr-mr.js` appends them when missing; skips
+2. Commit on a feature branch. Put the Jira browse URL and an attribution trailer
+   (`Generated-by: <tool> (<model>, thinking: <level>)`, dropping the parts you do
+   not know) in the **PR/MR body** (`create-pr-mr.js` appends them when missing; skips
    `Ref:` for community-plugins).
 3. Run **`create-pr-mr.js`** once. Report `url:` / `diffs:` / `browserOpened:` /
    `jiraLink:` from its stdout (`browserOpened: true` or `--no-open` means the

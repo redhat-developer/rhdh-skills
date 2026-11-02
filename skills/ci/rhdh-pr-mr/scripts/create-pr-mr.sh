@@ -15,7 +15,7 @@ TITLE=""
 BODY=""
 BODY_FILE=""
 ISSUE="${JIRA_ISSUE:-}"
-ASSISTED_BY="${RHDH_ASSISTED_BY:-}"
+ATTRIBUTION="${RHDH_ATTRIBUTION:-${RHDH_ASSISTED_BY:-}}"
 LABEL=""
 NO_OPEN=1
 DRY_RUN=0
@@ -25,16 +25,21 @@ usage() {
 Usage:
   create-pr-mr.sh --cwd DIR --base BRANCH --head BRANCH --title TITLE
                   [--body TEXT | --body-file FILE]
-                  --issue KEY --assisted-by ATTRIBUTION
+                  --issue KEY --attribution ATTR
                   [--label LABEL] [--open] [--dry-run]
 
 Caller owns the commit. This script pushes --head and opens a GitHub PR or
-GitLab CEE MR. It verifies the latest commit's Assisted-By trailer, adds the
-same attribution and a Markdown Jira link to the description, and links Jira
-via rhdh-jira-link.
+GitLab CEE MR. It verifies the latest commit carries a Generated-by trailer,
+adds the resolved attribution and a Markdown Jira link to the description, and
+links Jira via rhdh-jira-link.
+
+ATTR is written as-is when it already starts with Generated-by:/Assisted-By:,
+otherwise it is prefixed with "Generated-by: ". Its payload is optional past
+the tool name: write what is known, then stop.
 
 Env: GITHUB_TOKEN|GH_TOKEN; PRIVATE_TOKEN; CI_SERVER_HOST; GITLAB_PIPELINE;
-     JIRA_ISSUE; RHDH_ASSISTED_BY; JIRA_API_TOKEN; RHDH_JIRA_LINK_SCRIPTS.
+     JIRA_ISSUE; RHDH_ATTRIBUTION (RHDH_ASSISTED_BY accepted); JIRA_API_TOKEN;
+     RHDH_JIRA_LINK_SCRIPTS; PI_MODEL and PI_REASONING_LEVEL as a fallback.
 EOF
 }
 
@@ -48,7 +53,7 @@ while [[ $# -gt 0 ]]; do
     --body) BODY="${2:?}"; shift 2 ;;
     --body-file) BODY_FILE="${2:?}"; shift 2 ;;
     --issue) ISSUE="${2:?}"; shift 2 ;;
-    --assisted-by) ASSISTED_BY="${2:?}"; shift 2 ;;
+    --attribution | --assisted-by) ATTRIBUTION="${2:?}"; shift 2 ;;
     --label) LABEL="${2:?}"; shift 2 ;;
     --no-open) NO_OPEN=1; shift ;;
     --open) NO_OPEN=0; shift ;;
@@ -66,10 +71,27 @@ done
   echo "[ERROR] --issue KEY is required (for example RHIDP-12345)" >&2
   exit 1
 }
-[[ -n "${ASSISTED_BY}" ]] || {
-  echo "[ERROR] --assisted-by ATTRIBUTION is required" >&2
+# Attribution: tool name required, everything after it optional. Fill in from
+# the running harness when the caller passed nothing, and never invent a
+# placeholder value — an agent copies a placeholder verbatim.
+if [[ -z "${ATTRIBUTION}" && -n "${PI_MODEL:-}" ]]; then
+  ATTRIBUTION="pi (${PI_MODEL##*/}"
+  [[ -n "${PI_REASONING_LEVEL:-}" ]] && ATTRIBUTION="${ATTRIBUTION}, thinking: ${PI_REASONING_LEVEL}"
+  ATTRIBUTION="${ATTRIBUTION})"
+fi
+[[ -n "${ATTRIBUTION}" ]] || {
+  echo "[ERROR] --attribution required: '<tool> (<agent> + <model> (<provider>), thinking: <level>)'" >&2
+  echo "[ERROR] use only the parts you know, for example 'pi' or 'paseo (pi + DeepSeek V4.1 Flash (EnMaaS))'" >&2
   exit 1
 }
+if [[ "${ATTRIBUTION}" == *$'\n'* ]] || [[ ! "${ATTRIBUTION}" =~ [^[:space:]] ]]; then
+  echo "[ERROR] --attribution must be a single non-blank line" >&2
+  exit 1
+fi
+attribution_line="${ATTRIBUTION}"
+if [[ ! "${attribution_line}" =~ ^(Generated-by|Assisted-By):[[:space:]] ]]; then
+  attribution_line="Generated-by: ${attribution_line}"
+fi
 if [[ -n "${BODY_FILE}" ]]; then
   [[ -f "${BODY_FILE}" ]] || { echo "[ERROR] --body-file not found: ${BODY_FILE}" >&2; exit 1; }
   BODY=$(cat "${BODY_FILE}")
@@ -88,10 +110,10 @@ append_body_line() {
 
 jira_url="https://redhat.atlassian.net/browse/${ISSUE}"
 jira_line="Related Jira: [${ISSUE}](${jira_url})"
-assisted_by_line="Assisted-By: ${ASSISTED_BY}"
 ensure_body_metadata() {
   append_body_line "${jira_line}"
-  append_body_line "${assisted_by_line}"
+  # Accept any existing attribution trailer, whatever its payload.
+  printf '%s\n' "${BODY}" | grep -Eiq '^(generated|assisted)-by:' || append_body_line "${attribution_line}"
 }
 ensure_body_metadata
 
@@ -107,8 +129,8 @@ fi
 
 cd "${CWD}"
 
-if ! git log -1 --format=%B | git interpret-trailers --parse | grep -Fqx "${assisted_by_line}"; then
-  echo "[ERROR] latest commit must contain trailer: ${assisted_by_line}" >&2
+if ! git log -1 --format=%B | git interpret-trailers --parse | grep -Eiq '^(generated|assisted)-by:'; then
+  echo "[ERROR] latest commit must carry an attribution trailer, for example: ${attribution_line}" >&2
   exit 1
 fi
 
@@ -129,7 +151,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "[INFO] dry-run: title=${TITLE}"
   echo "[INFO] dry-run: description metadata:"
   echo "${jira_line}"
-  echo "${assisted_by_line}"
+  echo "${attribution_line}"
   echo "[INFO] dry-run: would link Jira ${ISSUE}"
   exit 0
 fi

@@ -119,14 +119,26 @@ function originRemoteUrl() {
   }
 }
 
+// Attribution for bodies that arrive without one. Uses the running harness
+// identity when it is exposed; never invents a provider it cannot confirm.
+function autoAttribution() {
+  const model = (process.env.PI_MODEL || '').trim();
+  if (!model) {
+    return 'Generated-by: cursor';
+  }
+  const level = (process.env.PI_REASONING_LEVEL || '').trim();
+  const name = model.split('/').pop();
+  return `Generated-by: pi (${name}${level ? `, thinking: ${level}` : ''})`;
+}
+
 function ensureBody(body, issue, { appendJiraRef }) {
   let text = (body || '').trim();
   const refLine = `Ref: ${JIRA_BROWSE}/${issue}`;
   if (appendJiraRef && !text.includes(issue) && !text.includes(refLine)) {
     text = text ? `${text}\n\n${refLine}` : refLine;
   }
-  if (!/Generated-by:\s*cursor/i.test(text) && !/Assisted-by:\s*cursor/i.test(text)) {
-    text = `${text}\n\nGenerated-by: cursor`;
+  if (!/^(?:generated|assisted)-by:\s*\S/im.test(text)) {
+    text = `${text}\n\n${autoAttribution()}`;
   }
   return `${text.trim()}\n`;
 }
