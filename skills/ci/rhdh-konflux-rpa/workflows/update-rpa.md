@@ -78,10 +78,12 @@ those local operations. Commit, push, and merge-request creation remain gated.
 
 ## 4. Build the fixed merge-request payload
 
-Read `references/mr-body.md` and replace only `{new_version}`, `{stream}`, and
-`{old_versions}`. Keep `Assisted-By: cursor`, the headings, and the empty
-Tickets section. The repository's static prose linter checks this fixed template
-in flavored mode; do not invoke a prose editor at runtime.
+Read `references/mr-body.md` and replace `{new_version}`, `{stream}`,
+`{old_versions}`, and `{attribution}`. Write the tool that actually ran, e.g.
+`paseo (pi + DeepSeek V4.1 Flash (EnMaaS), thinking: off)`, dropping every part
+you cannot confirm — never a literal from this template. Keep the headings and
+the empty Tickets section. The repository's static prose linter checks this
+fixed template in flavored mode; do not invoke a prose editor at runtime.
 
 Use this title:
 

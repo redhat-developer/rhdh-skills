@@ -79,11 +79,11 @@ Either works (same token either way):
    setup instead of duplicating it here.
 
 `create-pr-mr.js` appends `Ref: https://redhat.atlassian.net/browse/KEY` and an
-attribution trailer to the **PR/MR body** when missing — `Assisted-By:` for any
-harness it can identify (`PI_MODEL`, `PI_REASONING_LEVEL`), `Assisted-By: cursor`
-otherwise, and nothing at all when the body already carries a
-`Assisted-By:`/`Generated-by:` line. It skips the Jira
-`Ref:` line for `community-plugins` remotes (or when `--no-jira-ref` is set) so
+attribution trailer to the **PR/MR body** when missing — `Assisted-By: pi
+(<model>, thinking: <level>)` when `PI_MODEL` / `PI_REASONING_LEVEL` identify the
+harness, and nothing at all when they do not (never a guessed tool). It adds
+nothing when the body already carries an `Assisted-By:`/`Generated-by:` line. It
+skips the Jira `Ref:` line for `community-plugins` remotes (or when `--no-jira-ref` is set) so
 that repo stays free of Jira browse URLs in git history / PR text.
 
 ## Link-only: `link-pr-mr.js`

@@ -1,4 +1,4 @@
-Assisted-By: cursor
+Assisted-By: {attribution}
 
 #### What
 

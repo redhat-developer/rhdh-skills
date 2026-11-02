@@ -49,7 +49,7 @@ Examples:
 ## Summary
 - ...
 
-Assisted-By: cursor
+Assisted-By: <tool> (<agent> + <model> (<provider>), thinking: <level>)
 EOF
 )"
 `);
@@ -119,12 +119,12 @@ function originRemoteUrl() {
   }
 }
 
-// Attribution for bodies that arrive without one. Uses the running harness
-// identity when it is exposed; never invents a provider it cannot confirm.
+// Attribution for bodies that arrive without one. Names the running harness when
+// it exposes one; returns '' rather than blaming a tool that did not run.
 function autoAttribution() {
   const model = (process.env.PI_MODEL || '').trim();
   if (!model) {
-    return 'Assisted-By: cursor';
+    return '';
   }
   const level = (process.env.PI_REASONING_LEVEL || '').trim();
   const name = model.split('/').pop();
@@ -138,7 +138,10 @@ function ensureBody(body, issue, { appendJiraRef }) {
     text = text ? `${text}\n\n${refLine}` : refLine;
   }
   if (!/^(?:generated|assisted)-by:\s*\S/im.test(text)) {
-    text = `${text}\n\n${autoAttribution()}`;
+    const trailer = autoAttribution();
+    if (trailer) {
+      text = `${text}\n\n${trailer}`;
+    }
   }
   return `${text.trim()}\n`;
 }
