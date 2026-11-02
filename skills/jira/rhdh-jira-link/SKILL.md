@@ -53,8 +53,6 @@ node "$SKILL/scripts/create-pr-mr.js" \
 
 ## Test plan
 - [ ] …
-
-Assisted-By: paseo (pi + DeepSeek V4.1 Flash (EnMaaS), thinking: off)
 EOF
 )"
 ```
