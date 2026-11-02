@@ -8,7 +8,7 @@ description: >-
   Containerfile lines. Use for "bump yarn to 4.17.1", "upgrade Yarn Berry across
   the repos", "weekly yarn bump", "which Yarn version is each repo pinned to",
   or scanning yarn pins.
-compatibility: "Node, yarn, git, gh, jq on PATH; PRIVATE_TOKEN + gitlab.cee.redhat.com for GitLab CEE MRs."
+compatibility: "Node, yarn, git, gh, jq on PATH; PRIVATE_TOKEN + gitlab.cee.redhat.com for GitLab CEE MRs; JIRA_ISSUE standing ticket."
 ---
 
 # RHDH multi-repo Yarn bump
@@ -48,11 +48,22 @@ Plus pins Yarn cannot see: `ENV YARN=`, Containerfile / Dockerfile `yarn_version
 
 ```bash
 SKILL=<this skill's directory>
-"$SKILL/scripts/yarn-bump.sh"                 # resolve latest Yarn 4.x, clone, bump, PR/MR
-"$SKILL/scripts/yarn-bump.sh" --to 4.18.1 --dry-run
+JIRA_ISSUE=RHIDP-1234 "$SKILL/scripts/yarn-bump.sh"   # resolve latest 4.x, clone, bump, PR/MR
+"$SKILL/scripts/yarn-bump.sh" --to 4.18.1 --issue RHIDP-1234 --dry-run
 ```
 
-It resolves Yarn 4.x (`@yarnpkg/cli`; never `stable` / 5.x unless `--to`), downloads that CLI once, clones the six repos, skips open `chore/automated-yarn-bump*` PRs/MRs and denylist pins (`4.8.1` / `4.9.2` / `4.15.0`), bumps each tree with `--bin` (so the release binary is in the diff), commits as `rhdh-bot`, and opens PRs/MRs via sibling `/rhdh-pr-mr` (no Jira key for bot bumps).
+`--issue` / `JIRA_ISSUE` is required: the opener (`/rhdh-pr-mr`) refuses to publish without a
+key, so the scheduled bump carries the standing automation ticket. The key goes in the
+`Related Jira:` line; it does not mean a human is working the bump.
+
+`--attribution` / `RHDH_ATTRIBUTION` (alias `--assisted-by`, `RHDH_ASSISTED_BY`) becomes the
+commit trailer and is forwarded to the opener. Default `rhdh-yarn-bump` — the script names
+itself and claims no model. An agent-driven run should pass what it knows, e.g.
+`--attribution 'paseo (pi + DeepSeek V4.1 Flash (EnMaaS), thinking: off)'`. A value that
+already starts with `Assisted-By:` or `Generated-by:` is used verbatim.
+
+It resolves Yarn 4.x (`@yarnpkg/cli`; never `stable` / 5.x unless `--to`), downloads that CLI once, clones the six repos, skips open `chore/automated-yarn-bump*` PRs/MRs and denylist pins (`4.8.1` / `4.9.2` / `4.15.0`), bumps each tree with `--bin` (so the release binary is in the diff), commits as `rhdh-bot` with the `Assisted-By:` trailer, and opens PRs/MRs via sibling
+`/rhdh-pr-mr`, forwarding `--issue` and `--attribution`.
 
 GitLab weekly-maintenance clones this skill pack and runs `yarn-bump.sh` after digest/bootc and before Quay cleanup.
 
@@ -75,12 +86,13 @@ node "$SKILL/scripts/bump-yarn.js" --to 4.18.1 --bin /tmp/yarn-4.18.1.cjs \
 - Do not `yarn set version stable` — repos must share one exact 4.x.
 - Do not download a separate Yarn binary per repo. One fetch from `repo.yarnpkg.com`, then `--bin` copies those bytes into every PR/MR. `--copy-bin` is only the fallback when that fetch fails.
 - Do not special-case `rhdh-1-rhel-9`; both CEE repos default to `main`.
+- Do not invent a model in `--attribution`. Unknown parts are dropped: the tool alone is honest, a guessed model is not.
 
 ## Tests
 
 ```bash
 node --test "$SKILL/tests/bump-yarn.test.mjs"
-bash -n "$SKILL/scripts/yarn-bump.sh"
+bash "$SKILL/tests/smoke-caller.sh"   # commit trailer + forwarded opener metadata
 ```
 
 ## Completion

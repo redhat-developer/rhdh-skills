@@ -79,7 +79,7 @@ those local operations. Commit, push, and merge-request creation remain gated.
 ## 4. Build the fixed merge-request payload
 
 Read `references/mr-body.md` and replace only `{new_version}`, `{stream}`, and
-`{old_versions}`. Keep `Generated-by: cursor`, the headings, and the empty
+`{old_versions}`. Keep `Assisted-By: cursor`, the headings, and the empty
 Tickets section. The repository's static prose linter checks this fixed template
 in flavored mode; do not invoke a prose editor at runtime.
 

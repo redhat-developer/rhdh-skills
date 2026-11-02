@@ -66,8 +66,11 @@ known and stopping there:
   `Unknown AI`, no invented version numbers, no borrowed IDE name.
 - If `--attribution` is omitted, the script falls back to `PI_MODEL` and
   `PI_REASONING_LEVEL` (`pi (<model>, thinking: <level>)`) before failing.
-- `--assisted-by` and `RHDH_ASSISTED_BY` remain accepted as aliases. A value
-  that already starts with `Generated-by:` or `Assisted-By:` is used verbatim.
+- The trailer key written is `Assisted-By:`; `Generated-by:` is accepted on read,
+  so older callers and existing commits keep working. A value that already starts
+  with either key is used verbatim.
+- `--assisted-by` and `RHDH_ASSISTED_BY` remain accepted as aliases of
+  `--attribution` and `RHDH_ATTRIBUTION`.
 
 Before pushing, the script verifies that the latest commit carries an attribution
 trailer. Any payload satisfies it — the commit trailer and the `--attribution`
@@ -93,7 +96,7 @@ sibling skill is not next to this one in the pack checkout.
 ## Agents
 
 1. Resolve the most specific available attribution from the table above — fill
-   in what you know, stop at the tool name — and add that `Generated-by:`
+   in what you know, stop at the tool name — and add that `Assisted-By:`
    trailer to the commit.
 2. Resolve the Jira key from the conversation. Stop before pushing when none is
    known; never turn a plain issue key in the description into an unlinked label.

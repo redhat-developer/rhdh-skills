@@ -49,7 +49,7 @@ Examples:
 ## Summary
 - ...
 
-Generated-by: cursor
+Assisted-By: cursor
 EOF
 )"
 `);
@@ -124,11 +124,11 @@ function originRemoteUrl() {
 function autoAttribution() {
   const model = (process.env.PI_MODEL || '').trim();
   if (!model) {
-    return 'Generated-by: cursor';
+    return 'Assisted-By: cursor';
   }
   const level = (process.env.PI_REASONING_LEVEL || '').trim();
   const name = model.split('/').pop();
-  return `Generated-by: pi (${name}${level ? `, thinking: ${level}` : ''})`;
+  return `Assisted-By: pi (${name}${level ? `, thinking: ${level}` : ''})`;
 }
 
 function ensureBody(body, issue, { appendJiraRef }) {

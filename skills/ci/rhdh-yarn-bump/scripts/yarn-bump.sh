@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Multi-repo Yarn Berry 4.x bump. Mutator: bump-yarn.js.
-# Opens PRs/MRs via sibling skills/ci/rhdh-pr-mr (no Jira key for bot bumps).
+# Opens PRs/MRs via sibling skills/ci/rhdh-pr-mr with attribution and a Jira key.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -18,6 +18,11 @@ WORKDIR=""
 RC=0
 GH_BIN_ROOT=""
 YARN_BIN=""
+ISSUE="${JIRA_ISSUE:-}"
+# Attribution of whatever produced the bump. A scheduled script names itself and
+# claims no model; an agent run overrides it with --attribution or
+# RHDH_ATTRIBUTION and fills in the parts it knows.
+ATTRIBUTION="${RHDH_ATTRIBUTION:-${RHDH_ASSISTED_BY:-rhdh-yarn-bump}}"
 
 GH_REPOS=(
   redhat-developer/rhdh-plugins
@@ -33,42 +38,63 @@ GL_REPOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  yarn-bump.sh [--to VER] [--branch main] [--dry-run] [--no-push] [--workdir DIR]
+  yarn-bump.sh [--to VER] [--branch main] [--issue KEY] [--attribution ATTR]
+               [--dry-run] [--no-push] [--workdir DIR]
 
 Resolves latest Yarn 4.x when --to is omitted. Clones GitHub then GitLab CEE,
 runs bump-yarn.js --from-all. Downloads the Yarn CLI once and passes --bin so
 each PR/MR commits yarn-<to>.cjs. If that download fails, GitLab falls back to
 copying the binary from a GitHub bump. Commits as rhdh-bot and opens PRs/MRs on
-chore/automated-yarn-bump via rhdh-pr-mr (no Jira).
+chore/automated-yarn-bump via rhdh-pr-mr, with the attribution trailer and the
+Jira link that opener requires.
 
-Env: GITHUB_TOKEN or GH_TOKEN; PRIVATE_TOKEN (GitLab CEE); CREATE_PR_MR (optional).
+ATTR follows the opener's grammar: '<tool> (<agent> + <model> (<provider>), thinking: <level>)'.
+Only the parts that are known are written. Default: rhdh-yarn-bump.
+
+Env: GITHUB_TOKEN or GH_TOKEN; PRIVATE_TOKEN (GitLab CEE); CREATE_PR_MR (optional);
+     JIRA_ISSUE (required: standing ticket for automated bumps);
+     RHDH_ATTRIBUTION or RHDH_ASSISTED_BY (optional override).
 EOF
 }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -h | --help) usage; exit 0 ;;
-    --to) TO="${2:?}"; shift 2 ;;
-    --branch) BRANCH="${2:?}"; shift 2 ;;
-    --workdir) WORKDIR="${2:?}"; shift 2 ;;
-    --dry-run) DRY_RUN=1; shift ;;
-    --no-push) PUSH=0; shift ;;
-    *) echo "Unknown: $1" >&2; exit 1 ;;
-  esac
-done
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h | --help) usage; exit 0 ;;
+      --to) TO="${2:?}"; shift 2 ;;
+      --branch) BRANCH="${2:?}"; shift 2 ;;
+      --issue) ISSUE="${2:?}"; shift 2 ;;
+      --attribution | --assisted-by) ATTRIBUTION="${2:?}"; shift 2 ;;
+      --workdir) WORKDIR="${2:?}"; shift 2 ;;
+      --dry-run) DRY_RUN=1; shift ;;
+      --no-push) PUSH=0; shift ;;
+      *) echo "Unknown: $1" >&2; exit 1 ;;
+    esac
+  done
+}
 
-for bin in node npm jq git curl; do
-  command -v "$bin" >/dev/null || { echo "[ERROR] need ${bin}" >&2; exit 1; }
-done
-[[ -f "${BUMP_JS}" ]] || { echo "[ERROR] missing ${BUMP_JS}" >&2; exit 1; }
-[[ -f "${CREATE_PR_MR}" ]] || { echo "[ERROR] missing ${CREATE_PR_MR} (rhdh-pr-mr skill)" >&2; exit 1; }
-
-if [[ -z "${TO}" ]]; then
-  TO=$(npm view @yarnpkg/cli versions --json \
-    | jq -r '[.[] | select(test("^4\\.[0-9]+\\.[0-9]+$"))] | last')
-  [[ -n "${TO}" && "${TO}" != "null" ]] || { echo "[ERROR] no Yarn 4.x on npm" >&2; exit 1; }
-fi
-echo "[INFO] yarn bump to=${TO} branch=${BRANCH}"
+preflight() {
+  local bin
+  for bin in node npm jq git curl; do
+    command -v "$bin" >/dev/null || { echo "[ERROR] need ${bin}" >&2; exit 1; }
+  done
+  [[ -f "${BUMP_JS}" ]] || { echo "[ERROR] missing ${BUMP_JS}" >&2; exit 1; }
+  [[ -f "${CREATE_PR_MR}" ]] || { echo "[ERROR] missing ${CREATE_PR_MR} (rhdh-pr-mr skill)" >&2; exit 1; }
+  [[ "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || {
+    echo "[ERROR] --issue KEY or JIRA_ISSUE required (standing ticket for automated bumps)" >&2
+    exit 1
+  }
+  if [[ "${ATTRIBUTION}" == *$'\n'* ]] || [[ ! "${ATTRIBUTION}" =~ [^[:space:]] ]]; then
+    echo "[ERROR] attribution must be a single non-blank line" >&2
+    exit 1
+  fi
+  if [[ -z "${TO}" ]]; then
+    TO=$(npm view @yarnpkg/cli versions --json \
+      | jq -r '[.[] | select(test("^4\\.[0-9]+\\.[0-9]+$"))] | last')
+    [[ -n "${TO}" && "${TO}" != "null" ]] || { echo "[ERROR] no Yarn 4.x on npm" >&2; exit 1; }
+  fi
+  echo "[INFO] yarn bump to=${TO} branch=${BRANCH}"
+}
 
 fetch_yarn_bin() {
   local dest="${WORKDIR}/yarn-${TO}.cjs"
@@ -93,12 +119,6 @@ fetch_yarn_bin() {
   YARN_BIN=""
 }
 
-if [[ -z "${WORKDIR}" ]]; then
-  WORKDIR=$(mktemp -d)
-  trap 'rm -rf "${WORKDIR}"' EXIT
-fi
-mkdir -p "${WORKDIR}"
-fetch_yarn_bin
 
 bump_args() {
   local dest="$1"
@@ -185,7 +205,13 @@ commit_and_pr() {
     return 0
   fi
   git add -A
-  git commit -s -m "$(printf 'chore(deps): bump Yarn to %s\n\nOpened by yarn-bump.sh (rhdh-yarn-bump skill).\n' "${TO}")"
+  local trailer="Assisted-By: ${ATTRIBUTION}"
+  if [[ "${ATTRIBUTION}" =~ ^(Generated-by|Assisted-By):[[:space:]] ]]; then
+    trailer="${ATTRIBUTION}"
+  fi
+  git commit -s \
+    -m "$(printf 'chore(deps): bump Yarn to %s\n\nOpened by yarn-bump.sh (rhdh-yarn-bump skill).\n' "${TO}")" \
+    -m "${trailer}"
   if [[ "${PUSH}" -eq 0 ]]; then
     echo "[INFO] ${slug}: committed, --no-push"
     popd >/dev/null
@@ -201,6 +227,8 @@ commit_and_pr() {
     --head "${TOPIC}" \
     --title "${title}" \
     --body-file "${body_file}" \
+    --issue "${ISSUE}" \
+    --attribution "${ATTRIBUTION}" \
     --label ok-to-test \
     --no-open \
     || echo "[WARN] create-pr-mr failed for ${slug}" >&2
@@ -266,8 +294,22 @@ process_gl() {
   commit_and_pr "${dest}" "${slug}" || RC=1
 }
 
-for slug in "${GH_REPOS[@]}"; do process_gh "${slug}"; done
-for slug in "${GL_REPOS[@]}"; do process_gl "${slug}"; done
+main() {
+  parse_args "$@"
+  preflight
+  if [[ -z "${WORKDIR}" ]]; then
+    WORKDIR=$(mktemp -d)
+    trap 'rm -rf "${WORKDIR}"' EXIT
+  fi
+  mkdir -p "${WORKDIR}"
+  fetch_yarn_bin
+  for slug in "${GH_REPOS[@]}"; do process_gh "${slug}"; done
+  for slug in "${GL_REPOS[@]}"; do process_gl "${slug}"; done
+  echo "[INFO] yarn-bump done (rc=${RC})"
+  exit "${RC}"
+}
 
-echo "[INFO] yarn-bump done (rc=${RC})"
-exit "${RC}"
+# Sourced by tests to reach commit_and_pr without cloning or downloading.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

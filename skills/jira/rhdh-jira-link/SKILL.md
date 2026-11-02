@@ -37,7 +37,7 @@ After the feature branch is committed:
 
 Compose the reviewer-facing PR or MR title and body, then invoke
 `/prose-editing` once on both in the **flavored** register. Preserve Jira keys,
-closing syntax, headings, checklists, links, and the required `Generated-by`
+closing syntax, headings, checklists, links, and the required `Assisted-By`
 line. Pass the edited strings to `create-pr-mr.js`; it is a transport layer and
 must not edit them. The structured Jira link comment created later is a protocol
 payload and does not receive this prose pass.
@@ -54,7 +54,7 @@ node "$SKILL/scripts/create-pr-mr.js" \
 ## Test plan
 - [ ] …
 
-Generated-by: paseo (pi + DeepSeek V4.1 Flash (EnMaaS), thinking: off)
+Assisted-By: paseo (pi + DeepSeek V4.1 Flash (EnMaaS), thinking: off)
 EOF
 )"
 ```
@@ -79,10 +79,10 @@ Either works (same token either way):
    setup instead of duplicating it here.
 
 `create-pr-mr.js` appends `Ref: https://redhat.atlassian.net/browse/KEY` and an
-attribution trailer to the **PR/MR body** when missing — `Generated-by:` for any
-harness it can identify (`PI_MODEL`, `PI_REASONING_LEVEL`), `Generated-by: cursor`
+attribution trailer to the **PR/MR body** when missing — `Assisted-By:` for any
+harness it can identify (`PI_MODEL`, `PI_REASONING_LEVEL`), `Assisted-By: cursor`
 otherwise, and nothing at all when the body already carries a
-`Generated-by:`/`Assisted-By:` line. It skips the Jira
+`Assisted-By:`/`Generated-by:` line. It skips the Jira
 `Ref:` line for `community-plugins` remotes (or when `--no-jira-ref` is set) so
 that repo stays free of Jira browse URLs in git history / PR text.
 
@@ -218,7 +218,7 @@ free to transition the issue to **Review** (see
 
 1. Resolve Jira key. Ask if missing (unless user skipped Jira).
 2. Commit on a feature branch. Put the Jira browse URL and an attribution trailer
-   (`Generated-by: <tool> (<model>, thinking: <level>)`, dropping the parts you do
+   (`Assisted-By: <tool> (<model>, thinking: <level>)`, dropping the parts you do
    not know) in the **PR/MR body** (`create-pr-mr.js` appends them when missing; skips
    `Ref:` for community-plugins).
 3. Run **`create-pr-mr.js`** once. Report `url:` / `diffs:` / `browserOpened:` /

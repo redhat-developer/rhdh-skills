@@ -49,7 +49,7 @@ For a non-RHDH repository, ask one question at a time about:
 
 Write `AGENTS.md` with only supported, non-empty sections for build/test
 commands, key conventions, architecture, and pull-request conventions. Include
-an `Assisted-by: <model>` footer convention when agent-assisted commits require
+an `Assisted-By: <model>` footer convention when agent-assisted commits require
 attribution. Write `CLAUDE.md` with exactly `@AGENTS.md`.
 
 ## Verify the result

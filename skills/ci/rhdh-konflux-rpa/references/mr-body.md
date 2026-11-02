@@ -1,4 +1,4 @@
-Generated-by: cursor
+Assisted-By: cursor
 
 #### What
 

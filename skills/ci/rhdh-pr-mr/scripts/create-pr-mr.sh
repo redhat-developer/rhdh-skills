@@ -29,12 +29,12 @@ Usage:
                   [--label LABEL] [--open] [--dry-run]
 
 Caller owns the commit. This script pushes --head and opens a GitHub PR or
-GitLab CEE MR. It verifies the latest commit carries a Generated-by trailer,
+GitLab CEE MR. It verifies the latest commit carries an Assisted-By trailer,
 adds the resolved attribution and a Markdown Jira link to the description, and
 links Jira via rhdh-jira-link.
 
-ATTR is written as-is when it already starts with Generated-by:/Assisted-By:,
-otherwise it is prefixed with "Generated-by: ". Its payload is optional past
+ATTR is written as-is when it already starts with Assisted-By:/Generated-by:,
+otherwise it is prefixed with "Assisted-By: ". Its payload is optional past
 the tool name: write what is known, then stop.
 
 Env: GITHUB_TOKEN|GH_TOKEN; PRIVATE_TOKEN; CI_SERVER_HOST; GITLAB_PIPELINE;
@@ -89,8 +89,8 @@ if [[ "${ATTRIBUTION}" == *$'\n'* ]] || [[ ! "${ATTRIBUTION}" =~ [^[:space:]] ]]
   exit 1
 fi
 attribution_line="${ATTRIBUTION}"
-if [[ ! "${attribution_line}" =~ ^(Generated-by|Assisted-By):[[:space:]] ]]; then
-  attribution_line="Generated-by: ${attribution_line}"
+if [[ ! "${attribution_line}" =~ ^(Assisted-By|Generated-by):[[:space:]] ]]; then
+  attribution_line="Assisted-By: ${attribution_line}"
 fi
 if [[ -n "${BODY_FILE}" ]]; then
   [[ -f "${BODY_FILE}" ]] || { echo "[ERROR] --body-file not found: ${BODY_FILE}" >&2; exit 1; }
