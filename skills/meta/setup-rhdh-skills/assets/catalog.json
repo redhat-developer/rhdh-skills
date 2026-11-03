@@ -10,6 +10,7 @@
     "plugins",
     "ci",
     "release",
+    "security",
     "refinement",
     "reference",
     "meta"
@@ -298,6 +299,15 @@
       "category": "release",
       "invocation": "model",
       "requiresSkills": []
+    },
+    {
+      "name": "rhdh-package-impact",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "rhdh-pr-mr"
+      ]
     },
     {
       "name": "rhdh-platform-lifecycle",

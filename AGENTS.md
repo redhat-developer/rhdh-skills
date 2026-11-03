@@ -67,8 +67,8 @@ project-specific knowledge in the owning skill reference.
 ## Skill architecture
 
 Skills are grouped by domain: `skills/jira/`, `skills/plugins/`, `skills/ci/`,
-`skills/release/`, `skills/refinement/`, `skills/reference/`, `skills/meta/`,
-plus `skills/third-party/` for vendored upstream skills.
+`skills/release/`, `skills/security/`, `skills/refinement/`, `skills/reference/`,
+`skills/meta/`, plus `skills/third-party/` for vendored upstream skills.
 Those folders are editorial and are stripped at install. Compose through `/skill-name`, never
 through sibling category paths.
 
