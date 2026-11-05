@@ -87,7 +87,7 @@ Stdout includes `url: …`. Exit 0 if a PR/MR already exists for `--head`.
 
 | Condition | Behavior |
 | --- | --- |
-| `--issue KEY` or `JIRA_ISSUE` set + `JIRA_API_TOKEN` | Add the linked issue to the description, then invoke `/rhdh-jira-link` (`link-pr-mr.js link`). The Jira comment is `PR: <url>` or `MR: <url>` (plus optional Adjusted fields). |
+| `--issue KEY` or `JIRA_ISSUE` set + `JIRA_API_TOKEN` | Add the linked issue to the description, then invoke `/rhdh-jira-link` (`link-pr-mr.js link`). The Jira comment links the PR/MR title (`repo #id: title [base]`) to the URL (plus optional Adjusted fields). |
 | Issue set but no token / missing link script | The linked description remains; warn that the Jira backlink was skipped. |
 
 Override the link scripts directory with `RHDH_JIRA_LINK_SCRIPTS` when the

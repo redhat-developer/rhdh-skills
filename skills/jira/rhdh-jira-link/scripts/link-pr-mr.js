@@ -126,8 +126,8 @@ Auth: JIRA_API_TOKEN + ~/.config/.jira/.config.yml, or .jira-token next to acli
 RHDHPLAN Epic/Story/Task issues are moved to RHIDP before defaults.
 
 After link (unless --no-comment), posts/updates a Jira comment:
-  PR: <a href="{url}">{url}</a>   (GitHub)
-  MR: <a href="{url}">{url}</a>   (GitLab)
+  <a href="{url}">{repo #id: title [base]}</a>   (PR/MR title as link text)
+  PR: <a href="{url}">{url}</a>                  (fallback when no title is known)
   Adjusted fields:   (only newly set fields; omitted if none)
 `);
   process.exit(exitCode);
@@ -549,7 +549,21 @@ function adfBulletList(items) {
   };
 }
 
-function adfPrOrMrLine(url, host) {
+function adfPrOrMrLine(url, host, title) {
+  // Prefer the PR/MR title ("repo #id: summary [base]") as the link text; fall
+  // back to the legacy "PR: <url>" / "MR: <url>" line when no title is known.
+  if (title) {
+    return {
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: title,
+          marks: [{ type: 'link', attrs: { href: url } }],
+        },
+      ],
+    };
+  }
   const label = detectHost(url, host) === 'github' ? 'PR: ' : 'MR: ';
   return {
     type: 'paragraph',
@@ -564,8 +578,8 @@ function adfPrOrMrLine(url, host) {
   };
 }
 
-function buildLinkCommentAdf({ url, status, defaults, host }) {
-  const content = [adfPrOrMrLine(url, host)];
+function buildLinkCommentAdf({ url, status, defaults, host, webLink }) {
+  const content = [adfPrOrMrLine(url, host, webLink?.title)];
   const adjusted = collectAdjustedFieldLines(defaults, status);
   if (adjusted.length > 0) {
     content.push(adfParagraph('Adjusted fields:'));
