@@ -1,0 +1,9 @@
+workflow: create
+skill_kind: preference
+rubric: |
+  The skill has valid portable frontmatter, a description scoped to editing an
+  existing release note, concise runtime instructions that preserve claims and
+  enforce the stated voice, and no speculative scripts. Its evaluation design
+  covers style fidelity, claim preservation, near-miss routing, and regression
+  thresholds through agent-eval-harness. It identifies this as a preference skill
+  whose retirement depends on the convention, not baseline writing ability.

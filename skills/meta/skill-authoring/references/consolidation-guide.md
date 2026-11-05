@@ -190,8 +190,10 @@ in reference files name siblings by filename only, such as
 
 ### Step 7: Review
 
-Run the Phase 5 review checklist from `create.md`, plus these
-consolidation-specific checks:
+Run the same pre-change agent-eval-harness cases against the consolidated design
+using `evaluation-guide.md`; a smaller catalog is not an improvement if routing
+or task outcomes regress. Then run the Phase 5 review checklist from `create.md`,
+plus these consolidation-specific checks:
 
 - [ ] No references to old skill names anywhere in the project
 - [ ] None of the counter-signals above fire against the merged skill
@@ -205,6 +207,9 @@ consolidation-specific checks:
 - [ ] README skill tables and directory trees match the new structure
 - [ ] Script, adapter, catalog, and clean-install tests pass without prose-shape
       assertions
+- [ ] Pre-change and consolidated runs are compared through the harness baseline
+      on the same isolated cases, including near-misses for every surviving
+      description
 
 ## Anti-patterns
 

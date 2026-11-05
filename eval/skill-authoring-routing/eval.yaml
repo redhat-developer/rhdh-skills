@@ -1,0 +1,57 @@
+name: skill-authoring-routing
+description: Measure implicit selection of skill-authoring against intended and near-miss prompts.
+
+execution:
+  mode: case
+  prompt: "{{ input.prompt }}"
+  timeout: 900
+  parallelism: 1
+
+runner:
+  type: codex
+  effort: high
+
+models:
+  skill: gpt-5.6-luna
+  judge: gpt-5.6-luna
+
+dataset:
+  path: dataset/cases
+  schema: |
+    Each case contains input.yaml with the user's prompt and annotations.yaml
+    with should_trigger, category, and rationale fields. The annotations remain
+    judge-only.
+
+traces:
+  stdout: true
+  stderr: true
+  events: true
+  metrics: true
+
+judges:
+  - name: routing_match
+    description: The trace shows skill-authoring was consulted exactly when expected.
+    check: |
+      expected = bool((outputs.get("annotations", {}) or {}).get("should_trigger", False))
+      events = str(outputs.get("events", "")).lower().replace("\\", "/")
+      response_text = str(outputs.get("conversation", "")).lower()
+      trace_markers = (
+          "/skills/skill-authoring/skill.md",
+          ".agents/skills/skill-authoring",
+          ".claude/skills/skill-authoring",
+      )
+      announcement_markers = (
+          "using the skill-authoring skill",
+          "using `skill-authoring`",
+          "using /skill-authoring",
+      )
+      activated = any(marker in events for marker in trace_markers)
+      activated = activated or any(marker in response_text for marker in announcement_markers)
+      if activated == expected:
+          return True, f"activation={activated} matched should_trigger={expected}"
+      return False, f"activation={activated} did not match should_trigger={expected}"
+
+thresholds:
+  routing_match:
+    min_pass_rate: 1.0
+    max_error_rate: 0.0

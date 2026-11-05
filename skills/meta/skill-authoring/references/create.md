@@ -1,6 +1,7 @@
 # Create workflow (Phases 1–5)
 
-Interview, draft, optimize, script, and review a new skill from scratch.
+Interview, define behavioral evidence, draft, optimize, script, and review a new
+skill from scratch.
 
 ## Phase 1: Interview
 
@@ -30,11 +31,14 @@ Focus areas, roughly in order:
 3. **Input/output.** What does the user provide? What does the skill produce? Specific formats?
 4. **Edge cases.** What goes wrong? Common mistakes? Gotchas for new users?
 5. **Success criteria.** How do you know the skill worked correctly?
-6. **What can be scripted?** Look for deterministic operations that should be code, not LLM instructions. Scripts are cheaper, faster, and more reliable.
-7. **References needed?** Domain knowledge too large for SKILL.md that should live in separate files?
-8. **Existing patterns.** Similar skills or workflows to draw from? Check the codebase.
-9. **Platform constraints.** macOS, Windows, and Linux? Scripts must handle path separators, temp directories, and shell differences.
-10. **External services and APIs.** Does the skill call external APIs or services? If yes, read `api-skill-patterns.md` — it covers credential handling, schema discovery, instance-specific values, and error placement.
+6. **Evaluation evidence.** Which real requests, near-misses, failures, fixtures,
+   process constraints, and outcome checks can prove the skill helps? Read
+   `evaluation-guide.md` before accepting the scope.
+7. **What can be scripted?** Look for deterministic operations that should be code, not LLM instructions. Scripts are cheaper, faster, and more reliable.
+8. **References needed?** Domain knowledge too large for SKILL.md that should live in separate files?
+9. **Existing patterns.** Similar skills or workflows to draw from? Check the codebase.
+10. **Platform constraints.** macOS, Windows, and Linux? Scripts must handle path separators, temp directories, and shell differences.
+11. **External services and APIs.** Does the skill call external APIs or services? If yes, read `api-skill-patterns.md` — it covers credential handling, schema discovery, instance-specific values, and error placement.
 
 ### Architecture decision tree
 
@@ -263,7 +267,8 @@ The SKILL.md references it — for example only: "Load context via `python scrip
 
 ## Phase 5: Review
 
-Before presenting the final skill, verify against this checklist:
+Before presenting the final skill, run the evaluation protocol in
+`evaluation-guide.md`, then verify against this checklist:
 
 ### Basics
 
@@ -306,6 +311,24 @@ Before presenting the final skill, verify against this checklist:
 - [ ] Scripts are idempotent — safe to re-run
 - [ ] A script that writes externally runs only from an approved plan, and every operation it was
       given ends up reported, including the ones that were skipped
+
+### Evaluations
+
+- [ ] Repository-level assets follow the agent-eval-harness `eval.yaml` and
+      per-case dataset layout; no competing skill-local manifest was invented
+- [ ] Prompt-mode cases measure implicit routing; skill-mode cases measure
+      behavior after explicit invocation
+- [ ] Cases judge outcomes plus relevant process, style, privacy, and efficiency;
+      hidden reasoning and incidental tool order are not graded
+- [ ] Runs use isolated case workspaces; stochastic judges declare samples and
+      semantic score ranges
+- [ ] A recorded baseline or pairwise comparison supports improvement claims
+- [ ] Existing cases do not regress; every behavior change adds a case that
+      distinguishes the old and new behavior
+- [ ] Deterministic checks judge everything they can; semantic rubrics cover only
+      outcomes that cannot be checked mechanically
+- [ ] Thresholds are calibrated after the first successful baseline; provisional
+      values are labeled as such
 
 ### API and service skills (if applicable)
 

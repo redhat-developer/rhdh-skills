@@ -1,0 +1,9 @@
+workflow: create
+skill_kind: capability
+rubric: |
+  The result contains a portable migration-review/SKILL.md with valid frontmatter,
+  one coherent trigger, read-only boundaries, observable completion criteria, and
+  no dependency on files outside its directory. Evaluation uses the
+  agent-eval-harness layout at repository level or reports the precise missing
+  execution capability; it does not invent a skill-local case manifest. The
+  response distinguishes static validation from an executed behavioral eval.

@@ -22,6 +22,7 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+eval/runs/
 
 # OS
 .DS_Store
