@@ -76,6 +76,31 @@ jobs:
 
       - run: uv run pytest -v
 
+  # The pack promises to run on macOS, but a macOS-only break stays invisible on
+  # ubuntu-latest: BSD sed rejects a bare `sed -i`, and macOS resolves bash to
+  # 3.2. The shell skill tests failed there while CI stayed green, so every local
+  # run had to decide to ignore them. Run the same suite on macOS instead.
+  test-macos:
+    needs: resolve-python
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.resolve-python.outputs.max-version }}
+
+      - run: uv sync --frozen --extra dev
+
+      - name: Ensure jq, which the trusted-task tests require
+        run: command -v jq >/dev/null || brew install jq
+
+      - run: uv run pytest -v
+
   distribution:
     runs-on: ubuntu-latest
     steps:
