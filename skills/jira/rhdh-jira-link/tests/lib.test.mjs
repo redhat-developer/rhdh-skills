@@ -283,14 +283,34 @@ describe('buildLinkCommentAdf', () => {
     return nodes.map((n) => n.text).join('');
   }
 
-  it('uses PR: <url> for GitHub', () => {
+  it('links the PR title for GitHub', () => {
+    const doc = buildLinkCommentAdf({
+      url: githubUrl,
+      host: 'github',
+      webLink: { title: 'org/repo #123: fix: widget [main]' },
+    });
+    assert.equal(firstParagraphText(doc), 'org/repo #123: fix: widget [main]');
+    assert.equal(doc.content[0].content[0].marks[0].attrs.href, githubUrl);
+    assert.equal(doc.content.length, 1);
+  });
+
+  it('links the MR title for GitLab', () => {
+    const doc = buildLinkCommentAdf({
+      url: gitlabUrl,
+      webLink: { title: 'rhdh-plugin-catalog #1003: fix: retry [release-2.1]' },
+    });
+    assert.equal(firstParagraphText(doc), 'rhdh-plugin-catalog #1003: fix: retry [release-2.1]');
+    assert.equal(doc.content[0].content[0].marks[0].attrs.href, gitlabUrl);
+  });
+
+  it('falls back to PR: <url> for GitHub when no title is known', () => {
     const doc = buildLinkCommentAdf({ url: githubUrl, host: 'github' });
     assert.equal(firstParagraphText(doc), `PR: ${githubUrl}`);
     assert.equal(doc.content[0].content[1].marks[0].attrs.href, githubUrl);
     assert.equal(doc.content.length, 1);
   });
 
-  it('uses MR: <url> for GitLab', () => {
+  it('falls back to MR: <url> for GitLab when no title is known', () => {
     const doc = buildLinkCommentAdf({ url: gitlabUrl });
     assert.equal(firstParagraphText(doc), `MR: ${gitlabUrl}`);
   });
@@ -299,6 +319,7 @@ describe('buildLinkCommentAdf', () => {
     const doc = buildLinkCommentAdf({
       url: githubUrl,
       host: 'github',
+      webLink: { title: 'org/repo #123: fix: widget [main]' },
       status: 'transitioned To Do → In Progress',
       defaults: { priority: 'set Normal' },
     });

@@ -111,17 +111,20 @@ RHDHPLAN types are left alone.
 
 Stdout includes `move: …` and the post-move `issue:` key.
 
-Comment shape (only **newly set** fields; omit `kept` values):
+Comment shape (only **newly set** fields; omit `kept` values) — the first
+line is the PR/MR title (the same string as the Web link) linking to the URL:
 
 ```
-PR: https://github.com/org/repo/pull/123
+[org/repo #123: fix: widget [main]](https://github.com/org/repo/pull/123)
 ```
 
 or, for GitLab:
 
 ```
-MR: https://gitlab.cee.redhat.com/group/repo/-/merge_requests/817
+[rhdh-plugin-catalog #1003: fix: … [release-2.1]](https://gitlab.cee.redhat.com/rhidp/rhdh-plugin-catalog/-/merge_requests/1003)
 ```
+
+When no title is known, the line falls back to `PR: <url>` / `MR: <url>`.
 
 Then, when any defaults were newly set:
 
