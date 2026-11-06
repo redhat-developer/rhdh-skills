@@ -153,5 +153,7 @@ State these limitations in the final answer:
   can be stated about case volume.
 - Attributed cases are an estimate that assumes an article's cases split evenly
   across its tagged products.
-- Emergent terms are word frequencies, not themes. Raise one only when it maps
-  onto an article set you can cite.
+- Emergent terms are word frequencies, not themes. A term is `new` only with
+  three recent articles and no baseline use, and `rising` only with three recent
+  articles and twice the baseline rate. Those are floors, not evidence; raise a
+  term only when it maps onto an article set you can cite.

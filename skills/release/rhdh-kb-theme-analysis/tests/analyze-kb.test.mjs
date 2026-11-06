@@ -20,6 +20,7 @@ import {
   resolveWindows,
   summarize,
   themeHints,
+  tokensOf,
 } from '../scripts/analyze-kb.mjs';
 
 describe('parseArgs defaults', () => {
@@ -913,5 +914,57 @@ describe('window gap caveat', () => {
     );
 
     assert.ok(!renderMarkdown(report).includes('--comparison-until'));
+  });
+});
+
+describe('emergent vocabulary floors', () => {
+  it('needs three recent articles before a term counts as new', () => {
+    const docs = [
+      { id: '1', title: 'Webhook delivery fails', createdDate: '2026-10-01T10:00:00Z' },
+      { id: '2', title: 'Webhook retries stall', createdDate: '2026-10-02T10:00:00Z' },
+    ];
+    const report = summarize(
+      { docs, numFound: 2, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    assert.deepEqual(report.emergentTerms.newTerms, []);
+  });
+
+  it('states the baseline length on rising rows', () => {
+    const recent = ['2026-08-01', '2026-08-02', '2026-08-03'].map((date, index) => ({
+      id: `r${index}`,
+      title: 'Zebra queue stalls',
+      createdDate: `${date}T10:00:00Z`,
+    }));
+    const baseline = ['2026-03-01', '2026-03-02', '2026-03-03'].map((date, index) => ({
+      id: `b${index}`,
+      title: 'Zebra queue stalls',
+      createdDate: `${date}T10:00:00Z`,
+    }));
+
+    const report = summarize(
+      { docs: [...recent, ...baseline], numFound: 6, truncated: false },
+      parseArgs(['--as-of', '2026-10-30', '--recent-days', '100', '--comparison-days', '300']),
+    );
+
+    const markdown = renderMarkdown(report);
+    assert.ok(
+      markdown.includes('zebra: 3 recent articles, 3 in a baseline 2x as long'),
+      markdown.slice(markdown.indexOf('## Emerging vocabulary')),
+    );
+  });
+
+  it('drops symptom vocabulary from the token stream', () => {
+    const tokens = [
+      ...tokensOf({
+        id: '1',
+        title: 'Performance issue with loading and missing permissions, problems',
+        createdDate: '2026-10-01T10:00:00Z',
+      }),
+    ];
+    for (const word of ['issue', 'loading', 'missing', 'problems']) {
+      assert.ok(!tokens.includes(word), `${word} should be a stopword`);
+    }
+    assert.ok(tokens.includes('permissions'));
   });
 });

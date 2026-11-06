@@ -137,13 +137,13 @@ export const DECLINING_RATIO = 0.67;
 export const CONCENTRATION_WARNING_SHARE = 0.25;
 export const NEW_THEME_MIN_ARTICLES = 3;
 export const MIN_TERM_ARTICLES = 3;
-export const NEW_TERM_MIN_ARTICLES = 2;
+export const NEW_TERM_MIN_ARTICLES = 3;
 export const RISING_TERM_RATIO = 2;
 export const UBIQUITOUS_TERM_SHARE = 0.3;
 export const UBIQUITOUS_TERM_MIN_ARTICLES = 10;
 
 const STOPWORDS = new Set(
-  `about above after again against also and any are because been before being below between both but can cannot could did does doing down during each few for from further had has have having here how into its itself just may might more most must not now off once only other out over own same should some such than that the their them then there these they this those through under until very was were what when where which while who whom why will with would your rhdh redhat even show shows showing shown use used uses using get gets getting set sets setting make makes making need needs needed way ways like want wants two three first second last`.split(
+  `about above after again against also and any are because been before being below between both but can cannot could did does doing down during each few for from further had has have having here how into its itself just may might more most must not now off once only other out over own same should some such than that the their them then there these they this those through under until very was were what when where which while who whom why will with would your rhdh redhat even show shows showing shown use used uses using get gets getting set sets setting make makes making need needs needed way ways like want wants two three first second last missing loading slow unable stuck issue issues problem problems`.split(
     /\s+/,
   ),
 );
@@ -940,6 +940,7 @@ function summarizeEmergentTerms(docs, recent, baselineWindow) {
       class: klass,
       recentArticles: entry.count,
       baselineArticles: baseline.count,
+      baselineWindowRatio: roundTo(baselineWindow.days / recent.days, 2),
       ratio: ratio === null ? null : roundTo(ratio, 2),
       exampleIds: entry.ids,
     });
@@ -1128,22 +1129,24 @@ function formatMovement(movement) {
 }
 
 function formatTerms(emergentTerms) {
-  const render = (rows) =>
+  const render = (rows, withBaselineLength) =>
     rows.length === 0
       ? '- none'
       : rows
-          .map(
-            (row) =>
-              `- ${row.term}: ${row.recentArticles} recent article${row.recentArticles === 1 ? '' : 's'} (baseline ${row.baselineArticles})`,
-          )
+          .map((row) => {
+            const stem = `- ${row.term}: ${row.recentArticles} recent article${row.recentArticles === 1 ? '' : 's'}`;
+            return withBaselineLength
+              ? `${stem}, ${row.baselineArticles} in a baseline ${row.baselineWindowRatio}x as long`
+              : `${stem} (baseline ${row.baselineArticles})`;
+          })
           .join('\n');
   return `### New terms
 
-${render(emergentTerms.newTerms)}
+${render(emergentTerms.newTerms, false)}
 
 ### Rising terms
 
-${render(emergentTerms.risingTerms)}`;
+${render(emergentTerms.risingTerms, true)}`;
 }
 
 function formatArticles(articles, limit = 15) {
