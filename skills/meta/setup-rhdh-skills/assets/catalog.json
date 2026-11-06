@@ -310,6 +310,15 @@
       ]
     },
     {
+      "name": "rhdh-plugins-cve-triager",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "rhdh-package-impact"
+      ]
+    },
+    {
       "name": "rhdh-platform-lifecycle",
       "category": "release",
       "invocation": "model",
