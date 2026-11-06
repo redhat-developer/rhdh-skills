@@ -1210,10 +1210,21 @@ function formatWindowCaveat(report) {
   const recent = report.recent.window;
   const comparison = report.comparison.window;
   const nested = recent.start >= comparison.start && recent.end <= comparison.end;
-  if (nested) {
-    return '- The recent window is a subset of the comparison window; use per-day rates and shares rather than raw counts alone.';
+  if (!nested) {
+    return '- The recent and comparison windows are not nested; use per-day rates and window shares rather than raw counts alone.';
   }
-  return '- The recent and comparison windows are not nested; use per-day rates and window shares rather than raw counts alone.';
+
+  const lines = [
+    '- The recent window is a subset of the comparison window; use per-day rates and shares rather than raw counts alone.',
+  ];
+  if (recent.end < comparison.end) {
+    const gapStart = addDaysIso(recent.end, 1);
+    const gapDays = daysBetweenInclusive(gapStart, comparison.end);
+    lines.push(
+      `- The recent window ends on ${recent.end} but the comparison window runs to ${comparison.end}: ${gapStart} to ${comparison.end} (${gapDays} days) counts toward the comparison total while sitting in neither the recent window nor the movement baseline. Pass \`--comparison-until ${recent.end}\` to align them.`,
+    );
+  }
+  return lines.join('\n');
 }
 
 export function renderMarkdown(report) {

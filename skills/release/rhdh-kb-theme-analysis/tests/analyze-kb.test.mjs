@@ -878,3 +878,40 @@ describe('report schema', () => {
     }
   });
 });
+
+describe('window gap caveat', () => {
+  it('names the span the recent window leaves uncovered', () => {
+    const report = summarize(
+      {
+        docs: [{ id: '1', title: 'Upgrade fails', createdDate: '2026-08-01T10:00:00Z' }],
+        numFound: 1,
+        truncated: false,
+      },
+      parseArgs([
+        '--as-of',
+        '2026-10-30',
+        '--recent-since',
+        '2026-07-01',
+        '--recent-until',
+        '2026-09-30',
+      ]),
+    );
+
+    const markdown = renderMarkdown(report);
+    assert.ok(markdown.includes('2026-10-01 to 2026-10-30 (30 days)'));
+    assert.ok(markdown.includes('`--comparison-until 2026-09-30`'));
+  });
+
+  it('stays quiet when the recent window ends on the comparison end', () => {
+    const report = summarize(
+      {
+        docs: [{ id: '1', title: 'Upgrade fails', createdDate: '2026-10-01T10:00:00Z' }],
+        numFound: 1,
+        truncated: false,
+      },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+
+    assert.ok(!renderMarkdown(report).includes('--comparison-until'));
+  });
+});
