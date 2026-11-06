@@ -126,6 +126,195 @@ export function resolveTaxonomy(value) {
   return loadTaxonomy(value);
 }
 
+export const SCHEMA_VERSION = 2;
+export const STALE_AFTER_DAYS = 365;
+export const DEMAND_TOP_ARTICLES = 20;
+export const REFRESH_CANDIDATES = 15;
+export const EMERGENT_TERMS = 10;
+export const MIN_MOVEMENT_OBSERVATIONS = 5;
+export const GROWING_RATIO = 1.5;
+export const DECLINING_RATIO = 0.67;
+export const CONCENTRATION_WARNING_SHARE = 0.25;
+export const NEW_THEME_MIN_ARTICLES = 3;
+export const MIN_TERM_ARTICLES = 3;
+export const NEW_TERM_MIN_ARTICLES = 2;
+export const RISING_TERM_RATIO = 2;
+export const UBIQUITOUS_TERM_SHARE = 0.3;
+export const UBIQUITOUS_TERM_MIN_ARTICLES = 10;
+
+const STOPWORDS = new Set(
+  `about above after again against also and any are because been before being below between both but can cannot could did does doing down during each few for from further had has have having here how into its itself just may might more most must not now off once only other out over own same should some such than that the their them then there these they this those through under until very was were what when where which while who whom why will with would your rhdh redhat even show shows showing shown use used uses using get gets getting set sets setting make makes making need needs needed way ways like want wants two three first second last`.split(
+    /\s+/,
+  ),
+);
+
+export function normalizeComponentValue(value) {
+  return String(value).trim().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+}
+
+export function loadComponentAliases(filePath) {
+  const aliases = new Map();
+  if (filePath === undefined) {
+    return aliases;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot read component alias file ${filePath}: ${message}`);
+  }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      `Component alias file ${filePath} must be a JSON object of {"from": "to"} strings`,
+    );
+  }
+
+  for (const [from, to] of Object.entries(parsed)) {
+    if (typeof to !== 'string' || to.length === 0) {
+      throw new Error(`Component alias "${from}" in ${filePath} needs a non-empty string target`);
+    }
+    const key = normalizeComponentValue(from);
+    if (aliases.has(key) && aliases.get(key) !== to) {
+      throw new Error(`Component alias file ${filePath} maps "${key}" to two different targets`);
+    }
+    aliases.set(key, to);
+  }
+
+  return aliases;
+}
+
+export function productsOf(doc) {
+  const declared = asList(doc.standard_product);
+  if (declared.length > 0) {
+    return declared;
+  }
+  const fallback = asList(doc.product);
+  return fallback.length > 0 ? fallback : ['unspecified'];
+}
+
+export function productCountOf(doc) {
+  return Math.max(1, productsOf(doc).length);
+}
+
+export function casesRawOf(doc) {
+  const value = Number(doc.caseCount_365 ?? 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+export function casesAttributedOf(doc) {
+  return casesRawOf(doc) / productCountOf(doc);
+}
+
+export function roundTo(value, places) {
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+export function lastModifiedOf(doc) {
+  const value = doc.lastModifiedDate;
+  if (typeof value !== 'string' || !ISO_DATE_RE.test(value.slice(0, 10))) {
+    return null;
+  }
+  return value.slice(0, 10);
+}
+
+export function ageInDays(dateIso, asOf) {
+  if (dateIso === null) {
+    return null;
+  }
+  const then = new Date(`${dateIso}T00:00:00Z`).getTime();
+  const now = new Date(`${asOf}T00:00:00Z`).getTime();
+  if (Number.isNaN(then) || Number.isNaN(now)) {
+    return null;
+  }
+  return Math.round((now - then) / 86400000);
+}
+
+export function docState(doc) {
+  if (typeof doc.kcsState === 'string' && doc.kcsState.length > 0) {
+    return doc.kcsState;
+  }
+  if (typeof doc.publication_state === 'string' && doc.publication_state.length > 0) {
+    return doc.publication_state;
+  }
+  return 'unknown';
+}
+
+function articleUrl(doc) {
+  return doc.view_uri ?? `https://access.redhat.com/solutions/${doc.id}`;
+}
+
+export function tokensOf(doc) {
+  const text = [doc.title, ...asList(doc.tag)].join(' ');
+  const tokens = new Set();
+  for (const token of text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')) {
+    if (token.length < 4 || /^\d+$/.test(token) || STOPWORDS.has(token)) {
+      continue;
+    }
+    tokens.add(token);
+  }
+  return tokens;
+}
+
+function countComponents(docs, aliases = new Map()) {
+  const counts = new Map();
+  const rawValues = new Set();
+  for (const doc of docs) {
+    for (const value of asList(doc.component)) {
+      rawValues.add(value);
+      const folded = normalizeComponentValue(value);
+      const label = aliases.get(folded) ?? folded;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+  }
+  const sorted = [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  return {
+    normalized: sorted,
+    variants: { rawValues: rawValues.size, foldedValues: sorted.length },
+  };
+}
+
+function countStates(docs) {
+  const counts = new Map();
+  for (const doc of docs) {
+    const state = docState(doc);
+    counts.set(state, (counts.get(state) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
+
+function movementClass(recentCount, baselineCount, ratio) {
+  if (recentCount === 0 && baselineCount === 0) {
+    return 'insufficient';
+  }
+  if (baselineCount === 0) {
+    return recentCount >= NEW_THEME_MIN_ARTICLES ? 'new' : 'insufficient';
+  }
+  if (recentCount === 0) {
+    return baselineCount >= MIN_MOVEMENT_OBSERVATIONS ? 'declining' : 'insufficient';
+  }
+  if (recentCount < MIN_MOVEMENT_OBSERVATIONS || baselineCount < MIN_MOVEMENT_OBSERVATIONS) {
+    return 'insufficient';
+  }
+  if (ratio === null) {
+    return 'insufficient';
+  }
+  if (ratio >= GROWING_RATIO) {
+    return 'growing';
+  }
+  if (ratio <= DECLINING_RATIO) {
+    return 'declining';
+  }
+  return 'stable';
+}
+
 export function usage() {
   return `Usage: analyze-kb.mjs [options]
 
@@ -141,6 +330,7 @@ Options:
   --comparison-since DATE     Explicit comparison window start
   --comparison-until DATE     Explicit comparison window end
   --themes PATH|none          Theme taxonomy JSON file, or "none" to skip clustering (default: built-in)
+  --component-aliases PATH    JSON object mapping component names to canonical names
   --include-abstracts         Include a truncated abstract per article in JSON output
   --format FORMAT             Output format: markdown or json (default: markdown)
   -h, --help                  Show this help
@@ -193,6 +383,7 @@ export function parseArgs(argv) {
       '--comparison-since': 'comparisonSince',
       '--comparison-until': 'comparisonUntil',
       '--themes': 'themes',
+      '--component-aliases': 'componentAliases',
       '--format': 'format',
     };
 
@@ -246,6 +437,7 @@ export function parseArgs(argv) {
   }
 
   args.themes = resolveTaxonomy(args.themes);
+  args.componentAliases = loadComponentAliases(args.componentAliases);
 
   return args;
 }
@@ -431,13 +623,18 @@ function articleSummary(doc, rules, includeAbstracts) {
   const summary = {
     id: doc.id,
     title: doc.title,
-    url: doc.view_uri ?? `https://access.redhat.com/solutions/${doc.id}`,
+    url: articleUrl(doc),
     createdDate: docCreatedDate(doc) ?? 'unknown',
+    lastModifiedDate: lastModifiedOf(doc),
+    kcsState: docState(doc),
     categories: asList(doc.category),
     tags: asList(doc.tag),
     components: asList(doc.component),
+    products: productsOf(doc),
+    productCount: productCountOf(doc),
     caseCount: doc.caseCount ?? 0,
-    caseCount365: doc.caseCount_365 ?? 0,
+    caseCount365: roundTo(casesRawOf(doc), 1),
+    casesAttributed: roundTo(casesAttributedOf(doc), 2),
     themes: rules === null ? null : themeHints(doc, rules),
   };
   if (includeAbstracts) {
@@ -449,8 +646,9 @@ function articleSummary(doc, rules, includeAbstracts) {
   return summary;
 }
 
-function summarizeWindow(docs, window, rules) {
+function summarizeWindow(docs, window, rules, aliases = new Map()) {
   const windowDocs = docs.filter((doc) => isInWindow(doc, window));
+  const components = countComponents(windowDocs, aliases);
 
   return {
     window,
@@ -458,6 +656,9 @@ function summarizeWindow(docs, window, rules) {
     categories: countValues(windowDocs, 'category'),
     tags: countValues(windowDocs, 'tag'),
     components: countValues(windowDocs, 'component'),
+    componentsNormalized: components.normalized,
+    componentVariants: components.variants,
+    kcsStates: countStates(windowDocs),
     months: countByPeriod(windowDocs, 'month'),
     years: countByPeriod(windowDocs, 'year'),
     themes: rules === null ? null : countThemes(windowDocs, window, rules),
@@ -470,12 +671,37 @@ function countThemes(windowDocs, window, rules) {
   const themes = new Map();
 
   for (const doc of windowDocs) {
-    const cases = doc.caseCount_365 ?? 0;
+    const raw = casesRawOf(doc);
+    const attributed = casesAttributedOf(doc);
+    const dedicated = productCountOf(doc) === 1 ? raw : 0;
     for (const theme of themeHints(doc, rules)) {
-      const current = themes.get(theme) ?? { count: 0, caseCount365: 0, maxArticleCases: 0 };
+      const current =
+        themes.get(theme) ??
+        {
+          count: 0,
+          articlesWithCases: 0,
+          casesRaw: 0,
+          casesAttributed: 0,
+          casesDedicated: 0,
+          topArticle: null,
+        };
       current.count += 1;
-      current.caseCount365 += cases;
-      current.maxArticleCases = Math.max(current.maxArticleCases, cases);
+      if (raw > 0) {
+        current.articlesWithCases += 1;
+      }
+      current.casesRaw += raw;
+      current.casesAttributed += attributed;
+      current.casesDedicated += dedicated;
+      if (raw > 0 && (current.topArticle === null || attributed > current.topArticle.attributed)) {
+        current.topArticle = {
+          id: doc.id,
+          title: doc.title,
+          url: articleUrl(doc),
+          raw: roundTo(raw, 1),
+          attributed: roundTo(attributed, 1),
+          productCount: productCountOf(doc),
+        };
+      }
       themes.set(theme, current);
     }
   }
@@ -484,13 +710,252 @@ function countThemes(windowDocs, window, rules) {
     .map(([theme, value]) => ({
       theme,
       count: value.count,
-      caseCount365: value.caseCount365,
-      maxArticleCases: value.maxArticleCases,
-      topArticleShare: value.caseCount365 === 0 ? 0 : value.maxArticleCases / value.caseCount365,
-      perDay: value.count / window.days,
-      share: windowDocs.length === 0 ? 0 : value.count / windowDocs.length,
+      articlesWithCases: value.articlesWithCases,
+      casesRaw: roundTo(value.casesRaw, 1),
+      casesAttributed: roundTo(value.casesAttributed, 1),
+      casesDedicated: roundTo(value.casesDedicated, 1),
+      caseCount365: roundTo(value.casesRaw, 1),
+      maxArticleCases: value.topArticle === null ? 0 : value.topArticle.raw,
+      topArticleShare:
+        value.casesRaw === 0 ? 0 : roundTo((value.topArticle?.raw ?? 0) / value.casesRaw, 3),
+      topArticle:
+        value.topArticle === null
+          ? null
+          : {
+              id: value.topArticle.id,
+              title: value.topArticle.title,
+              url: value.topArticle.url,
+              casesRaw: value.topArticle.raw,
+              casesAttributed: value.topArticle.attributed,
+              productCount: value.topArticle.productCount,
+            },
+      perDay: window && window.days ? roundTo(value.count / window.days, 3) : null,
+      share: windowDocs.length === 0 ? 0 : roundTo(value.count / windowDocs.length, 3),
     }))
     .sort((a, b) => b.count - a.count || a.theme.localeCompare(b.theme));
+}
+
+function summarizeDemand(docs, rules, aliases) {
+  const withCases = docs.filter((doc) => casesRawOf(doc) > 0);
+  const totalRaw = docs.reduce((sum, doc) => sum + casesRawOf(doc), 0);
+  const totalAttributed = docs.reduce((sum, doc) => sum + casesAttributedOf(doc), 0);
+  const ranked = [...withCases].sort(
+    (a, b) => casesAttributedOf(b) - casesAttributedOf(a) || casesRawOf(b) - casesRawOf(a),
+  );
+  const topDoc = ranked[0] ?? null;
+  const topRaw = topDoc === null ? 0 : casesRawOf(topDoc);
+  const topAttributed = topDoc === null ? 0 : casesAttributedOf(topDoc);
+  const components = countComponents(docs, aliases);
+  const themes = rules === null ? null : countThemes(docs, { days: 365 }, rules);
+
+  return {
+    basis: 'caseCount_365 over the whole corpus; not windowed by createdDate',
+    windowDays: 365,
+    articleCount: docs.length,
+    articlesWithCases: withCases.length,
+    casesRaw: roundTo(totalRaw, 1),
+    casesAttributed: roundTo(totalAttributed, 1),
+    concentration: {
+      topArticle:
+        topDoc === null
+          ? null
+          : {
+              id: topDoc.id,
+              title: topDoc.title,
+              url: articleUrl(topDoc),
+              casesRaw: roundTo(topRaw, 1),
+              casesAttributed: roundTo(topAttributed, 1),
+              productCount: productCountOf(topDoc),
+            },
+      topShareRaw: totalRaw === 0 ? 0 : roundTo(topRaw / totalRaw, 3),
+      topShareAttributed: totalAttributed === 0 ? 0 : roundTo(topAttributed / totalAttributed, 3),
+      warned: totalRaw > 0 && topRaw / totalRaw > CONCENTRATION_WARNING_SHARE,
+    },
+    themes:
+      themes === null
+        ? null
+        : [...themes].sort(
+            (a, b) => b.casesAttributed - a.casesAttributed || a.theme.localeCompare(b.theme),
+          ),
+    components: components.normalized,
+    topArticles: ranked
+      .slice(0, DEMAND_TOP_ARTICLES)
+      .map((doc) => ({
+        id: doc.id,
+        title: doc.title,
+        url: articleUrl(doc),
+        createdDate: docCreatedDate(doc),
+        casesRaw: roundTo(casesRawOf(doc), 1),
+        casesAttributed: roundTo(casesAttributedOf(doc), 1),
+        productCount: productCountOf(doc),
+        kcsState: docState(doc),
+        themes: rules === null ? null : themeHints(doc, rules),
+      })),
+  };
+}
+
+function summarizeMovement(docs, recent, comparison, rules) {
+  const nested = recent.start >= comparison.start && recent.end <= comparison.end;
+  const baselineWindow =
+    nested && recent.start > comparison.start
+      ? {
+          start: comparison.start,
+          end: addDaysIso(recent.start, -1),
+          days: daysBetweenInclusive(comparison.start, addDaysIso(recent.start, -1)),
+        }
+      : { start: comparison.start, end: comparison.end, days: comparison.days };
+
+  const recentDocs = docs.filter((doc) => isInWindow(doc, recent));
+  const baselineDocs = docs.filter((doc) => isInWindow(doc, baselineWindow));
+
+  const countMap = (list) => {
+    const counts = new Map();
+    for (const doc of list) {
+      for (const theme of themeHints(doc, rules)) {
+        counts.set(theme, (counts.get(theme) ?? 0) + 1);
+      }
+    }
+    return counts;
+  };
+
+  const recentCounts = rules === null ? new Map() : countMap(recentDocs);
+  const baselineCounts = rules === null ? new Map() : countMap(baselineDocs);
+
+  const themes =
+    rules === null
+      ? null
+      : rules
+          .map((rule) => {
+            const theme = rule.theme;
+            const recentCount = recentCounts.get(theme) ?? 0;
+            const baselineCount = baselineCounts.get(theme) ?? 0;
+            const recentPerDay = recentCount / recent.days;
+            const baselinePerDay = baselineCount / baselineWindow.days;
+            const ratio = baselinePerDay === 0 ? null : recentPerDay / baselinePerDay;
+            const shareRecent = recentDocs.length === 0 ? 0 : recentCount / recentDocs.length;
+            const shareBaseline = baselineDocs.length === 0 ? 0 : baselineCount / baselineDocs.length;
+            return {
+              theme,
+              recentCount,
+              baselineCount,
+              recentPerDay: roundTo(recentPerDay, 3),
+              baselinePerDay: roundTo(baselinePerDay, 3),
+              ratio: ratio === null ? null : roundTo(ratio, 2),
+              shareRecent: roundTo(shareRecent, 3),
+              shareBaseline: roundTo(shareBaseline, 3),
+              deltaShare: roundTo(shareRecent - shareBaseline, 3),
+              class: movementClass(recentCount, baselineCount, ratio),
+            };
+          })
+          .sort((a, b) => b.recentCount - a.recentCount || a.theme.localeCompare(b.theme));
+
+  return {
+    baseline: {
+      window: baselineWindow,
+      articleCount: baselineDocs.length,
+      nested,
+      minObservations: MIN_MOVEMENT_OBSERVATIONS,
+    },
+    themes,
+  };
+}
+
+function summarizeKcs(docs, asOf) {
+  const candidates = docs
+    .filter((doc) => casesRawOf(doc) > 0)
+    .map((doc) => ({ doc, modified: lastModifiedOf(doc), age: ageInDays(lastModifiedOf(doc), asOf) }))
+    .filter((item) => item.age !== null && item.age > STALE_AFTER_DAYS)
+    .sort(
+      (a, b) =>
+        casesAttributedOf(b.doc) - casesAttributedOf(a.doc) ||
+        casesRawOf(b.doc) - casesRawOf(a.doc),
+    )
+    .slice(0, REFRESH_CANDIDATES)
+    .map((item) => ({
+      id: item.doc.id,
+      title: item.doc.title,
+      url: articleUrl(item.doc),
+      casesRaw: roundTo(casesRawOf(item.doc), 1),
+      casesAttributed: roundTo(casesAttributedOf(item.doc), 1),
+      productCount: productCountOf(item.doc),
+      lastModifiedDate: item.modified,
+      daysSinceModified: item.age,
+      kcsState: docState(item.doc),
+    }));
+
+  return {
+    corpus: countStates(docs),
+    staleAfterDays: STALE_AFTER_DAYS,
+    refreshCandidates: candidates,
+  };
+}
+
+function summarizeEmergentTerms(docs, recent, baselineWindow) {
+  const recentDocs = docs.filter((doc) => isInWindow(doc, recent));
+  const baselineDocs = docs.filter((doc) => isInWindow(doc, baselineWindow));
+
+  const index = (list) => {
+    const terms = new Map();
+    for (const doc of list) {
+      for (const token of tokensOf(doc)) {
+        const entry = terms.get(token) ?? { count: 0, ids: [] };
+        entry.count += 1;
+        if (entry.ids.length < 2) {
+          entry.ids.push(doc.id);
+        }
+        terms.set(token, entry);
+      }
+    }
+    return terms;
+  };
+
+  const recentTerms = index(recentDocs);
+  const baselineTerms = index(baselineDocs);
+  const rows = [];
+
+  const ubiquitous =
+    recentDocs.length >= UBIQUITOUS_TERM_MIN_ARTICLES
+      ? Math.ceil(recentDocs.length * UBIQUITOUS_TERM_SHARE)
+      : Number.POSITIVE_INFINITY;
+
+  for (const [term, entry] of recentTerms) {
+    if (entry.count >= ubiquitous) {
+      continue;
+    }
+    const baseline = baselineTerms.get(term) ?? { count: 0, ids: [] };
+    const recentPerDay = entry.count / recent.days;
+    const baselinePerDay = baseline.count / baselineWindow.days;
+    const ratio = baselinePerDay === 0 ? null : recentPerDay / baselinePerDay;
+    let klass = null;
+    if (baseline.count === 0 && entry.count >= NEW_TERM_MIN_ARTICLES) {
+      klass = 'new';
+    } else if (entry.count >= MIN_TERM_ARTICLES && baseline.count > 0 && ratio !== null && ratio >= RISING_TERM_RATIO) {
+      klass = 'rising';
+    }
+    if (klass === null) {
+      continue;
+    }
+    rows.push({
+      term,
+      class: klass,
+      recentArticles: entry.count,
+      baselineArticles: baseline.count,
+      ratio: ratio === null ? null : roundTo(ratio, 2),
+      exampleIds: entry.ids,
+    });
+  }
+
+  const pick = (klass) =>
+    rows
+      .filter((row) => row.class === klass)
+      .sort((a, b) => b.recentArticles - a.recentArticles || a.term.localeCompare(b.term))
+      .slice(0, EMERGENT_TERMS);
+
+  return {
+    newTerms: pick('new'),
+    risingTerms: pick('rising'),
+    minArticles: MIN_TERM_ARTICLES,
+  };
 }
 
 export function summarize(fetchResult, args) {
@@ -518,13 +983,23 @@ export function summarize(fetchResult, args) {
     (a, b) => b.createdDate.localeCompare(a.createdDate) || String(a.id).localeCompare(String(b.id)),
   );
 
+  const demand = summarizeDemand(docs, rules, args.componentAliases ?? new Map());
+  const movement = summarizeMovement(docs, recent, comparison, rules);
+  const kcs = summarizeKcs(docs, args.asOf);
+  const emergentTerms = summarizeEmergentTerms(docs, recent, movement.baseline.window);
+
   return {
+    schemaVersion: SCHEMA_VERSION,
     product: args.product,
     asOf: args.asOf,
     taxonomy:
       rules === null ? null : { mode: taxonomy.mode, name: taxonomy.name, themes: rules.map((rule) => rule.theme) },
-    recent: summarizeWindow(docs, recent, rules),
-    comparison: summarizeWindow(docs, comparison, rules),
+    recent: summarizeWindow(docs, recent, rules, args.componentAliases ?? new Map()),
+    comparison: summarizeWindow(docs, comparison, rules, args.componentAliases ?? new Map()),
+    demand,
+    movement,
+    kcs,
+    emergentTerms,
     allTime: {
       articleCount: numFound,
       fetchedArticles: docs.length,
@@ -552,12 +1027,19 @@ function formatCountList(counts, limit = 10) {
     .join('\n');
 }
 
+function formatCases(count) {
+  return `${count} attributed ${count === 1 ? 'case' : 'cases'}`;
+}
+
 function formatThemeCases(item) {
-  const base = `${item.caseCount365} linked support cases (365d, summed)`;
-  if (item.caseCount365 > 0 && item.topArticleShare > 0.5) {
-    return `${base}; one article supplies ${formatPercent(item.topArticleShare)}`;
+  const parts = [formatCases(item.casesAttributed)];
+  if (item.casesAttributed !== item.casesRaw || item.casesRaw !== item.casesDedicated) {
+    parts.push(`raw ${item.casesRaw}`, `single-product ${item.casesDedicated}`);
   }
-  return base;
+  if (item.articlesWithCases > 1 && item.casesRaw > 0 && item.topArticleShare > 0.5) {
+    parts.push(`one article supplies ${formatPercent(item.topArticleShare)} of raw weight`);
+  }
+  return parts.join('; ');
 }
 
 function formatThemeList(themes) {
@@ -567,9 +1049,101 @@ function formatThemeList(themes) {
   return themes
     .map(
       (item) =>
-        `- ${item.theme}: ${formatArticleCount(item.count)}, ${formatPercent(item.share)} of window, ${item.perDay.toFixed(2)} per day, ${formatThemeCases(item)}`,
+        `- ${item.theme}: ${formatArticleCount(item.count)} (${item.articlesWithCases} with cases), ${formatPercent(item.share)} of window, ${item.perDay.toFixed(2)} per day, ${formatThemeCases(item)}`,
     )
     .join('\n');
+}
+
+function formatDemandThemes(themes, limit = 8) {
+  if (themes === null) {
+    return '- No taxonomy applied; rank the demand article list yourself.';
+  }
+  if (themes.length === 0) {
+    return '- none';
+  }
+  return themes
+    .slice(0, limit)
+    .map(
+      (item) =>
+        `- ${item.theme}: ${formatCases(item.casesAttributed)} (raw ${item.casesRaw}, single-product ${item.casesDedicated}) across ${formatArticleCount(item.count)}, ${item.articlesWithCases} with linked cases`,
+    )
+    .join('\n');
+}
+
+function formatConcentration(demand) {
+  const c = demand.concentration;
+  if (c.topArticle === null) {
+    return '- No article carries a linked support case in the current corpus.';
+  }
+  const lines = [
+    `- Largest article: [${c.topArticle.title}](${c.topArticle.url}) — ${formatCases(c.topArticle.casesAttributed)} (raw ${c.topArticle.casesRaw}), tagged to ${c.topArticle.productCount} product${c.topArticle.productCount === 1 ? '' : 's'}`,
+    `- Share of raw case weight: ${formatPercent(c.topShareRaw)}; share of attributed weight: ${formatPercent(c.topShareAttributed)}`,
+  ];
+  if (c.warned) {
+    lines.push(
+      `- WARNING: a single article supplies more than ${formatPercent(CONCENTRATION_WARNING_SHARE)} of raw case weight. Treat corpus-level case totals as one article's reach, not as demand for every theme it touches.`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function formatKcs(kcs) {
+  const states = kcs.corpus.map((item) => `${item.value} ${item.count}`).join(', ');
+  const lines = [`- Corpus KCS state: ${states || 'unknown'}`];
+  const candidates = kcs.refreshCandidates;
+  if (candidates.length === 0) {
+    lines.push(`- No article with linked cases has gone unedited for more than ${kcs.staleAfterDays} days.`);
+    return lines.join('\n');
+  }
+  lines.push(
+    `- Refresh candidates (linked cases, last edited more than ${kcs.staleAfterDays} days ago): ${candidates.length}`,
+  );
+  lines.push('');
+  for (const item of candidates) {
+    lines.push(
+      `- [${item.title}](${item.url}) — ${formatCases(item.casesAttributed)}, last edited ${item.lastModifiedDate} (${item.daysSinceModified} days), ${item.kcsState}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function formatMovement(movement) {
+  const baseline = movement.baseline;
+  const lines = [
+    `- Baseline window: ${baseline.window.start} to ${baseline.window.end} (${baseline.window.days} days, ${baseline.articleCount} articles)`,
+    `- A theme needs at least ${baseline.minObservations} articles in both windows before its movement is classified; below that it reads \`insufficient\`.`,
+  ];
+  if (movement.themes === null) {
+    lines.push('- No taxonomy applied; movement is not computed.');
+    return lines.join('\n');
+  }
+  lines.push('');
+  for (const item of movement.themes) {
+    const ratio = item.ratio === null || item.class === 'insufficient' ? 'n/a' : `${item.ratio}x`;
+    lines.push(
+      `- ${item.theme}: recent ${item.recentCount}, baseline ${item.baselineCount}, rate ratio ${ratio}, ${item.class}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function formatTerms(emergentTerms) {
+  const render = (rows) =>
+    rows.length === 0
+      ? '- none'
+      : rows
+          .map(
+            (row) =>
+              `- ${row.term}: ${row.recentArticles} recent article${row.recentArticles === 1 ? '' : 's'} (baseline ${row.baselineArticles})`,
+          )
+          .join('\n');
+  return `### New terms
+
+${render(emergentTerms.newTerms)}
+
+### Rising terms
+
+${render(emergentTerms.risingTerms)}`;
 }
 
 function formatArticles(articles, limit = 15) {
@@ -597,7 +1171,7 @@ function formatAllTime(report) {
 }
 
 const CASE_TOTAL_CAVEAT =
-  '- Linked support-case totals are article-level caseCount_365 values summed across matching articles; they are not unique cases and may include multi-product articles.';
+  '- Linked support-case totals are article-level caseCount_365 values summed across matching articles; they are not unique cases.';
 
 function caveatsFor(report) {
   const mode = report.taxonomy?.mode ?? 'none';
@@ -618,6 +1192,17 @@ function caveatsFor(report) {
   }
 
   lines.push(formatWindowCaveat(report));
+  lines.push(
+    '- The demand view weights the whole corpus by `caseCount_365`, a fixed trailing-365-day count published by Red Hat. It cannot be re-windowed, so a quarterly case-volume answer is not derivable from KB data.',
+  );
+  lines.push(
+    '- Attributed cases divide each article\'s `caseCount_365` by the number of products it is tagged to; single-product cases exclude multi-product articles entirely.',
+  );
+  if (report.demand.concentration.warned) {
+    lines.push(
+      '- One article dominates the corpus case weight; see Corpus concentration before quoting any case total.',
+    );
+  }
   return lines.join('\n');
 }
 
@@ -634,6 +1219,7 @@ function formatWindowCaveat(report) {
 export function renderMarkdown(report) {
   const recent = report.recent;
   const comparison = report.comparison;
+  const demand = report.demand;
   const recentArticles = report.articles.filter((article) => article.windows.includes('recent'));
   const topRecentArticles = [...recentArticles]
     .sort((a, b) => b.caseCount365 - a.caseCount365 || b.createdDate.localeCompare(a.createdDate))
@@ -686,6 +1272,27 @@ ${taxonomyLine}
 - Recent daily rate: ${(recent.articleCount / recent.window.days).toFixed(2)}
 - Comparison daily rate: ${(comparison.articleCount / comparison.window.days).toFixed(2)}${unmatchedLines}
 
+## Demand (trailing 365 days, case-weighted)
+
+- Basis: ${demand.basis}
+- Articles with linked cases: ${demand.articlesWithCases} of ${demand.articleCount}
+- Attributed cases: ${demand.casesAttributed} (raw ${demand.casesRaw})
+- Theme signals:
+
+${formatDemandThemes(demand.themes)}
+
+## Corpus concentration
+
+${formatConcentration(demand)}
+
+## KCS health and refresh candidates
+
+${formatKcs(report.kcs)}
+
+## Theme movement (recent vs prior baseline)
+
+${formatMovement(report.movement)}
+
 ## Recent categories
 
 ${formatCountList(recent.categories)}
@@ -704,13 +1311,17 @@ ${formatCountList(comparison.tags)}
 
 ## Recent components
 
-${formatCountList(recent.components)}
+${formatCountList(recent.componentsNormalized)}
 
 ## Comparison components
 
-${formatCountList(comparison.components)}
+${formatCountList(comparison.componentsNormalized)}
 
-${themeSections}${articleHeading}
+${themeSections}## Emerging vocabulary
+
+${formatTerms(report.emergentTerms)}
+
+${articleHeading}
 
 ${formatArticles(topRecentArticles)}
 

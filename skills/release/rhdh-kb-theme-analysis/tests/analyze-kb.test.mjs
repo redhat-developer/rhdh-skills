@@ -8,9 +8,13 @@ import {
   ABSTRACT_LIMIT,
   DEFAULT_COMPARISON_DAYS,
   DEFAULT_RECENT_DAYS,
+  SCHEMA_VERSION,
   buildQuery,
+  casesAttributedOf,
   fetchKbDocs,
   isInWindow,
+  loadComponentAliases,
+  normalizeComponentValue,
   parseArgs,
   renderMarkdown,
   resolveWindows,
@@ -541,5 +545,336 @@ describe('report signals', () => {
 
     assert.ok(report.recent.themes[0].topArticleShare <= 0.5);
     assert.ok(!renderMarkdown(report).includes('one article supplies'));
+  });
+});
+
+describe('demand weighting', () => {
+  const args = parseArgs(['--as-of', '2026-10-30']);
+
+  function writeTaxonomy(rules) {
+    const directory = mkdtempSync(join(tmpdir(), 'rhdh-kb-demand-'));
+    const file = join(directory, 'taxonomy.json');
+    writeFileSync(file, JSON.stringify(rules));
+    return file;
+  }
+
+  it('divides a multi-product article across its products', () => {
+    const shared = {
+      id: 'cve',
+      title: 'Upgrade to check CVEs',
+      createdDate: '2026-10-01T10:00:00Z',
+      caseCount_365: 81,
+      standard_product: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'],
+    };
+    assert.equal(casesAttributedOf(shared), 9);
+
+    const own = {
+      id: 'own',
+      title: 'Upgrade fails',
+      createdDate: '2026-10-02T10:00:00Z',
+      caseCount_365: 9,
+      standard_product: ['Red Hat Developer Hub'],
+    };
+
+    const file = writeTaxonomy([{ theme: 'upgrades', pattern: '\\bupgrad\\w*' }]);
+    const report = summarize(
+      { docs: [shared, own], numFound: 2, truncated: false },
+      parseArgs(['--as-of', '2026-10-30', '--themes', file]),
+    );
+
+    const theme = report.demand.themes[0];
+    assert.equal(theme.casesRaw, 90);
+    assert.equal(theme.casesAttributed, 18);
+    assert.equal(theme.casesDedicated, 9);
+    assert.equal(theme.topArticle.productCount, 9);
+  });
+
+  it('warns when one article holds most of the corpus weight', () => {
+    const docs = [
+      { id: 'big', title: 'Upgrade CVE check', createdDate: '2026-10-01T10:00:00Z', caseCount_365: 90 },
+      { id: 'small', title: 'Upgrade one', createdDate: '2026-10-02T10:00:00Z', caseCount_365: 2 },
+    ];
+    const report = summarize({ docs, numFound: 2, truncated: false }, args);
+
+    assert.equal(report.demand.concentration.warned, true);
+    assert.equal(report.demand.concentration.topArticle.id, 'big');
+    assert.ok(renderMarkdown(report).includes('WARNING: a single article supplies'));
+  });
+
+  it('does not warn when case weight is spread', () => {
+    const docs = [
+      { id: 'a', title: 'Upgrade one', createdDate: '2026-10-01T10:00:00Z', caseCount_365: 3 },
+      { id: 'b', title: 'Upgrade two', createdDate: '2026-10-02T10:00:00Z', caseCount_365: 3 },
+      { id: 'c', title: 'Upgrade three', createdDate: '2026-10-03T10:00:00Z', caseCount_365: 3 },
+      { id: 'd', title: 'Upgrade four', createdDate: '2026-10-04T10:00:00Z', caseCount_365: 3 },
+    ];
+    const report = summarize({ docs, numFound: 4, truncated: false }, args);
+    assert.equal(report.demand.concentration.warned, false);
+    assert.ok(!renderMarkdown(report).includes('WARNING: a single article supplies'));
+  });
+
+  it('never reports attributed weight above raw weight', () => {
+    const docs = [
+      { id: 'a', title: 'Upgrade one', createdDate: '2026-10-01T10:00:00Z', caseCount_365: 12, standard_product: ['x', 'y', 'z'] },
+      { id: 'b', title: 'Upgrade two', createdDate: '2026-10-02T10:00:00Z', caseCount_365: 4 },
+    ];
+    const report = summarize({ docs, numFound: 2, truncated: false }, args);
+    assert.ok(report.demand.casesAttributed <= report.demand.casesRaw);
+    for (const theme of report.demand.themes) {
+      assert.ok(theme.casesAttributed <= theme.casesRaw);
+    }
+  });
+});
+
+describe('theme movement', () => {
+  function writeTaxonomy(rules) {
+    const directory = mkdtempSync(join(tmpdir(), 'rhdh-kb-move-'));
+    const file = join(directory, 'taxonomy.json');
+    writeFileSync(file, JSON.stringify(rules));
+    return file;
+  }
+
+  function docsFor(theme, dates) {
+    return dates.map((date, index) => ({
+      id: `${theme}-${index}`,
+      title: `${theme} question`,
+      createdDate: `${date}T10:00:00Z`,
+    }));
+  }
+
+  const taxonomy = [
+    { theme: 'alpha', pattern: '\\balpha\\b' },
+    { theme: 'beta', pattern: '\\bbeta\\b' },
+    { theme: 'gamma', pattern: '\\bgamma\\b' },
+    { theme: 'delta', pattern: '\\bdelta\\b' },
+    { theme: 'epsilon', pattern: '\\bepsilon\\b' },
+  ];
+
+  it('compares the recent window against the previous baseline', () => {
+    const recentDate = '2026-10-01';
+    const baselineDate = '2026-06-01';
+    const docs = [
+      ...docsFor('alpha', [recentDate, recentDate, recentDate, recentDate, recentDate, recentDate, recentDate, recentDate, recentDate, recentDate, recentDate, recentDate]),
+      ...docsFor('alpha', [baselineDate, baselineDate, baselineDate, baselineDate, baselineDate]),
+      ...docsFor('beta', [recentDate, recentDate, recentDate, recentDate]),
+      ...docsFor('beta', [baselineDate, baselineDate, baselineDate, baselineDate]),
+      ...docsFor('gamma', [recentDate, recentDate, recentDate]),
+      ...docsFor('delta', [baselineDate, baselineDate, baselineDate, baselineDate, baselineDate, baselineDate]),
+    ];
+    const file = writeTaxonomy(taxonomy);
+    const report = summarize(
+      { docs, numFound: docs.length, truncated: false },
+      parseArgs(['--as-of', '2026-10-30', '--recent-days', '101', '--comparison-days', '202', '--themes', file]),
+    );
+
+    const byTheme = Object.fromEntries(report.movement.themes.map((row) => [row.theme, row]));
+    assert.equal(byTheme.alpha.class, 'growing');
+    assert.equal(byTheme.beta.class, 'insufficient');
+    assert.equal(byTheme.gamma.class, 'new');
+    assert.equal(byTheme.delta.class, 'declining');
+    assert.equal(byTheme.epsilon.class, 'insufficient');
+
+    assert.equal(report.movement.baseline.window.end, '2026-07-21');
+    assert.ok(report.movement.baseline.window.start >= report.comparison.window.start);
+  });
+
+  it('never prints a ratio below the observation guard', () => {
+    const docs = docsFor('alpha', ['2026-10-01', '2026-10-02']);
+    const file = writeTaxonomy(taxonomy);
+    const report = summarize(
+      { docs, numFound: docs.length, truncated: false },
+      parseArgs(['--as-of', '2026-10-30', '--themes', file]),
+    );
+    const alpha = report.movement.themes.find((row) => row.theme === 'alpha');
+    assert.equal(alpha.class, 'insufficient');
+    assert.ok(renderMarkdown(report).includes('alpha: recent 2, baseline 0'));
+  });
+});
+
+describe('component normalization', () => {
+  it('folds case, whitespace, and dashes', () => {
+    assert.equal(normalizeComponentValue('  Dev-Console '), 'dev console');
+    assert.equal(normalizeComponentValue('KEYCLOAK'), 'keycloak');
+  });
+
+  it('reports folded counts and keeps raw variants visible', () => {
+    const docs = [
+      { id: '1', title: 'x', createdDate: '2026-10-01T10:00:00Z', component: ['Authentication', 'authentication'] },
+      { id: '2', title: 'y', createdDate: '2026-10-02T10:00:00Z', component: ['KEYCLOAK', 'key-cloak'] },
+    ];
+    const report = summarize(
+      { docs, numFound: 2, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    const counts = Object.fromEntries(report.recent.componentsNormalized.map((item) => [item.value, item.count]));
+    assert.equal(counts.authentication, 2);
+    assert.equal(counts.keycloak, 1);
+    assert.equal(counts['key cloak'], 1);
+    assert.equal(report.recent.componentVariants.rawValues, 4);
+    assert.equal(report.recent.componentVariants.foldedValues, 3);
+  });
+
+  it('applies an alias file', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'rhdh-kb-alias-'));
+    const aliases = join(directory, 'aliases.json');
+    writeFileSync(aliases, JSON.stringify({ 'key-cloak': 'authentication' }));
+
+    const docs = [
+      { id: '1', title: 'x', createdDate: '2026-10-02T10:00:00Z', component: ['KEYCLOAK', 'key-cloak'] },
+    ];
+    const report = summarize(
+      { docs, numFound: 1, truncated: false },
+      parseArgs(['--as-of', '2026-10-30', '--component-aliases', aliases]),
+    );
+    const counts = Object.fromEntries(report.recent.componentsNormalized.map((item) => [item.value, item.count]));
+    assert.equal(counts.authentication, 1);
+    assert.equal(counts.keycloak, 1);
+  });
+
+  it('rejects an alias file that is not an object', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'rhdh-kb-alias-bad-'));
+    const aliases = join(directory, 'aliases.json');
+    writeFileSync(aliases, JSON.stringify(['keycloak']));
+    assert.throws(() => loadComponentAliases(aliases), /must be a JSON object/);
+  });
+
+  it('rejects an alias with an empty target', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'rhdh-kb-alias-empty-'));
+    const aliases = join(directory, 'aliases.json');
+    writeFileSync(aliases, JSON.stringify({ keycloak: '' }));
+    assert.throws(() => loadComponentAliases(aliases), /needs a non-empty string target/);
+  });
+});
+
+describe('KCS health', () => {
+  it('lists stale high-touch articles by attributed weight', () => {
+    const docs = [
+      { id: 'stale-big', title: 'Upgrade is stuck', createdDate: '2024-01-01T10:00:00Z', lastModifiedDate: '2024-06-01T10:00:00Z', caseCount_365: 12 },
+      { id: 'stale-small', title: 'Upgrade is slow', createdDate: '2024-01-01T10:00:00Z', lastModifiedDate: '2024-06-01T10:00:00Z', caseCount_365: 2 },
+      { id: 'fresh', title: 'Upgrade works', createdDate: '2024-01-01T10:00:00Z', lastModifiedDate: '2026-10-01T10:00:00Z', caseCount_365: 40 },
+      { id: 'quiet', title: 'Upgrade legend', createdDate: '2024-01-01T10:00:00Z', lastModifiedDate: '2024-06-01T10:00:00Z', caseCount_365: 0 },
+    ];
+    const report = summarize(
+      { docs, numFound: 4, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+
+    const ids = report.kcs.refreshCandidates.map((item) => item.id);
+    assert.deepEqual(ids, ['stale-big', 'stale-small']);
+    assert.equal(report.kcs.refreshCandidates[0].daysSinceModified > 365, true);
+  });
+
+  it('counts KCS states in the corpus', () => {
+    const docs = [
+      { id: '1', title: 'x', createdDate: '2026-10-01T10:00:00Z', kcsState: 'verified' },
+      { id: '2', title: 'y', createdDate: '2026-10-02T10:00:00Z', kcsState: 'unverified' },
+      { id: '3', title: 'z', createdDate: '2026-10-03T10:00:00Z' },
+    ];
+    const report = summarize(
+      { docs, numFound: 3, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    const counts = Object.fromEntries(report.kcs.corpus.map((item) => [item.value, item.count]));
+    assert.deepEqual(counts, { verified: 1, unverified: 1, unknown: 1 });
+  });
+});
+
+describe('emergent vocabulary', () => {
+  it('finds terms that are new in the recent window', () => {
+    const docs = [
+      { id: '1', title: 'Webhook delivery fails', createdDate: '2026-10-01T10:00:00Z' },
+      { id: '2', title: 'Webhook retries stall', createdDate: '2026-10-02T10:00:00Z' },
+      { id: '3', title: 'Webhook signature rejected', createdDate: '2026-10-03T10:00:00Z' },
+      { id: '4', title: 'Upgrade fails', createdDate: '2025-12-01T10:00:00Z' },
+    ];
+    const report = summarize(
+      { docs, numFound: 4, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    const terms = report.emergentTerms.newTerms.map((row) => row.term);
+    assert.ok(terms.includes('webhook'));
+    assert.ok(!terms.includes('upgrade'));
+  });
+
+  it('ignores abstract prose and terms present in most of the window', () => {
+    const docs = [];
+    for (let index = 0; index < 12; index++) {
+      docs.push({
+        id: `u${index}`,
+        title: 'Upgrade question',
+        createdDate: '2026-10-01T10:00:00Z',
+      });
+    }
+    docs.push({ id: 'w1', title: 'Webhook delivery fails', createdDate: '2026-10-02T10:00:00Z', issue: ['Webhook signature rejected'] });
+    docs.push({ id: 'w2', title: 'Webhook retries stall', createdDate: '2026-10-03T10:00:00Z' });
+    docs.push({ id: 'w3', title: 'Webhook timeout', createdDate: '2026-10-04T10:00:00Z' });
+
+    const report = summarize(
+      { docs, numFound: docs.length, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    const terms = report.emergentTerms.newTerms.map((row) => row.term);
+    assert.ok(terms.includes('webhook'));
+    assert.ok(!terms.includes('upgrade'), 'ubiquitous terms are noise');
+  });
+
+  it('does not mine the abstract for vocabulary', () => {
+    const docs = [
+      { id: '1', title: 'Upgrade fails', createdDate: '2026-10-01T10:00:00Z', issue: ['Zookeeper ensemble is unhappy'] },
+      { id: '2', title: 'Upgrade fails again', createdDate: '2026-10-02T10:00:00Z', issue: ['Zookeeper ensemble is unhappy'] },
+    ];
+    const report = summarize(
+      { docs, numFound: 2, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    const terms = report.emergentTerms.newTerms.map((row) => row.term);
+    assert.ok(!terms.includes('zookeeper'));
+  });
+
+  it('keeps single mentions out of the term list', () => {
+    const docs = [{ id: '1', title: 'Webhook delivery fails', createdDate: '2026-10-01T10:00:00Z' }];
+    const report = summarize(
+      { docs, numFound: 1, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    assert.deepEqual(report.emergentTerms.newTerms, []);
+    assert.deepEqual(report.emergentTerms.risingTerms, []);
+  });
+});
+
+describe('report schema', () => {
+  it('publishes schema version 2 with the new blocks', () => {
+    const docs = [
+      { id: '1', title: 'Upgrade fails', createdDate: '2026-10-01T10:00:00Z', caseCount_365: 2 },
+    ];
+    const report = summarize(
+      { docs, numFound: 1, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    assert.equal(SCHEMA_VERSION, 2);
+    assert.equal(report.schemaVersion, 2);
+    for (const key of ['demand', 'movement', 'kcs', 'emergentTerms', 'allTime', 'articles']) {
+      assert.ok(key in report, `missing ${key}`);
+    }
+    assert.ok(Array.isArray(report.articles));
+    assert.ok('themes' in report.demand);
+  });
+
+  it('renders the new Markdown sections', () => {
+    const report = summarize(
+      { docs: [{ id: '1', title: 'Upgrade fails', createdDate: '2026-10-01T10:00:00Z' }], numFound: 1, truncated: false },
+      parseArgs(['--as-of', '2026-10-30']),
+    );
+    const markdown = renderMarkdown(report);
+    for (const heading of [
+      '## Demand (trailing 365 days, case-weighted)',
+      '## Corpus concentration',
+      '## KCS health and refresh candidates',
+      '## Theme movement (recent vs prior baseline)',
+      '## Emerging vocabulary',
+      '## Caveats',
+    ]) {
+      assert.ok(markdown.includes(heading), `missing ${heading}`);
+    }
   });
 });

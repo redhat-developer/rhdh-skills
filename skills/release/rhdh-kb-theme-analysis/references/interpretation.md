@@ -1,5 +1,19 @@
 # Interpreting RHDH KB theme analysis
 
+## Authoring versus demand
+
+The report answers two different questions and never mixes them.
+
+- **Authoring** is the `recent` and `comparison` views. They filter on
+  `createdDate`, so they measure how many articles support published in a
+  window, not how much pain customers reported.
+- **Demand** is the `demand` view. It ignores `createdDate` and weights the whole
+  corpus by `caseCount_365`.
+
+Read the authoring view for publishing cadence and taxonomy coverage. Read the
+demand view for what customers are hitting. A quarterly answer is an authoring
+answer; the demand view is always annual.
+
 ## Time windows
 
 The default recent window is the trailing 90 days. The default comparison
@@ -53,13 +67,40 @@ For each strong theme, report:
 - the likely product or roadmap impact;
 - the confidence level.
 
-Look for themes that are:
+## Case-weight arithmetic
 
-- new in the recent window,
-- growing relative to the annual rate,
-- persistent across both windows,
-- high-touch by `caseCount_365`,
-- concentrated around a release or plugin family.
+Three case numbers appear per theme and per demand article, and they are not
+interchangeable:
+
+- `casesRaw` — the plain sum of `caseCount_365`;
+- `casesAttributed` — the sum after each article is divided by the number of
+  products it is tagged to. Use this one;
+- `casesDedicated` — the sum over single-product articles only.
+
+A generic article tagged to nine products used to read as nine times the demand
+of a product-specific one. Attribution removes that distortion without throwing
+the shared article away.
+
+`demand.concentration` names the largest article and its share of raw and
+attributed weight. When `warned` is true, at least a quarter of the corpus case
+weight is one article: say so before quoting any total, and never present that
+article's reach as demand for every theme it touches.
+
+Do not classify growth by eye. `movement.themes` already carries `class`,
+`ratio`, and `deltaShare` for every theme, computed against the baseline window:
+
+- `new` — no baseline articles, at least three recent ones;
+- `growing` — recent rate at least 1.5× the baseline rate;
+- `declining` — recent rate at most 0.67× the baseline rate;
+- `stable` — anything between;
+- `insufficient` — fewer than five articles on either side, or no baseline.
+
+The baseline is *not* the comparison window. It is the comparison window minus
+the recent window, so a theme is never compared against a period that contains
+itself. `movement.baseline.window` carries the exact dates; quote them.
+
+Report an `insufficient` theme as unclassified. Never print a percentage or a
+ratio for one, and never upgrade a 2-against-0 result into "emerging".
 
 ## Product and documentation recommendations
 
@@ -108,3 +149,9 @@ State these limitations in the final answer:
 - Theme clusters are heuristic.
 - A spike can reflect release activity, documentation gaps, support process
   changes, or product regressions; the KB alone does not prove causation.
+- `caseCount_365` is a fixed trailing-year count. Nothing shorter than a year
+  can be stated about case volume.
+- Attributed cases are an estimate that assumes an article's cases split evenly
+  across its tagged products.
+- Emergent terms are word frequencies, not themes. Raise one only when it maps
+  onto an article set you can cite.

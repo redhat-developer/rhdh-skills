@@ -82,8 +82,10 @@ Apply the taxonomy once and read the numbers before trusting it:
 - Unmatched is small. The report prints `unmatched by taxonomy` per window; a
   large number means the taxonomy misses a real theme.
 - Case totals carry a concentration warning. When one article supplies more
-  than half of a cluster's `caseCount365`, the report says so; treat that total
+  than half of a cluster's raw case weight, the report says so; treat that total
   as one article, not as demand for the whole theme.
+- Prefer `casesAttributed` over `casesRaw` when comparing clusters. Raw weight
+  rewards articles tagged to many products, and attribution removes that bias.
 
 The matcher reads the abstract as well as the title. A stem that only ever
 matches in long prose — `support`, `many`, `large`, bare `logs` — will pull in

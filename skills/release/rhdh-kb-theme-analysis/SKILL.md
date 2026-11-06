@@ -47,6 +47,20 @@ Read `references/taxonomy.md` before writing a taxonomy file. Use
 `--format json` when the answer needs every article rather than the top 15, and
 add `--include-abstracts` when the grouping will be done from article text.
 
+`component` is unnormalized free text. The report folds case, whitespace, and
+dashes by default; pass `--component-aliases PATH` with a JSON object of
+`{"from": "to"}` pairs when a question needs real synonyms merged, and say that
+you did.
+
+## Authoring and demand
+
+The report answers two questions. The `recent` and `comparison` windows filter on
+`createdDate` and measure what support published. The `demand` view ignores
+`createdDate` and weights the whole corpus by `caseCount_365`. Lead with demand
+when the question is about customers; lead with authoring when it is about
+publishing cadence or taxonomy coverage. Case weights are annual — a quarterly
+case-volume answer is not derivable from this data.
+
 ## Boundary with neighbouring skills
 
 - Use this skill for public KB article themes and release-planning signals.
@@ -77,7 +91,9 @@ Complete when the answer names:
 - the product and run date;
 - both window boundaries;
 - recent and comparison article counts;
-- the strongest theme signals;
+- the strongest theme signals, as `movement` classes rather than adjectives;
+- the demand view, its attributed case total, and any concentration warning;
+- the stale, high-touch articles worth refreshing;
 - linked citations for every article named in the answer;
 - a final “Product and documentation improvement areas” section that connects recent findings to candidate product and documentation work;
 - the caveats from the interpretation reference.
