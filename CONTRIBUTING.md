@@ -29,6 +29,7 @@ are editorial and are stripped at install:
 - `skills/plugins/`
 - `skills/ci/`
 - `skills/release/`
+- `skills/security/`
 - `skills/refinement/`
 - `skills/reference/`
 - `skills/meta/`

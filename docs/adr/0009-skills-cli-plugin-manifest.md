@@ -11,8 +11,8 @@ prompt to a grouped tree (select a category header to toggle every skill in
 it).
 
 This repository groups promoted skills into editorial categories in
-`catalog.json` (`jira`, `plugins`, `ci`, `release`, `refinement`, `reference`,
-`meta`).
+`catalog.json` (`jira`, `plugins`, `ci`, `release`, `security`, `refinement`,
+`reference`, `meta`).
 Folders remain editorial for readers of the repo — skills still flatten into
 host skill directories at install. The installer UI should follow the same
 membership, with one exception: `reference` is a shared support layer other

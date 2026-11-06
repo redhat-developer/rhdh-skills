@@ -20,6 +20,7 @@ PROMOTED_CATEGORIES = (
     "plugins",
     "ci",
     "release",
+    "security",
     "refinement",
     "reference",
     "meta",

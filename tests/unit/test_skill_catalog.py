@@ -128,7 +128,7 @@ def test_repository_catalog_exposes_the_approved_composable_skill_set():
 
 
 def every_promoted_skill_lives_in_a_domain_category(catalog: dict) -> bool:
-    """Every skill sits in one of the six domain folders, and none is uncategorised."""
+    """Every skill sits in one of the domain folders, and none is uncategorised."""
     categories = set(catalog["categories"])
     return all(entry["category"] in categories for entry in catalog["skills"])
 
