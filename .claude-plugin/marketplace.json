@@ -48,7 +48,8 @@
       "skills": [
         "./skills/security/rhdh-package-impact",
         "./skills/reference/mutation-gate",
-        "./skills/reference/prose-editing"
+        "./skills/reference/prose-editing",
+        "./skills/security/rhdh-plugins-cve-triager"
       ]
     },
     {
