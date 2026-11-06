@@ -25,6 +25,14 @@ approval when an agent is driving. Weekly bots may call the script unattended.
   payload is open: name the tool, then add only the agent, model, provider and
   thinking level that are actually known.
 - Midstream `createPR.sh` (distgit) stays for `updateBaseImages.sh` until a later migration.
+- **Always opens rebased to the tip.** Before pushing, the script fetches the
+  remote topic branch (when it exists) and the target branch — from `origin`,
+  or from an `upstream` remote when origin is a fork that lacks the target —
+  rebases onto both, and refuses to push a HEAD that is still behind the base
+  tip. A rebase that rewrites an already-pushed topic branch is followed by a
+  single named `--force-with-lease` push; a first push stays a normal
+  `git push -u`. A conflicted rebase aborts and fails loudly rather than
+  opening a behind-the-base PR/MR.
 
 ## Script
 
