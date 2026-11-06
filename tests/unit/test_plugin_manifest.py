@@ -79,6 +79,21 @@ def test_third_party_installs_as_one_selectable_group_per_source():
     assert by_name["vendor-two"]["skills"] == ["./skills/third-party/vendor-two/three"]
 
 
+def test_every_non_reference_skill_is_installable_from_its_category_group():
+    """No promoted, directly installable skill is stranded outside the manifest."""
+    generator = load_generator()
+    catalog = generator.json.loads(generator.CATALOG_PATH.read_text(encoding="utf-8"))
+    manifest = generator.build_manifest(catalog)
+    listed = {path for plugin in manifest["plugins"] for path in plugin["skills"]}
+
+    for entry in catalog["skills"]:
+        if entry["category"] in generator.HIDDEN_INSTALL_CATEGORIES:
+            continue
+        assert generator._skill_path(entry) in listed, (
+            f"{entry['name']} is not reachable from an installable category group"
+        )
+
+
 def test_reference_is_not_an_installer_group():
     """Reference stays editorial; the installer must not offer a Reference group."""
     generator = load_generator()
