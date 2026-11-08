@@ -4,9 +4,11 @@ description: >-
   Manages the rhdh-plugin-export-overlays repository and Extensions Catalog:
   onboard plugins, update upstream versions, repair export or publish failures,
   inspect workspace health, triage the overlay PR backlog by label, staleness
-  and merge readiness, and trigger /publish. Use for source.json,
+  and merge readiness, trigger /publish, and track a local list of PRs through
+  the trusted-user gate, publish, and e2e to merge. Use for source.json,
   plugins-list.yaml, backstage.json, catalog metadata, overlay CI, plugin
-  import, overlay PRs, or testing exact PR artifacts before merge. For
+  import, overlay PRs, "where are these PRs now", "which of these can merge",
+  or testing exact PR artifacts before merge. For
   code-level review of a pull request, use /rhdh-pr-review. To promote an
   rhdh-plugins release through overlays into rhdh-plugin-catalog, use
   /rhdh-plugin-midstream-propagate.
@@ -37,6 +39,7 @@ depend on another installed skill's files or CLI.
 | Look up a plugin version or installation artifact at a branch or tag | Follow the metadata lookup below |
 | Check workspace status | `references/overlay-repo.md`, then inspect workspace files and recent `gh` runs |
 | Triage the open PR backlog | `workflows/triage-prs.md`; use `scripts/triage-prs.py` for deterministic classification |
+| Track PRs through publish and e2e | `workflows/merge-pipeline.md`; use `scripts/pr-pipeline.py` |
 | Analyze one overlay PR | `workflows/analyze-pr.md`; use `scripts/analyze-pr.py` |
 | Draft stale-PR notifications | `workflows/draft-notification.md` |
 | Trigger publish | Run the guarded publish procedure below |
@@ -109,6 +112,7 @@ RHDH version.
 - CI and local verification evidence, with skipped checks and their reasons
 - the pull request URL, or that none was opened
 - publish status: not requested, pending, passed, or failed
+- for tracked PRs, each one's pipeline stage and the command it needs next
 - the outcome of every approved external write
 - remaining compatibility risks
 
