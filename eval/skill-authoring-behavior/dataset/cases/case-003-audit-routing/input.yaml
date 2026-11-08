@@ -1,0 +1,4 @@
+prompt: |
+  Audit fixture/noisy-review/SKILL.md and write the findings to output/audit.md.
+  Diagnose why it activates for unrelated review requests and assess its missing
+  behavioral evidence. This is analysis only: do not modify the fixture.

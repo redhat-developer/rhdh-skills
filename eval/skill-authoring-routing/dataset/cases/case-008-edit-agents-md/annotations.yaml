@@ -1,0 +1,3 @@
+should_trigger: false
+category: near-miss-agent-prose
+rationale: Editing agent-facing repository prose belongs to writing-for-agents, not skill authoring.

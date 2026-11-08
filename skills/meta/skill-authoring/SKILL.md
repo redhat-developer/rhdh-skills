@@ -7,8 +7,9 @@ description: >-
   SKILL.md", "package this expertise as a skill", "why does this skill never
   trigger", "audit this SKILL.md", "improve this skill", or merging overlapping
   skills into fewer deeper modules. Covers frontmatter, descriptions that
-  trigger, progressive disclosure, completion criteria, and bundled scripts.
-compatibility: "No tools required. Requires an interview skill such as /grilling for the create path."
+  trigger, progressive disclosure, behavioral evaluations, completion criteria,
+  and bundled scripts.
+compatibility: "Evaluation uses agent-eval-harness when available. Requires an interview skill such as /grilling for the create path."
 ---
 
 # Skill Authoring
@@ -39,6 +40,8 @@ pointers, checkable completion criteria, and single-sourced behavior.
   caller to one. Two skills in this pack reached 4,029 and 7,784 total lines
   while their `SKILL.md` files stayed comfortably compliant.
 - Put deterministic validation and transformation in scripts.
+- Treat a skill as an empirical intervention. Measure routing, task quality,
+  process, style, and efficiency; prose review alone cannot show that it helps.
 
 ## Duplication
 
@@ -100,8 +103,12 @@ Audit and consolidation do not require it unless they open an interview.
 
 ## Conditional references
 
-Load exactly one branch. Its own pointers name any specification, description,
-architecture, script, or quality reference needed later.
+Load exactly one workflow branch. Also read
+[references/evaluation-guide.md](references/evaluation-guide.md) whenever the
+work creates, changes, consolidates, or considers retiring shipped behavior.
+It defaults evaluation work to agent-eval-harness. The workflow branch names any
+other specification, description, architecture, script, or quality reference
+needed later.
 
 - Read [references/create.md](references/create.md) to interview, draft, and
   review a new skill from scratch — "create a skill", "draft a SKILL.md",
@@ -117,5 +124,8 @@ architecture, script, or quality reference needed later.
 ## Completion
 
 Work is complete when the selected branch's review checklist passes, every
-referenced resource resolves, no behavior remains duplicated under an old
-skill name, and every changed `.py` file passes the host linter.
+referenced resource resolves, no behavior remains duplicated under an old skill
+name, every changed `.py` file passes the host linter, and the applicable harness
+thresholds pass. If agent-eval-harness cannot run, leave harness-native evaluation
+assets, report the exact blocker, and label the behavior unevaluated instead of
+substituting repository tests or prose review.

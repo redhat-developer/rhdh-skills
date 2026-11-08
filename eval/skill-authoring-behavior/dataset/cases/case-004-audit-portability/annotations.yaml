@@ -1,0 +1,8 @@
+workflow: audit
+rubric: |
+  The report inspects the whole directory and identifies at least: the runtime
+  dependency on ../../../AGENTS.md, the Windows-only hardcoded path, credential
+  exposure in a public command, overly broad description, vague completion, and
+  absence of harness-native evaluations. Findings are prioritized by behavioral
+  or safety impact, and the report does not mutate files or mistake repository
+  tests for agent evaluation.
