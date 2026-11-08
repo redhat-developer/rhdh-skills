@@ -157,7 +157,41 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
 fi
 
 git checkout -B "${HEAD}" >/dev/null
-if ! git push -u origin "HEAD:${HEAD}" 2>/dev/null; then
+
+# Rebase to the tip of the remote topic branch (when it exists) and the target
+# branch before pushing, so the PR/MR never opens behind the base.
+rebased=0
+if git fetch -q origin "${HEAD}" 2>/dev/null && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
+  if ! git rebase "origin/${HEAD}" >/dev/null 2>&1; then
+    git rebase --abort 2>/dev/null || true
+    echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
+    exit 1
+  fi
+  rebased=1
+fi
+base_tip=""
+for remote in origin upstream; do
+  if git fetch -q "${remote}" "${BASE}" 2>/dev/null && git rev-parse -q --verify "${remote}/${BASE}" >/dev/null 2>&1; then
+    base_tip="${remote}/${BASE}"
+    break
+  fi
+done
+if [[ -n "${base_tip}" ]] && ! git rebase "${base_tip}" >/dev/null 2>&1; then
+  git rebase --abort 2>/dev/null || true
+  echo "[ERROR] rebase onto ${base_tip} hit conflicts; resolve, then rerun" >&2
+  exit 1
+fi
+# Never open a PR/MR that is still behind the base tip (no-op for a fast-forward).
+if [[ -n "${base_tip}" ]] && ! git merge-base --is-ancestor "${base_tip}" HEAD; then
+  echo "[ERROR] HEAD is not ahead of ${base_tip}; refusing to push" >&2
+  exit 1
+fi
+if [[ "${rebased}" -eq 1 ]]; then
+  if ! git push -u origin --force-with-lease "HEAD:${HEAD}" 2>/dev/null; then
+    echo "[ERROR] push failed for ${repo_slug}:${HEAD}" >&2
+    exit 1
+  fi
+elif ! git push -u origin "HEAD:${HEAD}" 2>/dev/null; then
   echo "[ERROR] push failed for ${repo_slug}:${HEAD}" >&2
   exit 1
 fi

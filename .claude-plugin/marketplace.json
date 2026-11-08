@@ -42,6 +42,16 @@
       ]
     },
     {
+      "name": "security",
+      "source": "./",
+      "description": "Security skills from the RHDH pack",
+      "skills": [
+        "./skills/security/rhdh-package-impact",
+        "./skills/reference/mutation-gate",
+        "./skills/reference/prose-editing"
+      ]
+    },
+    {
       "name": "release",
       "source": "./",
       "description": "Release skills from the RHDH pack",

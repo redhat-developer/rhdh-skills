@@ -49,7 +49,8 @@ like any other skill. Two callers is the threshold; one caller means the materia
 belongs inside its single owner.
 
 Skills are grouped into editorial folders by domain — `jira/`, `plugins/`, `ci/`,
-`release/`, `reference/`, `meta/`. Folders carry no technical meaning: they are
+`release/`, `security/`, `refinement/`, `reference/`, `meta/`. Folders carry no
+technical meaning: they are
 stripped at install, no skill references a category path, and the only coupling is
 a validation constant. The previous audience-based split (`engineering/`,
 `operations/`, `maintainers/`) predicted nothing; the dependency graph crossed it
