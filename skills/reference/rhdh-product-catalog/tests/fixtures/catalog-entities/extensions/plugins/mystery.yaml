@@ -1,0 +1,7 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Plugin
+metadata:
+  name: mystery
+  title: Mystery Plugin
+spec:
+  lifecycle: experimental

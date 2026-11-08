@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Product Catalog"
+  short_description: "List packages and catalog plugins from overlay releases"
