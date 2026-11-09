@@ -59,7 +59,7 @@ Skills are grouped into eight folders:
 | `plugins/` | Authoring, wiring, exporting, and fixing Backstage dynamic plugins; the overlays repository; local RHDH; opening and reviewing pull requests; testing rhdh-operator PRs on a cluster; midstream propagation; browser UI verification with Playwright. |
 | `ci/` | Prow job configuration and nightly triggers, Konflux and Tekton task updates, plugin catalog index status, release-data admission tags, base images, and Yarn bumps. |
 | `release/` | Release status and readiness, candidate-feature capacity through Code Freeze, milestone schedules, freeze announcements, teams, fix-version sync across RHIDP/RHDHPLAN/RHDHBUGS, test-plan review, platform lifecycle, plugin CVE export, and RC/GA Helm+Operator smoke. |
-| `security/` | Dependabot / yarn.lock package impact classification, workspace CVE bumps, and policy-gated alert dismiss for plugins monorepos (with room for `rhdh` later). |
+| `security/` | Dependabot / yarn.lock package impact classification, workspace CVE bumps, policy-gated alert dismiss, and CVE PR review (`/cve-pr-review`) for plugins monorepos (with room for `rhdh` later). |
 | `refinement/` | The OpenSpec artifact-driven change workflow: propose, explore, implement, audit, verify, and archive a change. See [the workflow](docs/refinement/refinement-workflow.md). |
 | `reference/` | The reusable layer other skills invoke by name: repository and version context, the forge read seam, the write gate, the OpenSpec journal and RHDH's spec-driven schema, and the Jira and Backstage reference material. |
 | `meta/` | The three human-invoked entry points, plus skill authoring and repository agent-readiness. |

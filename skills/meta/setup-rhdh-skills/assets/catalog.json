@@ -310,6 +310,14 @@
       ]
     },
     {
+      "name": "cve-pr-review",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ]
+    },
+    {
       "name": "rhdh-platform-lifecycle",
       "category": "release",
       "invocation": "model",
