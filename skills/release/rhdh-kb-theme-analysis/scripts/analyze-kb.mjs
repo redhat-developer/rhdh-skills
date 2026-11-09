@@ -132,8 +132,8 @@ export const DEMAND_TOP_ARTICLES = 20;
 export const REFRESH_CANDIDATES = 15;
 export const EMERGENT_TERMS = 10;
 export const MIN_MOVEMENT_OBSERVATIONS = 5;
-export const GROWING_RATIO = 1.5;
-export const DECLINING_RATIO = 0.67;
+export const GROWING_SHARE_RATIO = 1.25;
+export const DECLINING_SHARE_RATIO = 0.8;
 export const CONCENTRATION_WARNING_SHARE = 0.25;
 export const NEW_THEME_MIN_ARTICLES = 3;
 export const MIN_TERM_ARTICLES = 3;
@@ -290,7 +290,7 @@ function countStates(docs) {
     .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
 
-function movementClass(recentCount, baselineCount, ratio) {
+function movementClass(recentCount, baselineCount, shareRatio) {
   if (recentCount === 0 && baselineCount === 0) {
     return 'insufficient';
   }
@@ -303,13 +303,13 @@ function movementClass(recentCount, baselineCount, ratio) {
   if (recentCount < MIN_MOVEMENT_OBSERVATIONS || baselineCount < MIN_MOVEMENT_OBSERVATIONS) {
     return 'insufficient';
   }
-  if (ratio === null) {
+  if (shareRatio === null) {
     return 'insufficient';
   }
-  if (ratio >= GROWING_RATIO) {
+  if (shareRatio >= GROWING_SHARE_RATIO) {
     return 'growing';
   }
-  if (ratio <= DECLINING_RATIO) {
+  if (shareRatio <= DECLINING_SHARE_RATIO) {
     return 'declining';
   }
   return 'stable';
@@ -834,6 +834,7 @@ function summarizeMovement(docs, recent, comparison, rules) {
             const ratio = baselinePerDay === 0 ? null : recentPerDay / baselinePerDay;
             const shareRecent = recentDocs.length === 0 ? 0 : recentCount / recentDocs.length;
             const shareBaseline = baselineDocs.length === 0 ? 0 : baselineCount / baselineDocs.length;
+            const shareRatio = shareBaseline === 0 ? null : shareRecent / shareBaseline;
             return {
               theme,
               recentCount,
@@ -841,13 +842,17 @@ function summarizeMovement(docs, recent, comparison, rules) {
               recentPerDay: roundTo(recentPerDay, 3),
               baselinePerDay: roundTo(baselinePerDay, 3),
               ratio: ratio === null ? null : roundTo(ratio, 2),
+              shareRatio: shareRatio === null ? null : roundTo(shareRatio, 2),
               shareRecent: roundTo(shareRecent, 3),
               shareBaseline: roundTo(shareBaseline, 3),
               deltaShare: roundTo(shareRecent - shareBaseline, 3),
-              class: movementClass(recentCount, baselineCount, ratio),
+              class: movementClass(recentCount, baselineCount, shareRatio),
             };
           })
           .sort((a, b) => b.recentCount - a.recentCount || a.theme.localeCompare(b.theme));
+
+  const corpusRecentPerDay = recentDocs.length / recent.days;
+  const corpusBaselinePerDay = baselineDocs.length / baselineWindow.days;
 
   return {
     baseline: {
@@ -856,6 +861,8 @@ function summarizeMovement(docs, recent, comparison, rules) {
       nested,
       minObservations: MIN_MOVEMENT_OBSERVATIONS,
     },
+    corpusRateRatio:
+      corpusBaselinePerDay === 0 ? null : roundTo(corpusRecentPerDay / corpusBaselinePerDay, 2),
     themes,
   };
 }
@@ -1112,6 +1119,9 @@ function formatMovement(movement) {
   const baseline = movement.baseline;
   const lines = [
     `- Baseline window: ${baseline.window.start} to ${baseline.window.end} (${baseline.window.days} days, ${baseline.articleCount} articles)`,
+    movement.corpusRateRatio === null
+      ? '- Corpus publication rate: not comparable (no baseline articles).'
+      : `- Corpus publication rate: ${movement.corpusRateRatio}x the baseline. Themes are classified on share, so a corpus-wide shift does not read as a theme trend.`,
     `- A theme needs at least ${baseline.minObservations} articles in both windows before its movement is classified; below that it reads \`insufficient\`.`,
   ];
   if (movement.themes === null) {
@@ -1120,9 +1130,11 @@ function formatMovement(movement) {
   }
   lines.push('');
   for (const item of movement.themes) {
-    const ratio = item.ratio === null || item.class === 'insufficient' ? 'n/a' : `${item.ratio}x`;
+    const unclassified = item.class === 'insufficient';
+    const rate = item.ratio === null || unclassified ? 'n/a' : `${item.ratio}x`;
+    const share = item.shareRatio === null || unclassified ? 'n/a' : `${item.shareRatio}x`;
     lines.push(
-      `- ${item.theme}: recent ${item.recentCount}, baseline ${item.baselineCount}, rate ratio ${ratio}, ${item.class}`,
+      `- ${item.theme}: recent ${item.recentCount}, baseline ${item.baselineCount}, rate ${rate}, share ${share}, ${item.class}`,
     );
   }
   return lines.join('\n');

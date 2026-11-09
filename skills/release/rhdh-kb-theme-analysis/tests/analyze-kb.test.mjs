@@ -968,3 +968,58 @@ describe('emergent vocabulary floors', () => {
     assert.ok(tokens.includes('permissions'));
   });
 });
+
+describe('corpus-adjusted movement', () => {
+  const make = (prefix, count, date, title) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `${prefix}${index}`,
+      title,
+      createdDate: `${date}T10:00:00Z`,
+    }));
+
+  function report() {
+    const docs = [
+      ...make('r-alpha-', 5, '2026-10-01', 'alpha question'),
+      ...make('r-filler-', 5, '2026-10-02', 'zzz'),
+      ...make('b-alpha-', 10, '2026-08-01', 'alpha question'),
+      ...make('b-filler-', 30, '2026-08-02', 'zzz'),
+    ];
+    const directory = mkdtempSync(join(tmpdir(), 'rhdh-kb-share-'));
+    const file = join(directory, 'taxonomy.json');
+    writeFileSync(file, JSON.stringify([{ theme: 'alpha', pattern: '\\balpha\\b' }]));
+
+    return summarize(
+      { docs, numFound: docs.length, truncated: false },
+      parseArgs([
+        '--as-of',
+        '2026-10-30',
+        '--recent-days',
+        '50',
+        '--comparison-days',
+        '100',
+        '--themes',
+        file,
+      ]),
+    );
+  }
+
+  it('classifies on share when the whole corpus slows down', () => {
+    const result = report();
+    const alpha = result.movement.themes[0];
+
+    assert.equal(alpha.recentCount, 5);
+    assert.equal(alpha.baselineCount, 10);
+    assert.equal(alpha.ratio, 0.5, 'absolute rate halved');
+    assert.equal(alpha.shareRatio, 2, 'share doubled');
+    assert.equal(alpha.class, 'growing');
+  });
+
+  it('reports the corpus-wide publication rate change', () => {
+    const result = report();
+    assert.equal(result.movement.corpusRateRatio, 0.25);
+
+    const markdown = renderMarkdown(result);
+    assert.ok(markdown.includes('Corpus publication rate: 0.25x'));
+    assert.ok(markdown.includes('rate 0.5x, share 2x, growing'));
+  });
+});

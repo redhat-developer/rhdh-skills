@@ -90,10 +90,18 @@ Do not classify growth by eye. `movement.themes` already carries `class`,
 `ratio`, and `deltaShare` for every theme, computed against the baseline window:
 
 - `new` — no baseline articles, at least three recent ones;
-- `growing` — recent rate at least 1.5× the baseline rate;
-- `declining` — recent rate at most 0.67× the baseline rate;
+- `growing` — recent share at least 1.25× the baseline share;
+- `declining` — recent share at most 0.8× the baseline share;
 - `stable` — anything between;
 - `insufficient` — fewer than five articles on either side, or no baseline.
+
+Classes read **share**, not absolute rate. `movement.corpusRateRatio` states how
+much the whole corpus sped up or slowed down between the windows; when it is far
+from 1.0, every theme's absolute rate moves with it, and a rate-based reading
+would report one corpus-wide shift as a trend in eight themes. Each row still
+carries `ratio` so the absolute movement is visible, but the class answers the
+narrower question: did this theme gain or lose ground relative to everything
+else published in the same window.
 
 The baseline is *not* the comparison window. It is the comparison window minus
 the recent window, so a theme is never compared against a period that contains
