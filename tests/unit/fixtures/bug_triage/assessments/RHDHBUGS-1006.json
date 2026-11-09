@@ -1,0 +1,27 @@
+{
+  "key": "RHDHBUGS-1006",
+  "disposition": "already_fixed",
+  "evidence": [
+    {
+      "type": "pr",
+      "ref": "https://github.com/redhat-developer/rhdh/pull/999",
+      "why": "The merged PR changes the TechDocs publisher to resolve the external S3 endpoint before the build.",
+      "strength": "direct"
+    },
+    {
+      "type": "release_note",
+      "ref": "https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0",
+      "why": "The 2.1.0 release note lists the TechDocs external S3 endpoint fix.",
+      "strength": "direct"
+    }
+  ],
+  "fix": {
+    "pr": "https://github.com/redhat-developer/rhdh/pull/999",
+    "commit": "9f2c1ab",
+    "release": "2.1.0",
+    "released": true
+  },
+  "review": {"independentPasses": 2, "agree": true},
+  "notes": "The fix is on the current stream; no backport is needed for 1.10 because the report is not customer-linked.",
+  "comment": "The reported ENOTFOUND failure is fixed by https://github.com/redhat-developer/rhdh/pull/999 and released in 2.1.0. Closing as fixed; reopen with a current reproduction if it recurs on a supported release."
+}

@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Bug Triage"
+  short_description: "Triage aged RHDHBUGS with cited evidence, read-only"

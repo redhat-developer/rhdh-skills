@@ -1,0 +1,9 @@
+{
+  "RHDHBUGS-1001": {"disposition": "still_valid"},
+  "RHDHBUGS-1002": {"disposition": "duplicate", "duplicateOf": "RHDHBUGS-1001"},
+  "RHDHBUGS-1006": {"disposition": "already_fixed"},
+  "RHDHBUGS-1007": {"disposition": "unclear"},
+  "RHDHBUGS-1009": {"disposition": "still_valid"},
+  "RHDHBUGS-1010": {"disposition": "duplicate", "duplicateOf": "RHDHBUGS-1009"},
+  "RHDHBUGS-1011": {"disposition": "unclear"}
+}
