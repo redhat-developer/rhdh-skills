@@ -283,7 +283,8 @@ differ after substitution.
 **Step 3: Substitute the CI-built operator image**
 
 ```bash
-sed -i "s|image: quay.io/rhdh/rhdh-rhel9-operator:.*|image: ${PR_IMAGE}|g" /tmp/pr-install.yaml
+sed -i.bak "s|image: quay.io/rhdh/rhdh-rhel9-operator:.*|image: ${PR_IMAGE}|g" /tmp/pr-install.yaml
+rm -f /tmp/pr-install.yaml.bak
 
 # Verify substitution
 grep "image:.*operator" /tmp/pr-install.yaml
