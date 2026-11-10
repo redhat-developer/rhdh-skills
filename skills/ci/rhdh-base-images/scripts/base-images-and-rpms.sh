@@ -20,6 +20,9 @@ ANALYZE=0
 ALLOW_DIRTY=0
 CATALOG_BRANCH_FOR=""
 BASE_IMAGE_ARGS=(--pr --no-push)
+STATUS_FILE=""
+FAILURES=0
+CURRENT_KIND=""
 
 GITLAB_SCRIPTS_BASE="https://gitlab.cee.redhat.com/rhidp/rhdh/-/raw"
 CACHE_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/base-images-and-rpms"
@@ -39,6 +42,8 @@ Required (update mode):
 Optional paths (fetch/install when omitted):
   --update-base-images-script PATH   Path to updateBaseImages.sh (needs createPR.sh alongside)
   --rpm-lockfile-prototype PATH      Path to rpm-lockfile-prototype binary
+  --status-file PATH        Append `kind|branch|component|fail|detail` lines for
+                            component failures (exit code is 1 when any fail)
 
 Repo selection (default: all three under --parent-dir, or current directory if it matches one repo):
   --parent-dir PATH         Directory containing local clones (e.g. ~/RHDH/)
@@ -76,6 +81,18 @@ log() {
 
 warn() {
     echo "[WARN] $*" >&2
+}
+
+# Record a component failure (RHIDP-18915): count it for the final exit code and,
+# when the caller passed --status-file, append a pipe-delimited line
+# `kind|branch|component|fail|detail` the caller can use to autoclose
+# incomplete PRs (base-image bump without matching RPM lock / node headers).
+status_fail() {
+    # status_fail <repo_kind> <branch> <component> <detail>
+    FAILURES=$((FAILURES + 1))
+    warn "$4 ($3 failed for $1 @ $2)"
+    [[ -n "${STATUS_FILE}" ]] || return 0
+    printf '%s|%s|%s|fail|%s\n' "$1" "$2" "$3" "$4" >> "${STATUS_FILE}"
 }
 
 SKILL_MD_URL="https://github.com/redhat-developer/rhdh-skills/blob/main/skills/ci/rhdh-base-images/SKILL.md"
@@ -594,7 +611,7 @@ update_rpm_lockfile() {
     filter_rpm_lockfile_source_warnings <"${rpm_err}" >&2
     rm -f "${rpm_err}"
     if [[ ${rpm_rc} -ne 0 ]]; then
-        warn "rpm-lockfile-prototype failed for ${repo_dir}; keeping existing rpms.lock.yaml"
+        status_fail "${kind}" "${branch}" rpm_lock "rpm-lockfile-prototype failed; keeping existing rpms.lock.yaml"
         git checkout -- rpms.lock.yaml rpms.in.yaml 2>/dev/null || true
         popd >/dev/null
         return 0
@@ -679,7 +696,7 @@ commit_push_paths() {
 
     git commit -s -m "${message}"
     if ! git push -u origin "${push_branch}"; then
-        warn "git push failed for origin/${push_branch}; commit remains local"
+        status_fail "${CURRENT_KIND:-unknown}" "${branch}" push "git push failed for origin/${push_branch}; commit remains local"
         return 0
     fi
     log "Pushed ${message} to origin/${push_branch}"
@@ -863,7 +880,7 @@ update_rhdh_node_headers() {
     fi
 
     if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-        warn "Node headers: podman or docker required; skipping"
+        status_fail "rhdh" "${branch}" node_headers "Node headers: podman or docker required; skipping"
         return 0
     fi
 
@@ -872,7 +889,7 @@ update_rhdh_node_headers() {
     local node_version node_version_plain headers_file readme_file current_nvmrc old
     node_version=$(node_version_from_image "${image}") || true
     if [[ -z "${node_version}" ]]; then
-        warn "Node headers: could not read node version from ${image}"
+        status_fail "rhdh" "${branch}" node_headers "Node headers: could not read node version from ${image}"
         popd >/dev/null
         return 0
     fi
@@ -1128,7 +1145,7 @@ update_plugin_catalog_node() {
         "${catalog_cf}"
 
     if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-        warn "plugin-catalog: podman or docker required to resolve node headers; skipping"
+        status_fail "rhdh-plugin-catalog" "${git_branch}" catalog_node "plugin-catalog: podman or docker required to resolve node headers"
         popd >/dev/null
         return 0
     fi
@@ -1148,7 +1165,7 @@ update_plugin_catalog_node() {
 
     node_plain=$(catalog_headers_plain_version "${catalog_cf}" "${catalog_image}")
     if [[ -z "${node_plain}" ]]; then
-        warn "plugin-catalog: could not resolve a Node headers version from ${catalog_image}"
+        status_fail "rhdh-plugin-catalog" "${git_branch}" catalog_node "plugin-catalog: could not resolve a Node headers version from ${catalog_image}"
         # Header resolution can fail after pin_catalog_builder_from already rewrote
         # builder.Containerfile. Commit that rewrite so weekly can open a GitLab MR
         # and the next branch checkout is not blocked by a dirty tree.
@@ -1186,7 +1203,7 @@ update_overlays_node_version() {
 
     [[ -f "${versions}" ]] || return 0
     if [[ -z "${node_plain}" ]]; then
-        warn "overlays: no Node version from rhdh/.nvmrc; skipping versions.json"
+        status_fail "rhdh-plugin-export-overlays" "${git_branch}" overlays "overlays: no Node version from rhdh/.nvmrc; skipping versions.json"
         return 0
     fi
 
@@ -1315,7 +1332,7 @@ update_operator_go_mod() {
     fi
 
     if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-        warn "Go toolchain: podman or docker required; skipping go.mod update"
+        status_fail "${kind}" "${branch}" go "Go toolchain: podman or docker required; skipping go.mod update"
         return 0
     fi
 
@@ -1324,7 +1341,7 @@ update_operator_go_mod() {
     local go_full go_lang current_toolchain
     go_full=$(go_version_from_toolset_image "${image}") || true
     if [[ -z "${go_full}" ]]; then
-        warn "Go toolchain: could not read go version from ${image}"
+        status_fail "${kind}" "${branch}" go "Go toolchain: could not read go version from ${image}"
         popd >/dev/null
         return 0
     fi
@@ -1413,6 +1430,7 @@ while [[ $# -gt 0 ]]; do
         -b|--branch) BRANCH="$2"; shift 2 ;;
         --update-base-images-script) UPDATE_BASE_IMAGES_SCRIPT="$2"; shift 2 ;;
         --rpm-lockfile-prototype) RPM_LOCKFILE_PROTOTYPE="$2"; shift 2 ;;
+        --status-file) STATUS_FILE="$2"; shift 2 ;;
         --parent-dir)
             discover_repos_in_parent "$2"
             shift 2
@@ -1519,6 +1537,7 @@ declare -A SEEN_KIND=()
 for repo_dir in "${REPO_DIRS[@]}"; do
     repo_dir=$(cd "${repo_dir}" && pwd)
     kind=$(detect_repo_kind "${repo_dir}")
+    CURRENT_KIND="${kind}"
     [[ "${kind}" != "unknown" ]] || die "${repo_dir}: cannot detect repo type (rhdh, rhdh-operator, rhdh-must-gather, rhdh-plugin-catalog, or rhdh-plugin-export-overlays)"
     if [[ -n "${SEEN_KIND[${kind}]:-}" ]]; then
         warn "Skipping duplicate ${kind} repo: ${repo_dir}"
@@ -1569,3 +1588,11 @@ for repo_dir in "${REPO_DIRS[@]}"; do
 done
 
 log "Done. Review open PRs for base image, RPM lockfile, node header, catalog builder, overlays, and go.mod updates."
+
+# RHIDP-18915: a failed RPM lock / node header / go resolution used to leave the
+# base-image bump in place, so the caller opened an incomplete PR. Exit non-zero
+# so callers stop trusting the branch, and keep the reason in --status-file.
+if [[ ${FAILURES} -gt 0 ]]; then
+    echo "[ERROR] ${FAILURES} component update(s) failed; see warnings above (RHIDP-18915)" >&2
+    exit 1
+fi
