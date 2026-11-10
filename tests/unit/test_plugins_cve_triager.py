@@ -24,7 +24,12 @@ from candidates import (  # noqa: E402
     is_hub_component,
     select_candidates,
 )
-from git_checkout import hub_release_branch, hub_yarn_roots, release_branch  # noqa: E402
+from git_checkout import (  # noqa: E402
+    hub_release_branch,
+    hub_yarn_roots,
+    release_branch,
+    uses_unified_plugins_release_branch,
+)
 from workspace_map import infer_workspace, preferred_workspace_name  # noqa: E402
 from yarn_why_paths import (  # noqa: E402
     collect_why_paths,
@@ -161,6 +166,11 @@ class WorkspaceMapTests(unittest.TestCase):
 
 class GitCheckoutTests(unittest.TestCase):
     def test_release_branch_name(self) -> None:
+        self.assertFalse(uses_unified_plugins_release_branch("1.10"))
+        self.assertFalse(uses_unified_plugins_release_branch("1.9"))
+        self.assertTrue(uses_unified_plugins_release_branch("2.1"))
+        self.assertTrue(uses_unified_plugins_release_branch("rhdh-2.1"))
+        self.assertTrue(uses_unified_plugins_release_branch("2.2"))
         self.assertEqual(
             release_branch("1.10", "orchestrator"),
             "release-1.10/orchestrator",
@@ -169,6 +179,15 @@ class GitCheckoutTests(unittest.TestCase):
             release_branch("1.10", "lightspeed"),
             "release-1.10/lightspeed",
         )
+        self.assertEqual(
+            release_branch("2.1", "orchestrator"),
+            "release-2.1",
+        )
+        self.assertEqual(
+            release_branch("2.1", "lightspeed"),
+            "release-2.1",
+        )
+        self.assertEqual(hub_release_branch("2.1"), "release-2.1")
 
     def test_yarn_install_missing_manifest(self) -> None:
         from git_checkout import yarn_install_workspace
@@ -661,7 +680,7 @@ class AllowlistTests(unittest.TestCase):
         )
         self.assertNotIn("undici-via-infinispan", by_id)
         for entry in entries:
-            self.assertEqual(entry["release"], ["1.10"], entry["id"])
+            self.assertEqual(entry["release"], ["1.10", "2.1"], entry["id"])
 
     def test_path_gate_and_match(self) -> None:
         from allowlist import match_allowlist, path_gate_matches
