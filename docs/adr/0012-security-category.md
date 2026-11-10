@@ -22,12 +22,18 @@ Add an editorial category `security` beside `jira`, `plugins`, `ci`, `release`,
 - Catalog: `"security"` in `categories` and on each member skill
 - Installer: one marketplace plugin group labelled Security
 
-The first member is `rhdh-package-impact` (Dependabot / yarn.lock impact
-classify, patch-status, workspace bump, and policy-gated dismiss). Folder
-membership does not change invocation: callers use `/rhdh-package-impact`.
+Members today:
+
+- `rhdh-package-impact` — Dependabot / yarn.lock impact classify, patch-status,
+  workspace bump, and policy-gated dismiss (`/rhdh-package-impact`)
+- `rhdh-plugins-cve-triager` — ProdSec filter-21773 triage, known-non-prod
+  allowlist closes, Slack digest (`/rhdh-plugins-cve-triager`); uses
+  package-impact classify for plugin tickets
+
+Folder membership does not change invocation: callers use the skill names above.
 
 Keep `rhdh-overlay-cve-export` in `release/` — it answers a release CSV
-question, not day-to-day Dependabot triage.
+question, not day-to-day Dependabot or ProdSec triage.
 
 ## Consequences
 
