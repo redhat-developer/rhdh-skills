@@ -204,7 +204,7 @@ describe('analysis', () => {
     assert.ok(themeHints({ title: 'scales' }).includes('catalog-database-scale'));
     assert.ok(themeHints({ title: 'autoscaling' }).includes('catalog-database-scale'));
 
-    const incompatible = themeHints({ title: 'incompatible plugin' });
+    const incompatible = themeHints({ title: 'incompatible dynamic plugins' });
     assert.ok(incompatible.includes('upgrade-plugin-reliability'));
     assert.ok(incompatible.includes('support-version-clarity'));
   });
@@ -1021,5 +1021,57 @@ describe('corpus-adjusted movement', () => {
     const markdown = renderMarkdown(result);
     assert.ok(markdown.includes('Corpus publication rate: 0.25x'));
     assert.ok(markdown.includes('rate 0.5x, share 2x, growing'));
+  });
+});
+
+describe('built-in taxonomy v2', () => {
+  const args = parseArgs(['--as-of', '2026-10-30']);
+
+  it('names the version that produced the numbers', () => {
+    const report = summarize(
+      {
+        docs: [{ id: '1', title: 'Upgrade fails', createdDate: '2026-10-01T10:00:00Z' }],
+        numFound: 1,
+        truncated: false,
+      },
+      args,
+    );
+    assert.equal(report.taxonomy.name, 'built-in-v2');
+    assert.ok(renderMarkdown(report).includes('Taxonomy: built-in-v2'));
+  });
+
+  it('stops treating the product nouns and generic adjectives as a catalog theme', () => {
+    for (const title of [
+      'Large deployments with many users',
+      'Catalog entity page shows no metadata',
+      'Sync from Git fails',
+    ]) {
+      assert.ok(
+        !themeHints({ title }).includes('catalog-database-scale'),
+        `should not match catalog-database-scale: ${title}`,
+      );
+    }
+  });
+
+  it('still matches catalog ingestion, scaling, and the data layer', () => {
+    for (const title of [
+      'Catalog ingestion fails for large entity sets',
+      'PostgreSQL replica lag in the catalog database',
+      'Entity provider sync stalls',
+      'Autoscaling the catalog processor',
+    ]) {
+      assert.ok(
+        themeHints({ title }).includes('catalog-database-scale'),
+        `should match catalog-database-scale: ${title}`,
+      );
+    }
+  });
+
+  it('stops treating a bare plugin or ui mention as its theme', () => {
+    assert.ok(!themeHints({ title: 'Community plugins overview' }).includes('upgrade-plugin-reliability'));
+    assert.ok(themeHints({ title: 'Dynamic plugins fail to load' }).includes('upgrade-plugin-reliability'));
+    assert.ok(!themeHints({ title: 'UI terminology conflict' }).includes('configuration-ui'));
+    assert.ok(!themeHints({ title: 'Custom image support' }).includes('configuration-ui'));
+    assert.ok(themeHints({ title: 'Widget layout is wrong' }).includes('configuration-ui'));
   });
 });

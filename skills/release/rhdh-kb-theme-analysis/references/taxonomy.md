@@ -23,6 +23,16 @@ Keep it when the question is a general "what are customers hitting with RHDH"
 scan. It is shaped by install, upgrade, and configuration support, which is where
 most RHDH articles sit.
 
+The set is versioned, and the report names the version it used — currently
+`built-in-v2`. Version 1 matched bare `plugins?`, `catalogs?`, `ui`, `custom`,
+`entity`, `large`, and `many`. Those are the product's own nouns rather than a
+theme: `plugins?` alone appeared in 40% of the corpus, so
+`upgrade-plugin-reliability` matched two thirds of a window, and
+`catalog-database-scale` was mostly finding articles about the software catalog.
+Version 2 requires plugin-lifecycle context, and catalog or data-layer context.
+Never compare counts across the two versions, or across any two runs whose
+`taxonomy.name` differs.
+
 ## No taxonomy
 
 `--themes none` skips clustering entirely: the report carries `themes: null` and

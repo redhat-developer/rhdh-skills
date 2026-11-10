@@ -17,7 +17,7 @@ const BUILT_IN_THEME_RULES = [
   {
     theme: 'upgrade-plugin-reliability',
     pattern:
-      /\b(?:upgrad(?:e|es|ed|ing)|plugins?|dynamic plugins?|install-dynamic-plugins|catalog indexes?|orchestrators?|modules?|dependenc(?:y|ies)|plugin versions?|version resolutions?|version mismatches?|compatibility matrix)\b/i,
+      /\b(?:upgrad(?:e|es|ed|ing)|dynamic plugins?|install-dynamic-plugins|plugin versions?|plugin (?:dependency|dependencies|loading|installation)|catalog indexes?|orchestrators?|modules?|dependenc(?:y|ies)|version (?:resolutions?|mismatches?|compatibility)|compatibility matrix)\b/i,
   },
   {
     theme: 'authentication-identity',
@@ -32,12 +32,12 @@ const BUILT_IN_THEME_RULES = [
   {
     theme: 'rbac-permissions',
     pattern:
-      /\b(?:rbac|permissions?|roles?|policies?|admins?|visibility|entit(?:y|ies)|owned|access(?:es)?|groups?)\b/i,
+      /\b(?:rbac|permissions?|roles?|policies?|admins?|visibility|owned|access(?:es)?|groups?)\b/i,
   },
   {
     theme: 'configuration-ui',
     pattern:
-      /\b(?:configs?|configurations?|customizations?|custom|yamls?|schemas?|widgets?|forms?|templates?|ui|themes?|logos?|sidebars?|menus?|localizations?)\b/i,
+      /\b(?:configs?|configurations?|customizations?|yamls?|schemas?|widgets?|forms?|templates?|themes?|logos?|sidebars?|menus?|localizations?)\b/i,
   },
   {
     theme: 'observability-diagnostics',
@@ -52,7 +52,7 @@ const BUILT_IN_THEME_RULES = [
   {
     theme: 'catalog-database-scale',
     pattern:
-      /\b(?:catalogs?|databases?|postgres(?:ql)?|replicas?|(?:auto|down)?scal(?:e|es|ed|ing)|large(?:r|st)?|many|ingestions?|schedulers?|scheduling|syncs?|syncing|synced|synchronizations?)\b/i,
+      /\b(?:databases?|postgres(?:ql)?|replicas?|ingestions?|(?:auto|down)?scal(?:e|es|ed|ing)|catalog (?:ingestion|processor|processing|providers?|sync|index)|(?:catalog|entity) providers?|(?:catalog|entity) (?:syncs?|syncing|synchron\w+))\b/i,
   },
 ];
 
@@ -70,7 +70,7 @@ export const ABSTRACT_LIMIT = 300;
 
 const BUILT_IN_TAXONOMY = {
   mode: 'built-in',
-  name: 'built-in',
+  name: 'built-in-v2',
   rules: BUILT_IN_THEME_RULES,
 };
 
