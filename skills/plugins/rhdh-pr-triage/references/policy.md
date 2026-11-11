@@ -40,6 +40,8 @@ imminent GA. Always use the live result.
 | Go repo: `go` directive bumped in go.mod | close | Go directive frozen on release branches |
 | Go repo: `toolchain` non-patch bump, PR has `[security]` label | flag | Human review — security + toolchain bump |
 | Go repo: `toolchain` non-patch bump | close | Only toolchain patch bumps on release branches |
+| Go pseudo-version (`v0.0.0-…`) bump, PR has `[security]` label | normal rules | Security fix — pseudo-version allowed on release branches |
+| Go pseudo-version (`v0.0.0-…`) bump | close | Pseudo-versions stay off release branches |
 | Release state is TBD or unknown | unknown | Cannot determine CF/FF/GA state for x.y.z — report as undecidable |
 | At CF or FF | hold | /hold until x.y.z is out |
 | Past GA announce but tag not yet pushed | hold | /hold if not already held — still waiting on x.y.z tag |
@@ -98,6 +100,30 @@ v1.8.4 to v1.11.2). The two security minors that merged, rhdh-operator #4012 and
 #3938, are correct under the exception. Catching the shape in one repository is
 not evidence that the others are clean: check every PR on every release branch
 against this rule.
+
+### Go pseudo-versions
+
+A pseudo-version is commit-shaped: `v0.0.0-20260114153012-abcdef123456`. Renovate
+words it as a digest bump — "update k8s.io/utils digest to ca04ba5" — and it names
+a commit rather than a release. The upstream module published no tag, so there is
+no semver contract, no changelog, and nothing to reason about when the next commit
+moves it again.
+
+That is fine on `main` and on rhdh-local's `dev`, where the code is expected to
+track upstream. It is wrong on a release branch, where the shipped binary should
+change only for a reason someone wrote down: close the PR there. The one exception
+is a security-labelled pseudo-version bump, which follows the ordinary
+release-branch rules rather than this one.
+
+Detect it from the diff or the title, not from `semver_level`: a
+`v0.0.0-<14-digit timestamp>-<12 hex characters>` on the changed `go.mod` line, or
+`digest to <sha>` in the title. A real tag such as `v0.62.0` is not a
+pseudo-version. When the same PR also bumps the `go` directive, the directive rows
+above win, because the table is applied top to bottom.
+
+This rule arrived after the fact: `k8s.io/utils` (#3968),
+`github.com/openshift/api` (#3864) and `golang.org/x/exp` (#3865) were all merged
+to `release-2.1` as digest bumps and would be closed under it.
 
 ### Unknown release state
 
