@@ -33,6 +33,9 @@ imminent GA. Always use the live result.
 |-----------|----------|--------|
 | RHDH x.y is EOL | close | Closing — RHDH x.y is end of life |
 | Major version bump | close | No major bumps on release branches |
+| Minor bump of a Go builder image (e.g. `go-toolset`) | normal rules | Build-time image — minor allowed on release branches |
+| Minor version bump, PR has `[security]` label | normal rules | Security fix — minor allowed on release branches |
+| Minor version bump | close | Release branches take patch-level updates only |
 | Go repo: `go` directive bumped in go.mod, PR has `[security]` label | flag | Human review — security + go directive bump |
 | Go repo: `go` directive bumped in go.mod | close | Go directive frozen on release branches |
 | Go repo: `toolchain` non-patch bump, PR has `[security]` label | flag | Human review — security + toolchain bump |
@@ -42,6 +45,59 @@ imminent GA. Always use the live result.
 | Past GA announce but tag not yet pushed | hold | /hold if not already held — still waiting on x.y.z tag |
 | Already held (`do-not-merge/hold`), no state change since last triage | skip | Still waiting on x.y.z (no action needed, already held) |
 | GA'd — git tag exists AND release notes confirm z-stream | unhold+approve+merge | x.y.z released |
+
+### Patch-level only on release branches
+
+A `release-x.y` branch ships to customers and stays stable between z-streams, so
+it takes patch-level updates only. A minor or major bump there is closed, not
+held and not bumped — holding it leaves a PR nobody intends to merge, and a
+`/bump` publishes the change into the release. Two narrow exceptions follow: a
+security fix, and a Go builder image.
+
+This rule is not chart-specific and not repo-specific. It holds in rhdh-operator,
+rhdh-chart, rhdh-must-gather and rhdh-local alike: none of them takes an ordinary
+minor bump on a release branch. The chart bump rules below change only how a
+patch-level change is landed, never whether a minor is allowed.
+
+This applies to every dependency class: GitHub Actions versions, Go modules,
+container image tags, and chart values. A digest pin (`to <sha>`) carries no
+version and is not a bump; a move such as `v1.7.0` to `v1.9.0`, `8.22.0` to
+`8.23.0`, or `v1.19.x` to `v1.20.2` is a minor.
+
+Read the diff, not the script's `semver_level`. That field only recognises an
+`x.y.z` to `x.y.z` or `from vX to vY` shape, so image tags, action versions, and
+anything with a partial version come back as `unknown`. A `1.7.0` to `1.9.0`
+skip is still a minor.
+
+Closing is for the version arithmetic, not for a security fix. A minor bump
+carrying `[security]` is not closed: it follows the ordinary release-branch rules
+and merges once the branch is open, because refusing it would leave a CVE unfixed
+on a supported branch. The exception is narrow — the label has to be on the PR,
+and it covers the security update itself, not whatever else the bump drags in.
+
+Go builder images are the other exception. An image such as `ubi9/go-toolset` or a
+`golang:1.x` builder stage compiles the binary and does not ship in the artifact
+a customer installs, so a minor bump to one — `go-toolset:1.24` to
+`go-toolset:1.25` — is allowed on a release branch and follows the ordinary
+release-branch rules rather than this one. It is the `FROM` of the build stage
+that qualifies. A runtime or final base image (`ubi-minimal`, `distroless`, a
+runtime stage) is shipped and stays patch-only.
+
+A minor bump landing in this category is itself the signal: Renovate should not be
+raising one there. Say so in the close comment and point the update at the
+development branch, so the gap gets fixed instead of recurring every cycle. The
+development branch is `main`, or `dev` for rhdh-local; minor bumps are welcome
+there.
+
+Example: rhdh-chart #672 moved the `curl` test image from `8.22.0` to `8.23.0` on
+`release-2.1`. It carried no `[security]` label, so it should have been closed
+rather than treated as a chart bump. The same run merged three more non-security
+minors in rhdh-chart — #709 (`chart-releaser-action` v1.7.0 to v1.9.0), #682
+(`chainguard/actions/setup-gitsign` v1.6.41 to v1.8.1) and #679 (`setup-tombi`
+v1.8.4 to v1.11.2). The two security minors that merged, rhdh-operator #4012 and
+#3938, are correct under the exception. Catching the shape in one repository is
+not evidence that the others are clean: check every PR on every release branch
+against this rule.
 
 ### Unknown release state
 
@@ -126,12 +182,15 @@ These apply in addition to the main/release branch rules above.
 
 | Condition | Decision | Reason |
 |-----------|----------|--------|
-| Lint CI fails, dep is a chart dependency | bump | `/bump <chart> <minor\|patch>` per chart folder |
+| Lint CI fails, dep is a chart dependency, patch-level bump | bump | `/bump <chart> patch` per chart folder |
 | Multiple chart folders modified | bump (one per chart) | One `/bump` comment per affected chart |
 | GH Actions update (not a chart dep) | normal rules | No chart bump needed |
 
-The bump level matches the semver level of the dependency version change:
-minor dep bump gets `/bump <chart> minor`, patch gets `/bump <chart> patch`.
+The release-branch rules run first. A minor or major dependency bump on
+`release-x.y` is closed before this section is reached, so `/bump` is only ever
+reached by a patch-level change and always takes `patch`. On the development
+branch the bump level follows the semver level of the dependency change: a minor
+dep bump gets `/bump <chart> minor`, a patch gets `/bump <chart> patch`.
 
 ## rhdh-local branch model
 
