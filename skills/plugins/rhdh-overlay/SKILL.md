@@ -4,9 +4,11 @@ description: >-
   Manages the rhdh-plugin-export-overlays repository and Extensions Catalog:
   onboard plugins, update upstream versions, repair export or publish failures,
   inspect workspace health, triage the overlay PR backlog by label, staleness
-  and merge readiness, and trigger /publish. Use for source.json,
-  plugins-list.yaml, backstage.json, catalog metadata, overlay CI, plugin
-  import, overlay PRs, or testing exact PR artifacts before merge. For
+  and merge readiness, decide what an overlay PR needs next, and run the PR
+  commands /publish, /update-versions, /update-commit, /smoketest, and
+  /override-backstage. Use for source.json, plugins-list.yaml, backstage.json,
+  catalog metadata, overlay CI, plugin import, overlay PRs, a PR that is stuck
+  or never turns green, or testing exact PR artifacts before merge. For
   code-level review of a pull request, use /rhdh-pr-review. To promote an
   rhdh-plugins release through overlays into rhdh-plugin-catalog, use
   /rhdh-plugin-midstream-propagate.
@@ -37,12 +39,28 @@ depend on another installed skill's files or CLI.
 | Look up a plugin version or installation artifact at a branch or tag | Follow the metadata lookup below |
 | Check workspace status | `references/overlay-repo.md`, then inspect workspace files and recent `gh` runs |
 | Triage the open PR backlog | `workflows/triage-prs.md`; use `scripts/triage-prs.py` for deterministic classification |
+| Decide what one PR needs next | `workflows/triage-prs.md`; the state table in Phase 2 |
 | Analyze one overlay PR | `workflows/analyze-pr.md`; use `scripts/analyze-pr.py` |
 | Draft stale-PR notifications | `workflows/draft-notification.md` |
 | Trigger publish | Run the guarded publish procedure below |
 
 Infer a clear route. Ask only for a missing plugin, workspace, source ref, or PR
 number that cannot be discovered from the checkout.
+
+## PR commands
+
+`pr-actions.yaml` in the overlay repository answers five PR comments. Each is a
+workspace-scoped write: it is skipped without a status when the PR spans several
+workspaces. `workflows/triage-prs.md` derives which one a PR needs, and posting
+any of them goes through `/mutation-gate`.
+
+| Command | Effect | Use when |
+|---|---|---|
+| `/publish` | Export and build the workspace, publish its OCI artifact, then dispatch workspace smoke tests | `publish` check is missing or failed |
+| `/update-versions` | Refresh the PR from its target release branch with common, non-workspace content | A release branch moved under the PR |
+| `/update-commit` | Re-run plugin discovery and update the workspace's source refs | The upstream commit moved |
+| `/smoketest <tag>` | Run workspace smoke tests against an RHDH tag (`pr-<n>`, `next`, or `next-<x>.<y>-<hash>`) | A published PR needs another tag or a re-run |
+| `/override-backstage` | Set the workspace's `backstage.json` compatibility version to the target branch's Backstage version | Compatibility rejects the version the source declares |
 
 ## Metadata lookup
 

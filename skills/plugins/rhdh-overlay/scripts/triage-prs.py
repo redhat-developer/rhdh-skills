@@ -2,18 +2,24 @@
 """Triage all open overlay repository PRs.
 
 Fetches open PRs, classifies by priority tier, checks staleness,
-evaluates assignment status, and generates a grouped triage report.
+evaluates assignment status, derives the next PR command from CI state,
+and generates a grouped triage report.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 DEFAULT_REPO = "redhat-developer/rhdh-plugin-export-overlays"
+
+# The `publish` commit status is created with the command name as its context.
+PUBLISH_CONTEXT = "publish"
 
 STALENESS_THRESHOLDS = {
     "critical": {"warn": 2, "alert": 5},
@@ -21,6 +27,18 @@ STALENESS_THRESHOLDS = {
     "low": {"warn": 14, "alert": 30},
     "skip": {"warn": 999, "alert": 999},
     "unknown": {"warn": 7, "alert": 14},
+}
+
+NEXT_ACTION = {
+    "draft": "Waiting on author (draft)",
+    "multi-workspace": "Split by workspace (/publish is skipped on multi-workspace PRs)",
+    "publish-failed": "Read publish run, then /publish or fix-build",
+    "publish-missing": "Trigger /publish",
+    "publish-pending": "Wait for publish",
+    "checks-failed": "Fix failing checks",
+    "checks-pending": "Wait for checks",
+    "checks-unreadable": "Re-run triage (checks unreadable)",
+    "ready": "Ready to merge",
 }
 
 
@@ -46,7 +64,7 @@ def run_gh(args, check=True):
 
 
 def fetch_open_prs(repo):
-    """Fetch all open PRs with context."""
+    """Fetch all open PRs without the per-PR check and file data."""
     return (
         run_gh(
             [
@@ -59,10 +77,26 @@ def fetch_open_prs(repo):
                 "--limit",
                 "100",
                 "--json",
-                "number,title,labels,assignees,updatedAt,createdAt,author,reviewRequests",
+                "number,title,labels,assignees,updatedAt,createdAt,author,reviewRequests,isDraft",
             ]
         )
         or []
+    )
+
+
+def fetch_pr_context(repo, number):
+    """Fetch the checks and changed files for one PR, or None when unreadable."""
+    return run_gh(
+        [
+            "pr",
+            "view",
+            str(number),
+            "--repo",
+            repo,
+            "--json",
+            "files,statusCheckRollup",
+        ],
+        check=False,
     )
 
 
@@ -142,6 +176,76 @@ def extract_workspace_from_title(title):
     return title.split(":")[0].strip() if ":" in title else title[:40]
 
 
+def extract_workspaces(files):
+    """Return the workspace names a PR touches, in first-seen order."""
+    names = []
+    for entry in files or []:
+        match = re.match(r"^workspaces/([^/]+)/", entry.get("path", ""))
+        if match and match.group(1) not in names:
+            names.append(match.group(1))
+    return names
+
+
+def check_entries(pr):
+    """Return (name, state, timestamp) for every rollup entry on the PR head."""
+    entries = []
+    for check in pr.get("statusCheckRollup") or []:
+        name = check.get("name") or check.get("context") or ""
+        state = (check.get("conclusion") or check.get("state") or "").upper()
+        if state in ("", "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED"):
+            state = "pending"
+        elif state in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+            state = "success"
+        elif state in ("CANCELLED", "STALE"):
+            state = "cancelled"
+        else:
+            state = "failed"
+        timestamp = (
+            check.get("completedAt") or check.get("startedAt") or check.get("createdAt") or ""
+        )
+        entries.append((name, state, timestamp))
+    return entries
+
+
+def latest_states(entries):
+    """Return the newest state per check name, so a re-run does not count twice."""
+    newest = {}
+    for name, state, timestamp in entries:
+        current = newest.get(name)
+        # A run still in flight is the current state of that check.
+        key = (state == "pending", timestamp)
+        if current is None or key >= (current[0] == "pending", current[1]):
+            newest[name] = (state, timestamp)
+    return {name: state for name, (state, _) in newest.items()}
+
+
+def evaluate_pr_state(pr):
+    """Return (state, workspaces) describing what the PR needs next."""
+    labels = [lbl["name"] for lbl in (pr.get("labels") or [])]
+    workspaces = extract_workspaces(pr.get("files"))
+    latest = latest_states(check_entries(pr))
+    publish = latest.get(PUBLISH_CONTEXT, "missing")
+    states = list(latest.values())
+
+    if "do-not-merge" in labels:
+        return "skip", workspaces
+    if pr.get("isDraft"):
+        return "draft", workspaces
+    # Workspace-scoped commands resolve one workspace and are skipped silently
+    # when the PR spans several, so no check can ever appear.
+    if len(workspaces) > 1:
+        return "multi-workspace", workspaces
+    if publish == "cancelled":
+        return "publish-missing", workspaces
+    if publish in ("failed", "missing", "pending"):
+        return f"publish-{publish}", workspaces
+    if "failed" in states or "cancelled" in states:
+        return "checks-failed", workspaces
+    if "pending" in states:
+        return "checks-pending", workspaces
+    return "ready", workspaces
+
+
 def suggest_action(pr_info):
     """Suggest action for a PR based on its state."""
     priority = pr_info["priority_key"]
@@ -152,6 +256,9 @@ def suggest_action(pr_info):
         return "No action (OCI only)"
 
     actions = []
+    next_action = NEXT_ACTION.get(pr_info["state"])
+    if next_action:
+        actions.append(next_action)
     if assignee_status == "❌":
         actions.append("Assign owner")
     if days >= STALENESS_THRESHOLDS.get(priority, {}).get("alert", 14):
@@ -169,6 +276,16 @@ def build_triage(repo):
     """Build triage data for all open PRs."""
     prs = fetch_open_prs(repo)
 
+    # The 100-PR list query stays light; checks and files come per PR so the
+    # GraphQL call does not time out on a busy repository.
+    numbers = [
+        pr.get("number") for pr in prs if classify_priority(pr.get("labels") or [])[0] != "skip"
+    ]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        contexts = dict(
+            zip(numbers, pool.map(lambda number: fetch_pr_context(repo, number), numbers))
+        )
+
     categorized = {
         "critical": [],
         "medium": [],
@@ -184,6 +301,13 @@ def build_triage(repo):
         assignee_display, assignee_icon = assess_assignment(pr)
         plugin = extract_workspace_from_title(pr.get("title", ""))
         author = pr.get("author", {}).get("login", "unknown")
+        context = contexts.get(pr.get("number"))
+        if priority_key == "skip":
+            state, workspaces = "skip", []
+        elif context is None:
+            state, workspaces = "checks-unreadable", []
+        else:
+            state, workspaces = evaluate_pr_state({**pr, **context})
 
         info = {
             "number": pr.get("number"),
@@ -193,6 +317,8 @@ def build_triage(repo):
             "priority_label": priority_label,
             "labels": [lbl["name"] for lbl in labels],
             "plugin": plugin,
+            "workspaces": workspaces,
+            "state": state,
             "days_stale": days,
             "stale_icon": stale_icon,
             "assignee_display": assignee_display,

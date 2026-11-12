@@ -54,14 +54,36 @@ For every Critical and Medium PR:
 - ⚠️ Only a team reviewer → responsibility diluted
 - ✅ Individual assigned → clear ownership
 
-**Checks**
+**Next command**
 
-- `publish` must pass before merge
-- `workspace-tests` / `smoke` validates that the plugin loads
+Derive one next action per PR from its state. Apply the first row that matches.
+
+| PR state | Next action |
+|---|---|
+| `do-not-merge` label | No action — OCI artifact only |
+| Draft | Wait for the author |
+| Touches two or more workspaces | Split by workspace — see below |
+| `publish` check failed | Read the run log, then `/publish` or `workflows/fix-build.md` |
+| `publish` check missing | `/publish` |
+| `publish` check pending | Wait |
+| Any other check failed | Fix the failing check, then `/publish` again |
+| Checks pending | Wait |
+| Every check passed | Ready to merge |
 
 A check absent from the rollup never ran. Treat that as "needs `/publish`", not
 as a failure, and confirm any verdict against the head branch's runs before
 reporting it.
+
+Workspace-scoped commands are skipped silently when the PR touches more than one
+workspace: `pr-actions.yaml` resolves a single workspace from the branch name or
+the PR files and returns without creating a status when it finds zero or several.
+No `publish` check appears, so the PR never becomes merge-ready. Split the PR per
+workspace and publish each one, or use a `workspaces/release-<version>__<workspace>`
+branch, which resolves to its workspace by name. Report this state; changing
+`pr-actions.yaml` is outside this skill.
+
+`/publish` success dispatches the workspace smoke tests itself, so `/smoketest`
+is only for a published PR that needs another tag or a re-run.
 
 **Staleness**
 
@@ -84,13 +106,14 @@ Generated: {date}
 | PR | Plugin | Days Stale | Assignee | Checks | Action |
 |----|--------|------------|----------|--------|--------|
 | #1234 | aws-ecs | 3 | @user | ✅ Publish ✅ Smoke | Ready to merge |
-| #1235 | intelligent-assistant | 7 | (none) | ⏳ Publish | Assign + /publish |
+| #1235 | intelligent-assistant | 7 | (none) | ⏳ Publish | Trigger /publish + Assign owner |
 
 ### 🟡 Medium — Mandatory Workspace Additions
 
 | PR | Plugin | Days Stale | Assignee | Checks | Action |
 |----|--------|------------|----------|--------|--------|
-| #1240 | new-plugin | 2 | @contributor | ❌ Missing CODEOWNERS | Request CODEOWNERS |
+| #1240 | new-plugin | 2 | @contributor | ❌ Missing CODEOWNERS | Fix failing checks |
+| #1242 | catalog,theme | 1 | @contributor | (none) | Split by workspace (/publish is skipped on multi-workspace PRs) |
 
 ### 🟢 Low — Community Additions
 [... or "No low-priority PRs" ...]
