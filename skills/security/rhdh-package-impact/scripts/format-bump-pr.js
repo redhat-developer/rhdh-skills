@@ -119,7 +119,10 @@ function versionsCell(versions) {
   return (versions || []).join(', ') || '-';
 }
 
-function prTitle(workspace) {
+function prTitle(workspace, layoutKind) {
+  if (layoutKind === 'rhdh-core' || workspace === 'rhdh' || workspace === '.') {
+    return 'fix(deps): bump yarn.lock packages for Dependabot CVEs';
+  }
   return `fix(${workspace}): bump yarn.lock packages for Dependabot CVEs`;
 }
 
@@ -131,9 +134,8 @@ function remainingForRow(row, semver) {
 }
 
 function remainingCell(row, semver) {
-  if (row.status === 'error' && row.yarnError) {
-    return row.yarnError;
-  }
+  // Always show CVE leftover context (e.g. "needs 10.4.16"), not yarn stderr.
+  // yarnError stays on bump JSON for debugging; bump script logs failures to stderr.
   return formatRemainingLabel({
     semver,
     versionsBefore: row.versionsBefore,
@@ -233,7 +235,11 @@ async function main() {
   }
 
   const workspace = output.workspace || 'workspace';
-  const title = prTitle(workspace);
+  const layoutKind = output.layout;
+  const lockfileRel =
+    output.lockfileRel ||
+    (layoutKind === 'rhdh-core' ? 'yarn.lock' : `workspaces/${workspace}`);
+  const title = prTitle(workspace, layoutKind);
 
   if (flags.has('title')) {
     console.log(title);
@@ -264,8 +270,13 @@ async function main() {
 
   console.log('## Summary');
   console.log('');
+  const skipDedupe =
+    output.dedupeRequested === false ||
+    (output.dedupeRequested == null && output.layout === 'rhdh-core');
   console.log(
-    `- \`yarn up -R\` on \`workspaces/${workspace}\` for open Dependabot alert packages, then \`yarn install\` and \`yarn dedupe\`.`,
+    skipDedupe
+      ? `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` (no \`yarn dedupe\`; rhdh-core default).`
+      : `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` and \`yarn dedupe\`.`,
   );
   const pairAdded = Array.isArray(output.reactRouterPairAdded)
     ? output.reactRouterPairAdded
