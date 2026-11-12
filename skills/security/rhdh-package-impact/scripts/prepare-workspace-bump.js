@@ -16,10 +16,17 @@
  */
 
 /**
- * Prepare a plugins checkout for a Dependabot CVE lockfile bump:
+ * Prepare a plugins checkout for a Dependabot CVE lockfile bump.
+ *
+ * Interactive (default when not under Fullsend):
  *   git fetch <upstream> <base>
  *   git checkout -B chore/<workspace>-cve-bumps <upstream>/<base>
  *   verify workspaces/<workspace>/yarn.lock
+ *
+ * Fullsend / --verify-only:
+ *   verify workspaces/<workspace>/yarn.lock only
+ *   report current branch/HEAD
+ *   do not fetch or checkout — the Fullsend runner owns clone/branch setup
  *
  * Does not commit, push, open a PR, run yarn, or touch unrelated untracked
  * paths. Prints the next skill commands after a successful prep.
@@ -31,31 +38,39 @@ import { dirname, resolve as resolvePath } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 
+import { resolveRepoLayout } from './repo-layout.js';
+
 const execFile = promisify(execFileCb);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function usage() {
   console.error(`Usage: prepare-workspace-bump.js [options] <workspace>
 
-Prepare a plugins monorepo checkout for a CVE yarn.lock bump:
-  1. Verify workspaces/<workspace>/yarn.lock exists
-  2. git fetch <upstream-remote> <base>
-  3. git checkout -B chore/<workspace>-cve-bumps <upstream-remote>/<base>
+Prepare a plugins monorepo or rhdh core checkout for a CVE yarn.lock bump.
 
-Does not commit, push, open a PR, or modify unrelated untracked files.
+Modes:
+  Interactive (default): verify lockfile, then
+    git fetch <upstream> <base>
+    git checkout -B chore/<workspace>-cve-bumps <upstream>/<base>
+  Fullsend / --verify-only: verify lockfile only. Do not fetch or checkout.
+
+<workspace> is a plugins name (homepage) or rhdh (or .) for redhat-developer/rhdh.
 
 Options:
-  --repo-root <path>   Local plugins checkout (default: cwd walk-up / RHDH_PLUGINS_ROOT)
+  --repo-root <path>   Local checkout (default: cwd walk-up / RHDH_PLUGINS_ROOT / RHDH_CORE_ROOT)
   --upstream <remote>  Remote that tracks redhat-developer (default: upstream)
   --base <branch>      Base branch to fetch/reset onto (default: main)
   --branch <name>      Branch to create/reset (default: chore/<workspace>-cve-bumps)
+  --verify-only        Verify lockfile + report HEAD; skip git fetch/checkout
+  --reset-branch       Force interactive reset even when FULLSEND_OUTPUT_DIR is set
   --dry-run            Print the plan only; no git fetch/checkout
   --json               Machine-readable JSON on stdout
   -h, --help           Show this help
 
 Examples:
   node prepare-workspace-bump.js --repo-root /path/to/rhdh-plugins scorecard
-  node prepare-workspace-bump.js translations --dry-run
+  node prepare-workspace-bump.js --repo-root /path/to/rhdh rhdh
+  node prepare-workspace-bump.js --verify-only cost-management
 `);
 }
 
@@ -75,6 +90,10 @@ function parseArgs(argv) {
       flags.add('json');
     } else if (arg === '--dry-run') {
       flags.add('dry-run');
+    } else if (arg === '--verify-only') {
+      flags.add('verify-only');
+    } else if (arg === '--reset-branch') {
+      flags.add('reset-branch');
     } else if (arg === '-h' || arg === '--help') {
       flags.add('help');
     } else if (arg === '--repo-root') {
@@ -107,42 +126,18 @@ function parseArgs(argv) {
   return { flags, options, positional };
 }
 
-function findRepoRoot(explicitRoot) {
-  if (explicitRoot) {
-    const root = resolvePath(explicitRoot);
-    if (!existsSync(resolvePath(root, 'workspaces'))) {
-      throw new Error(`--repo-root ${root} has no workspaces/ directory`);
-    }
-    return root;
-  }
-  if (process.env.RHDH_PLUGINS_ROOT) {
-    const root = resolvePath(process.env.RHDH_PLUGINS_ROOT);
-    if (!existsSync(resolvePath(root, 'workspaces'))) {
-      throw new Error(`RHDH_PLUGINS_ROOT=${root} has no workspaces/ directory`);
-    }
-    return root;
-  }
-  let dir = process.cwd();
-  for (;;) {
-    if (existsSync(resolvePath(dir, 'workspaces'))) {
-      return dir;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) {
-      throw new Error(
-        'Could not find plugins repo root (no workspaces/). Pass --repo-root or set RHDH_PLUGINS_ROOT.',
-      );
-    }
-    dir = parent;
-  }
+function isFullsendEnv() {
+  return Boolean(process.env.FULLSEND_OUTPUT_DIR);
 }
 
-function normalizeWorkspace(name) {
-  const raw = String(name || '').trim();
-  if (!raw) {
-    throw new Error('workspace name is required');
+function resolveVerifyOnly(flags) {
+  if (flags.has('reset-branch')) {
+    return false;
   }
-  return raw.replace(/^workspaces\//, '').replace(/\/$/, '');
+  if (flags.has('verify-only')) {
+    return true;
+  }
+  return isFullsendEnv();
 }
 
 async function runGit(repoRoot, args) {
@@ -165,12 +160,30 @@ async function remoteExists(repoRoot, remote) {
     .includes(remote);
 }
 
-function nextCommands(repoRoot, workspace, skillDir) {
-  const bump = `node ${skillDir}/bump-workspace-packages.js --repo-root ${repoRoot} --repo redhat-developer/rhdh-plugins ${workspace} --json`;
+function nextCommands(layout, skillDir) {
+  const repo = layout.defaultDependabotRepo || 'redhat-developer/rhdh-plugins';
+  const ws = layout.workspace;
+  const bump = `node ${skillDir}/bump-workspace-packages.js --repo-root ${layout.repoRoot} --repo ${repo} ${ws} --json`;
   return [
-    `node ${skillDir}/list-dependabot-packages.js --repo redhat-developer/rhdh-plugins ${workspace}`,
+    `node ${skillDir}/list-dependabot-packages.js --repo ${repo} ${ws}`,
     `${bump} | node ${skillDir}/format-bump-pr.js --with-title`,
   ];
+}
+
+async function currentGitState(repoRoot, statusPaths) {
+  const { stdout: head } = await runGit(repoRoot, ['rev-parse', '--short', 'HEAD']);
+  const { stdout: branch } = await runGit(repoRoot, [
+    'rev-parse',
+    '--abbrev-ref',
+    'HEAD',
+  ]);
+  const { stdout: status } = await runGit(repoRoot, [
+    'status',
+    '-sb',
+    '--',
+    ...statusPaths,
+  ]);
+  return { head, branch, status };
 }
 
 async function main() {
@@ -183,58 +196,111 @@ async function main() {
     usage();
     process.exit(1);
   }
+  if (flags.has('verify-only') && flags.has('reset-branch')) {
+    throw new Error('Use either --verify-only or --reset-branch, not both');
+  }
 
-  const workspace = normalizeWorkspace(positional[0]);
-  const repoRoot = findRepoRoot(options.repoRoot);
+  const layout = resolveRepoLayout({
+    explicitRoot: options.repoRoot,
+    workspaceInput: positional[0],
+    requireCheckout: true,
+  });
+  const workspace = layout.workspace;
+  const repoRoot = layout.repoRoot;
+  const lockfileRel = layout.lockfileRel;
   const upstream = options.upstream;
   const base = options.base;
-  const branch = options.branch || `chore/${workspace}-cve-bumps`;
+  const branch = options.branch || layout.bumpBranch;
   const upstreamRef = `${upstream}/${base}`;
   const dryRun = flags.has('dry-run');
-  const workspaceDir = resolvePath(repoRoot, 'workspaces', workspace);
-  const lockPath = resolvePath(workspaceDir, 'yarn.lock');
+  const verifyOnly = resolveVerifyOnly(flags);
+  const fullsendDetected = isFullsendEnv();
   const skillDir = __dirname;
 
-  if (!existsSync(workspaceDir)) {
-    throw new Error(`Workspace not found: workspaces/${workspace}`);
-  }
-  if (!existsSync(lockPath)) {
-    throw new Error(`No yarn.lock in workspaces/${workspace}`);
-  }
   if (!existsSync(resolvePath(repoRoot, '.git'))) {
     throw new Error(`${repoRoot} is not a git checkout`);
   }
+
+  const plan = {
+    repoRoot,
+    workspace,
+    layout: layout.kind,
+    lockPath: lockfileRel,
+    upstream,
+    base,
+    branch,
+    upstreamRef,
+    dryRun,
+    verifyOnly,
+    fullsendDetected,
+    mode: verifyOnly ? 'verify-only' : 'reset-branch',
+    steps: verifyOnly
+      ? [`verify ${lockfileRel}`]
+      : [
+          `git fetch ${upstream} ${base}`,
+          `git checkout -B ${branch} ${upstreamRef}`,
+        ],
+    next: nextCommands(layout, skillDir),
+  };
+
+  if (verifyOnly) {
+    const state = await currentGitState(repoRoot, layout.statusPaths);
+    const result = {
+      ...plan,
+      fetched: false,
+      checkedOut: false,
+      head: state.head,
+      currentBranch: state.branch,
+      status: state.status,
+    };
+
+    if (flags.has('json')) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(`Mode:      verify-only (no git fetch/checkout)`);
+    if (fullsendDetected && !flags.has('verify-only')) {
+      console.log(
+        'Detected:  FULLSEND_OUTPUT_DIR — branch setup owned by Fullsend runner',
+      );
+    }
+    console.log(`Repo:      ${repoRoot}`);
+    console.log(`Workspace: ${workspace}`);
+    console.log(`Lockfile:  ${lockfileRel}`);
+    console.log(`Branch:    ${state.branch} @ ${state.head}`);
+    if (state.status) {
+      console.log(`Status:    ${state.status}`);
+    }
+    console.log('');
+    console.log('Next:');
+    for (const cmd of plan.next) {
+      console.log(`  ${cmd}`);
+    }
+    console.log('');
+    console.log(
+      'Does not commit, push, or open a PR. Leave branch creation to the Fullsend runner (or pass --reset-branch for interactive Cursor use).',
+    );
+    return;
+  }
+
   if (!(await remoteExists(repoRoot, upstream))) {
     throw new Error(
       `git remote "${upstream}" not found in ${repoRoot} (expected fork→origin, redhat-developer→upstream)`,
     );
   }
 
-  const plan = {
-    repoRoot,
-    workspace,
-    lockPath: `workspaces/${workspace}/yarn.lock`,
-    upstream,
-    base,
-    branch,
-    upstreamRef,
-    dryRun,
-    steps: [
-      `git fetch ${upstream} ${base}`,
-      `git checkout -B ${branch} ${upstreamRef}`,
-    ],
-    next: nextCommands(repoRoot, workspace, skillDir),
-  };
-
   if (dryRun) {
     if (flags.has('json')) {
-      console.log(JSON.stringify({ ...plan, fetched: false, checkedOut: false }, null, 2));
+      console.log(
+        JSON.stringify({ ...plan, fetched: false, checkedOut: false }, null, 2),
+      );
       return;
     }
     console.log('Mode:      dry-run (no git changes)');
     console.log(`Repo:      ${repoRoot}`);
     console.log(`Workspace: ${workspace}`);
-    console.log(`Lockfile:  workspaces/${workspace}/yarn.lock`);
+    console.log(`Lockfile:  ${lockfileRel}`);
     console.log(`Branch:    ${branch} ← ${upstreamRef}`);
     console.log('');
     console.log('Would run:');
@@ -251,20 +317,15 @@ async function main() {
 
   await runGit(repoRoot, ['fetch', upstream, base]);
   await runGit(repoRoot, ['checkout', '-B', branch, upstreamRef]);
-  const { stdout: head } = await runGit(repoRoot, ['rev-parse', '--short', 'HEAD']);
-  const { stdout: status } = await runGit(repoRoot, [
-    'status',
-    '-sb',
-    '--',
-    `workspaces/${workspace}`,
-  ]);
+  const state = await currentGitState(repoRoot, layout.statusPaths);
 
   const result = {
     ...plan,
     fetched: true,
     checkedOut: true,
-    head,
-    status,
+    head: state.head,
+    currentBranch: state.branch,
+    status: state.status,
   };
 
   if (flags.has('json')) {
@@ -272,12 +333,13 @@ async function main() {
     return;
   }
 
+  console.log(`Mode:      reset-branch`);
   console.log(`Repo:      ${repoRoot}`);
   console.log(`Workspace: ${workspace}`);
-  console.log(`Lockfile:  workspaces/${workspace}/yarn.lock`);
-  console.log(`Branch:    ${branch} @ ${head} (from ${upstreamRef})`);
-  if (status) {
-    console.log(`Status:    ${status}`);
+  console.log(`Lockfile:  ${lockfileRel}`);
+  console.log(`Branch:    ${branch} @ ${state.head} (from ${upstreamRef})`);
+  if (state.status) {
+    console.log(`Status:    ${state.status}`);
   }
   console.log('');
   console.log('Next:');

@@ -17,6 +17,7 @@
 
 import { createInterface } from 'readline';
 
+import { LAYOUT_RHDH_CORE, inferKindFromRepo } from './repo-layout.js';
 import { resolveGithubToken } from './github-auth.js';
 import { resolveGithubRepo } from './github-repo.js';
 
@@ -51,6 +52,8 @@ fine-grained "Dependabot alerts" read/write). Set via:
   workspaces/quickstart/yarn.lock
   workspaces/quickstart          (implies .../yarn.lock)
   quickstart                     (implies workspaces/quickstart/yarn.lock)
+  rhdh                           (redhat-developer/rhdh → yarn.lock)
+  yarn.lock                      (rhdh core product lockfile)
 
 Options:
   --repo <owner/name>            Remote GitHub repo for REST alerts
@@ -65,6 +68,9 @@ Options:
                                  (default: prompt; do not use unless requested)
   --json                         Print machine-readable JSON
   -h, --help                     Show this help
+
+Prohibited under Fullsend: exits non-zero when FULLSEND_OUTPUT_DIR is set
+(list or dismiss). Fullsend agents must not call this script.
 
 Examples:
   GITHUB_TOKEN=ghp_... node close-dependabot-alerts.js \\
@@ -137,8 +143,16 @@ function parseArgs(argv) {
   return { flags, options, positional };
 }
 
-function normalizeManifestPath(input) {
+function normalizeManifestPath(input, repoFull) {
   let path = input.replace(/^\.\//, '').replace(/\/+$/, '');
+  const kind = inferKindFromRepo(repoFull);
+
+  if (kind === LAYOUT_RHDH_CORE) {
+    if (!path || path === 'rhdh' || path === '.' || path === 'root') {
+      return 'yarn.lock';
+    }
+    return path;
+  }
 
   if (
     !path.includes('/') &&
@@ -379,6 +393,18 @@ function printAlerts(alerts) {
   }
 }
 
+function assertNotFullsend() {
+  if (!process.env.FULLSEND_OUTPUT_DIR) {
+    return;
+  }
+  throw new Error(
+    'close-dependabot-alerts.js is prohibited under Fullsend ' +
+      '(FULLSEND_OUTPUT_DIR is set). Scheduled/Fullsend runs must not list or ' +
+      'dismiss Dependabot alerts with this script. Classify and bump only; ' +
+      'leave dismiss to a human outside Fullsend.',
+  );
+}
+
 async function main() {
   const { flags, options, positional } = parseArgs(process.argv.slice(2));
 
@@ -387,17 +413,19 @@ async function main() {
     process.exit(0);
   }
 
+  assertNotFullsend();
+
   if (positional.length !== 2) {
     usage();
     process.exit(1);
   }
 
   const [manifestInput, packageName] = positional;
-  const manifest = normalizeManifestPath(manifestInput);
   const repoFull = await resolveGithubRepo({
     explicitRepo: options.repo,
     requiredFor: 'Dependabot alerts read/write to dismiss',
   });
+  const manifest = normalizeManifestPath(manifestInput, repoFull);
   const { owner, repo } = parseOwnerRepo(repoFull);
   const token = resolveToken();
 

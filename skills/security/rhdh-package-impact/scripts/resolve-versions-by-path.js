@@ -18,39 +18,16 @@ import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { resolve as resolvePath } from 'path';
 
+import { LAYOUT_PLUGINS } from './repo-layout.js';
+import { identifyWhyRoot, parseWhyRootTrees } from './yarn-why-roots.js';
+
 const NPM_PKG_RE = /((?:@[^/\s]+\/)?[^\s@[]+)@npm:([^\s\]]+)/;
-const PLUGIN_ROOT_RE = /workspace:plugins\/([^@\s\[]+)/;
-const RUNNER_ROOT_RE =
-  /(backend|app|app-legacy)@workspace:packages\/(backend|app|app-legacy)/;
-const WORKSPACE_ROOT_RE = /@workspace:\.(?:\s|$|\[)/;
 
 function uniqueSorted(values) {
   return [...new Set(values)].sort();
 }
 
-/** Split yarn why output into one tree per top-level ├─/└─ root line. */
-export function parseWhyRootTrees(output) {
-  const lines = output.split('\n');
-  const trees = [];
-  let current = null;
-
-  for (const line of lines) {
-    if (/^(├─|└─)/.test(line)) {
-      if (current) {
-        trees.push(current);
-      }
-      current = { rootLine: line, lines: [line] };
-    } else if (current && line.trim()) {
-      current.lines.push(line);
-    }
-  }
-
-  if (current) {
-    trees.push(current);
-  }
-
-  return trees;
-}
+export { parseWhyRootTrees };
 
 function lineDepth(line) {
   if (/^(├─|└─)/.test(line)) {
@@ -81,29 +58,11 @@ function parseTreeLine(line) {
   };
 }
 
-function identifyRoot(rootLine) {
-  if (WORKSPACE_ROOT_RE.test(rootLine)) {
-    return { kind: 'workspace', id: 'workspace-root' };
-  }
-
-  const runnerMatch = rootLine.match(RUNNER_ROOT_RE);
-  if (runnerMatch) {
-    return { kind: 'runner', id: runnerMatch[1] };
-  }
-
-  const pluginMatch = rootLine.match(PLUGIN_ROOT_RE);
-  if (pluginMatch) {
-    return { kind: 'plugin', id: pluginMatch[1] };
-  }
-
-  return { kind: 'unknown', id: rootLine.trim() };
-}
-
-async function loadPluginManifest(workspaceDir, pluginDir) {
+async function loadWorkspaceManifest(workspaceDir, parentDir, packageDir) {
   const packageJsonPath = resolvePath(
     workspaceDir,
-    'plugins',
-    pluginDir,
+    parentDir,
+    packageDir,
     'package.json',
   );
   if (!existsSync(packageJsonPath)) {
@@ -112,13 +71,14 @@ async function loadPluginManifest(workspaceDir, pluginDir) {
   return JSON.parse(await readFile(packageJsonPath, 'utf8'));
 }
 
-function classifyVersionOnPluginPath({
+function classifyVersionOnWorkspacePath({
   manifest,
   targetPackage,
-  version,
   depth1Package,
   targetDepth,
-  pluginLineDepth,
+  rootLineDepth,
+  prodLabel,
+  devLabel,
 }) {
   const devDeps = new Set(Object.keys(manifest.devDependencies ?? {}));
   const runtimeDeps = new Set([
@@ -127,26 +87,89 @@ function classifyVersionOnPluginPath({
   ]);
 
   const directRuntime =
-    targetDepth === pluginLineDepth + 1 && runtimeDeps.has(targetPackage);
+    targetDepth === rootLineDepth + 1 && runtimeDeps.has(targetPackage);
   const viaDevHop = depth1Package !== null && devDeps.has(depth1Package);
 
   if (directRuntime || (!viaDevHop && depth1Package !== null)) {
-    return 'PLUGIN_PROD';
+    return prodLabel;
   }
-  return 'PLUGIN_DEV';
+  return devLabel;
+}
+
+function collectTargetVersionsInTree({
+  tree,
+  packageName,
+  manifest,
+  rootId,
+  isProdRoot,
+  isDevRoot,
+  prodLabel,
+  devLabel,
+  prod,
+  nonProd,
+  prodPathDetails,
+}) {
+  const rootLineDepth = 0;
+  const packageAtDepth = {};
+
+  for (const line of tree.lines) {
+    const parsed = parseTreeLine(line);
+    if (!parsed?.packageName) {
+      continue;
+    }
+
+    packageAtDepth[parsed.depth] = parsed.packageName;
+    for (const d of Object.keys(packageAtDepth)) {
+      if (Number(d) > parsed.depth) {
+        delete packageAtDepth[d];
+      }
+    }
+
+    if (parsed.packageName !== packageName || !parsed.version) {
+      continue;
+    }
+
+    const depth1Package = packageAtDepth[rootLineDepth + 1] ?? null;
+    const pathKind = classifyVersionOnWorkspacePath({
+      manifest,
+      targetPackage: packageName,
+      depth1Package,
+      targetDepth: parsed.depth,
+      rootLineDepth,
+      prodLabel,
+      devLabel,
+    });
+
+    const detail = {
+      plugin: rootId,
+      packageName: manifest.name,
+      version: parsed.version,
+      path: isDevRoot && !isProdRoot ? devLabel : pathKind,
+    };
+
+    if (isProdRoot && pathKind === prodLabel) {
+      prod.add(parsed.version);
+      prodPathDetails.push(detail);
+    } else {
+      nonProd.add(parsed.version);
+      prodPathDetails.push(detail);
+    }
+  }
 }
 
 /**
- * For each yarn why tree rooted at a published plugin, bucket target versions
- * on production vs plugin-dev paths. Unpublished / harness plugins (pluginDev)
- * contribute only to nonProd.
+ * For each yarn why tree rooted at a published plugin or rhdh core package,
+ * bucket target versions on production vs dev paths.
  */
-async function versionsFromPluginMarkers({
+async function versionsFromWorkspaceMarkers({
   yarnWhyOutput,
   workspaceDir,
   packageName,
+  layoutKind = LAYOUT_PLUGINS,
   pluginProd,
   pluginDev = [],
+  coreProd = [],
+  coreDev = [],
 }) {
   const prod = new Set();
   const nonProd = new Set();
@@ -154,86 +177,82 @@ async function versionsFromPluginMarkers({
   const manifestCache = new Map();
   const trees = parseWhyRootTrees(yarnWhyOutput);
 
-  const prodIds = new Set(pluginProd.map(entry => entry.plugin));
-  const devIds = new Set(pluginDev.map(entry => entry.plugin));
+  const pluginProdIds = new Set(pluginProd.map(entry => entry.plugin));
+  const pluginDevIds = new Set(pluginDev.map(entry => entry.plugin));
+  const coreProdIds = new Set(coreProd.map(entry => entry.package));
+  const coreDevIds = new Set(coreDev.map(entry => entry.package));
 
   for (const tree of trees) {
-    const root = identifyRoot(tree.rootLine);
-    if (root.kind !== 'plugin') {
+    const root = identifyWhyRoot(tree.rootLine, layoutKind);
+    let parentDir;
+    let prodIds;
+    let devIds;
+    let prodLabel;
+    let devLabel;
+    if (root.kind === 'plugin') {
+      parentDir = 'plugins';
+      prodIds = pluginProdIds;
+      devIds = pluginDevIds;
+      prodLabel = 'PLUGIN_PROD';
+      devLabel = 'PLUGIN_DEV';
+    } else if (root.kind === 'core') {
+      parentDir = 'packages';
+      prodIds = coreProdIds;
+      devIds = coreDevIds;
+      prodLabel = 'CORE_PROD';
+      devLabel = 'CORE_DEV';
+    } else {
       continue;
     }
 
-    const isProdPlugin = prodIds.has(root.id);
-    const isDevPlugin = devIds.has(root.id);
-    if (!isProdPlugin && !isDevPlugin) {
+    const isProdRoot = prodIds.has(root.id);
+    const isDevRoot = devIds.has(root.id);
+    if (!isProdRoot && !isDevRoot) {
       continue;
     }
 
-    let manifest = manifestCache.get(root.id);
+    const cacheKey = `${parentDir}/${root.id}`;
+    let manifest = manifestCache.get(cacheKey);
     if (manifest === undefined) {
-      manifest = await loadPluginManifest(workspaceDir, root.id);
-      manifestCache.set(root.id, manifest);
+      manifest = await loadWorkspaceManifest(
+        workspaceDir,
+        parentDir,
+        root.id,
+      );
+      manifestCache.set(cacheKey, manifest);
     }
     if (!manifest) {
       continue;
     }
 
-    const pluginLineDepth = 0;
-    const packageAtDepth = {};
-
-    for (const line of tree.lines) {
-      const parsed = parseTreeLine(line);
-      if (!parsed?.packageName) {
-        continue;
-      }
-
-      packageAtDepth[parsed.depth] = parsed.packageName;
-      for (const d of Object.keys(packageAtDepth)) {
-        if (Number(d) > parsed.depth) {
-          delete packageAtDepth[d];
-        }
-      }
-
-      if (parsed.packageName !== packageName || !parsed.version) {
-        continue;
-      }
-
-      const depth1Package = packageAtDepth[pluginLineDepth + 1] ?? null;
-      const pathKind = classifyVersionOnPluginPath({
-        manifest,
-        targetPackage: packageName,
-        version: parsed.version,
-        depth1Package,
-        targetDepth: parsed.depth,
-        pluginLineDepth,
-      });
-
-      const detail = {
-        plugin: root.id,
-        packageName: manifest.name,
-        version: parsed.version,
-        path: isDevPlugin && !isProdPlugin ? 'PLUGIN_DEV' : pathKind,
-      };
-
-      if (isProdPlugin && pathKind === 'PLUGIN_PROD') {
-        prod.add(parsed.version);
-        prodPathDetails.push(detail);
-      } else {
-        nonProd.add(parsed.version);
-        prodPathDetails.push(detail);
-      }
-    }
+    collectTargetVersionsInTree({
+      tree,
+      packageName,
+      manifest,
+      rootId: root.id,
+      isProdRoot,
+      isDevRoot,
+      prodLabel,
+      devLabel,
+      prod,
+      nonProd,
+      prodPathDetails,
+    });
   }
 
   return { prod, nonProd, prodPathDetails };
 }
 
-function versionsFromRunnerAndWorkspaceTrees(yarnWhyOutput, packageName) {
+function versionsFromRunnerAndWorkspaceTrees(
+  yarnWhyOutput,
+  packageName,
+  layoutKind = LAYOUT_PLUGINS,
+) {
   const nonProd = new Set();
   const trees = parseWhyRootTrees(yarnWhyOutput);
 
   for (const tree of trees) {
-    const root = identifyRoot(tree.rootLine);
+    const root = identifyWhyRoot(tree.rootLine, layoutKind);
     if (root.kind !== 'runner' && root.kind !== 'workspace') {
       continue;
     }
@@ -250,31 +269,39 @@ function versionsFromRunnerAndWorkspaceTrees(yarnWhyOutput, packageName) {
 }
 
 /**
- * Walk yarn why trees and split resolved target versions into production-plugin
- * paths vs local-dev paths (runner, workspace root, plugin devDependencies).
+ * Walk yarn why trees and split resolved target versions into production
+ * paths vs local-dev paths (runner, workspace root, plugin/core devDependencies).
+ * On rhdh-core, packages/app|backend trees are production (CORE_PROD), not runners.
  */
 export async function resolveVersionsByPath({
   yarnWhyOutput,
   workspaceDir,
   packageName,
+  layoutKind = LAYOUT_PLUGINS,
   pluginProd = [],
   pluginDev = [],
+  coreProd = [],
+  coreDev = [],
 }) {
   const {
     prod,
     nonProd: pluginNonProd,
     prodPathDetails,
-  } = await versionsFromPluginMarkers({
+  } = await versionsFromWorkspaceMarkers({
     yarnWhyOutput,
     workspaceDir,
     packageName,
+    layoutKind,
     pluginProd,
     pluginDev,
+    coreProd,
+    coreDev,
   });
 
   const runnerNonProd = versionsFromRunnerAndWorkspaceTrees(
     yarnWhyOutput,
     packageName,
+    layoutKind,
   );
 
   const nonProd = new Set([...pluginNonProd, ...runnerNonProd]);

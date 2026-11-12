@@ -20,29 +20,39 @@
  * are patched to the advisory fix level, and whether remaining open alerts
  * are runner-only (safe to dismiss at alert-level).
  *
- * Uses GitHub REST (fetch) only — never the gh CLI.
+ * Uses GitHub REST (fetch) only — never the gh CLI — unless --alerts-json
+ * supplies a snapshot (no token, no network).
  */
 
 import { execFile as execFileCb } from 'child_process';
 import { createRequire } from 'module';
-import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { dirname, resolve as resolvePath } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 
-import { resolveGithubToken } from './github-auth.js';
-import { resolveGithubRepo } from './github-repo.js';
+import {
+  alertHasPatchMetadata,
+  loadDependabotAlerts,
+} from './dependabot-alerts.js';
 import {
   buildVersionStatuses,
   patchedVersions,
   resolveVersionsByPath,
 } from './resolve-versions-by-path.js';
+import {
+  LAYOUT_RHDH_CORE,
+  classifyManifest,
+  filterAlertsForLayout,
+  findCheckout,
+  inferKindFromRepo,
+  isShippedClassification,
+  resolveRepoLayout,
+  splitWorkspaceArgs,
+} from './repo-layout.js';
 
 const execFile = promisify(execFileCb);
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const API_BASE = 'https://api.github.com';
 
 function usage() {
   console.error(`Usage: check-dependabot-patch-status.js [options] <workspace> [package]
@@ -53,16 +63,20 @@ range, run impact classification, and report whether runner alerts can be
 dismissed because prod paths are patched (or no PLUGIN_PROD alerts remain).
 
 Uses GitHub REST (not gh). Token: GITHUB_TOKEN / GH_TOKEN in the
-environment or a .env file near cwd.
+environment or a .env file near cwd. --alerts-json skips REST and token.
 Needs --repo-root / RHDH_PLUGINS_ROOT (or cwd in a checkout)
 for yarn.lock + classify.
 
 If [package] is omitted, checks every package with open alerts in the workspace.
 
 Options:
-  --repo-root <path>             Local checkout path for yarn.lock / yarn why
+  --repo-root <path>             Local checkout (plugins monorepo or rhdh core)
   --repo <owner/name>            Remote GitHub repo for REST alerts
-                                 (default: detect from GITHUB_REPOSITORY or git origin in --repo-root)
+                                 (default: detect; rhdh-core uses redhat-developer/rhdh)
+  --alerts-json <file>           Snapshot of GitHub Dependabot alert objects
+                                 (array, or { "alerts": [...] }). No REST.
+                                 Prefer the raw list-alerts payload so
+                                 security_vulnerability ranges are present.
   --table                        Markdown classification table (default)
   --json                         Machine-readable JSON
   -h, --help                     Show this help
@@ -72,6 +86,8 @@ Examples:
     --repo-root /path/to/plugins-repo extensions
   GITHUB_TOKEN=… node check-dependabot-patch-status.js \\
     --repo-root /path/to/plugins-repo extensions --json
+  node check-dependabot-patch-status.js \\
+    --repo-root /path/to/plugins-repo --alerts-json /tmp/dependabot-alerts.json homepage
   GITHUB_TOKEN=… node check-dependabot-patch-status.js \\
     --repo-root /path/to/plugins-repo extensions lodash --table
 `);
@@ -82,6 +98,7 @@ function parseArgs(argv) {
   const options = {
     repoRoot: undefined,
     repo: undefined,
+    alertsJson: undefined,
   };
   const positional = [];
 
@@ -103,6 +120,11 @@ function parseArgs(argv) {
       if (!options.repo) {
         throw new Error('--repo requires owner/name');
       }
+    } else if (arg === '--alerts-json') {
+      options.alertsJson = argv[++i];
+      if (!options.alertsJson) {
+        throw new Error('--alerts-json requires a file path');
+      }
     } else if (arg === '--token') {
       throw new Error(
         '--token is not supported; set GITHUB_TOKEN or GH_TOKEN in the environment or a .env file',
@@ -115,85 +137,6 @@ function parseArgs(argv) {
   }
 
   return { flags, options, positional };
-}
-
-function findRepoRoot(explicitRoot) {
-  if (explicitRoot) {
-    const root = resolvePath(explicitRoot);
-    if (!existsSync(resolvePath(root, 'workspaces'))) {
-      throw new Error(`--repo-root ${root} has no workspaces/ directory`);
-    }
-    return root;
-  }
-  if (process.env.RHDH_PLUGINS_ROOT) {
-    const root = resolvePath(process.env.RHDH_PLUGINS_ROOT);
-    if (!existsSync(resolvePath(root, 'workspaces'))) {
-      throw new Error(
-        `RHDH_PLUGINS_ROOT=${root} has no workspaces/ directory`,
-      );
-    }
-    return root;
-  }
-  let dir = process.cwd();
-  for (;;) {
-    if (
-      existsSync(resolvePath(dir, 'workspaces')) &&
-      existsSync(resolvePath(dir, 'package.json'))
-    ) {
-      return dir;
-    }
-    const parent = resolvePath(dir, '..');
-    if (parent === dir) {
-      break;
-    }
-    dir = parent;
-  }
-  throw new Error(
-    'Could not find repo root. Pass --repo-root or set RHDH_PLUGINS_ROOT.',
-  );
-}
-
-function resolveToken() {
-  return resolveGithubToken({
-    requiredFor: 'Dependabot alerts read',
-  });
-}
-
-function parseOwnerRepo(repo) {
-  const [owner, name, ...rest] = repo.split('/');
-  if (!owner || !name || rest.length) {
-    throw new Error(`Invalid --repo "${repo}"; expected owner/name`);
-  }
-  return { owner, repo: name, full: `${owner}/${name}` };
-}
-
-function parseNextLink(linkHeader) {
-  if (!linkHeader) {
-    return null;
-  }
-  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-  return match ? match[1] : null;
-}
-
-function classifyManifest(manifestPath, scope) {
-  if (!manifestPath) {
-    return 'UNKNOWN';
-  }
-  if (manifestPath.includes('/plugins/')) {
-    return scope === 'development' ? 'PLUGIN_DEV' : 'PLUGIN_PROD';
-  }
-  if (
-    /\/packages\/(backend|app|app-legacy)\/package\.json$/.test(manifestPath)
-  ) {
-    return 'RUNNER';
-  }
-  if (manifestPath.endsWith('/yarn.lock') || manifestPath.endsWith('yarn.lock')) {
-    return 'LOCKFILE';
-  }
-  if (scope === 'development') {
-    return 'PLUGIN_DEV';
-  }
-  return 'UNKNOWN';
 }
 
 function loadSemver(repoRoot) {
@@ -307,42 +250,6 @@ function versionPatchedAgainstAlerts(semver, version, alerts) {
   return { patched: null, reason: 'incomplete advisory metadata', checks };
 }
 
-async function fetchOpenAlerts({ token, owner, repo }) {
-  const alerts = [];
-  const params = new URLSearchParams({ state: 'open', per_page: '100' });
-  let nextUrl = `${API_BASE}/repos/${owner}/${repo}/dependabot/alerts?${params}`;
-
-  while (nextUrl) {
-    const response = await fetch(nextUrl, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'plugins-package-impact',
-      },
-    });
-    const text = await response.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : [];
-    } catch {
-      data = { message: text };
-    }
-    if (!response.ok) {
-      throw new Error(
-        `GitHub API error for ${owner}/${repo} (HTTP ${response.status}): ${data?.message || response.statusText}`,
-      );
-    }
-    if (!Array.isArray(data) || data.length === 0) {
-      break;
-    }
-    alerts.push(...data);
-    nextUrl = parseNextLink(response.headers.get('link'));
-  }
-
-  return alerts;
-}
-
 function summarizeAlert(alert) {
   const vuln = alert.security_vulnerability ?? {};
   return {
@@ -382,6 +289,7 @@ async function runClassify(repoRoot, workspace, packageName) {
 
 function assessPackage({
   workspace,
+  layoutKind,
   packageName,
   classification,
   customerImpact,
@@ -393,7 +301,7 @@ function assessPackage({
 }) {
   const alerts = workspaceAlerts.map(a => {
     const s = summarizeAlert(a);
-    const manifestClass = classifyManifest(s.manifest, s.scope);
+    const manifestClass = classifyManifest(layoutKind, s.manifest, s.scope);
     const versionChecks = resolvedVersions.map(version => ({
       version,
       ...versionIsPatched(semver, version, s.vulnerableRange, s.firstPatched),
@@ -454,26 +362,32 @@ function assessPackage({
   );
   const patchedOnProdPaths =
     prodResolvedVersions.length > 0 && patchedVersions(prodVersionStatuses);
-  const hasPluginProdReach =
-    typeof classification === 'string' && classification.includes('PLUGIN_PROD');
+  const hasPluginProdReach = isShippedClassification(classification);
 
   const openPluginProd = counts.PLUGIN_PROD || 0;
-  const openRunner = counts.RUNNER || 0;
+  const openCoreProd = counts.CORE_PROD || 0;
+  const openProd = openPluginProd + openCoreProd;
+  const openRunner = layoutKind === LAYOUT_RHDH_CORE ? 0 : counts.RUNNER || 0;
   const openLockfile = counts.LOCKFILE || 0;
   const openPluginDev = counts.PLUGIN_DEV || 0;
 
   // Mode A: whole package is exact local-dev label
-  const packageLevelRunnerOnly = classification === 'RUNNER';
+  const packageLevelRunnerOnly =
+    layoutKind !== LAYOUT_RHDH_CORE && classification === 'RUNNER';
   const packageLevelPluginDevOnly = classification === 'PLUGIN_DEV';
+  const packageLevelCoreDevOnly = classification === 'CORE_DEV';
   const packageLevelWorkspaceDevOnly = classification === 'WORKSPACE_DEV';
 
   // Mode B: lockfile versions meet patch level; only runner package.json alerts remain
   const patchedEverywhereExceptRunner =
-    openPluginProd === 0 && openRunner > 0 && fullyPatchedInLockfile;
+    layoutKind !== LAYOUT_RHDH_CORE &&
+    openProd === 0 &&
+    openRunner > 0 &&
+    fullyPatchedInLockfile;
 
   // Lockfile-only remaining alerts after versions are patched
   const lockfileOnlyRemaining =
-    openPluginProd === 0 &&
+    openProd === 0 &&
     openRunner === 0 &&
     openLockfile > 0;
 
@@ -490,18 +404,24 @@ function assessPackage({
   } else if (packageLevelPluginDevOnly) {
     verdict = 'PLUGIN_DEV_ONLY';
     safeToDismissPackageLevel = true;
+  } else if (packageLevelCoreDevOnly) {
+    verdict = 'CORE_DEV_ONLY';
+    safeToDismissPackageLevel = true;
   } else if (packageLevelWorkspaceDevOnly) {
     verdict = 'WORKSPACE_DEV_ONLY';
     safeToDismissPackageLevel = true;
-  } else if (openPluginProd > 0) {
-    verdict = 'PLUGIN_PROD_ALERTS_REMAIN';
+  } else if (openProd > 0) {
+    verdict =
+      openPluginProd > 0
+        ? 'PLUGIN_PROD_ALERTS_REMAIN'
+        : 'CORE_PROD_ALERTS_REMAIN';
   } else if (patchedEverywhereExceptRunner) {
     verdict = 'PATCHED_EXCEPT_RUNNER';
     safeToDismissRunnerAlerts = true;
   } else if (lockfileOnlyRemaining && fullyPatchedInLockfile) {
     verdict = 'LOCKFILE_ALERTS_ONLY';
   } else if (
-    openPluginProd === 0 &&
+    openProd === 0 &&
     hasPluginProdReach &&
     patchedOnProdPaths &&
     anyUnpatchedInLockfile
@@ -509,16 +429,24 @@ function assessPackage({
     verdict = 'PROD_PATCHED_DEV_UNPATCHED';
   } else if (
     fullyPatchedInLockfile &&
-    openPluginProd === 0 &&
+    openProd === 0 &&
     openRunner === 0 &&
     openLockfile === 0 &&
-    openPluginDev === 0
+    openPluginDev === 0 &&
+    !(counts.CORE_DEV || 0)
   ) {
     verdict = 'FULLY_PATCHED';
-  } else if (anyUnpatchedInLockfile && openPluginProd === 0) {
+  } else if (anyUnpatchedInLockfile && openProd === 0) {
     verdict = 'UNPATCHED_IN_LOCKFILE_NO_PROD_ALERTS';
   } else {
     verdict = 'NEEDS_REVIEW';
+  }
+
+  if (layoutKind === LAYOUT_RHDH_CORE) {
+    safeToDismissRunnerAlerts = false;
+    if (isShippedClassification(classification)) {
+      safeToDismissPackageLevel = false;
+    }
   }
 
   return {
@@ -590,6 +518,13 @@ function recommendationFor(verdict, ctx) {
         'No PLUGIN_PROD manifest alerts — fix prod only if prod_resolved is unpatched; ' +
         'otherwise prefer SBOM/dev bump or stale lockfile refresh.'
       );
+    case 'CORE_DEV_ONLY':
+      return (
+        'Package-level CORE_DEV: not a shipped RHDH runtime path — dismiss open ' +
+        'alerts (interactive). Prefer bumping package devDependencies afterward so SBOMs stay current.'
+      );
+    case 'CORE_PROD_ALERTS_REMAIN':
+      return 'Open CORE_PROD alerts remain — bump/fix shipped RHDH packages (app/backend/plugin-utils) before dismissing anything.';
     case 'PLUGIN_PROD_ALERTS_REMAIN':
       return 'Open PLUGIN_PROD alerts remain — bump/fix published plugin path before dismissing anything on plugins/.';
     case 'UNPATCHED_IN_LOCKFILE_NO_PROD_ALERTS':
@@ -640,7 +575,7 @@ function printTable(results) {
         : 'no'
       : '-',
     r.fullyPatchedInLockfile ? 'yes' : r.anyUnpatchedInLockfile ? 'no' : '?',
-    r.openAlertCounts.PLUGIN_PROD || 0,
+    (r.openAlertCounts.PLUGIN_PROD || 0) + (r.openAlertCounts.CORE_PROD || 0),
     r.openAlertCounts.RUNNER || 0,
     r.safeToDismissPackageLevel ? 'YES' : 'NO',
     r.safeToDismissRunnerAlerts ? 'YES' : 'NO',
@@ -671,38 +606,53 @@ async function main() {
     process.exit(0);
   }
 
-  if (positional.length < 1 || positional.length > 2) {
+  const checkout = findCheckout({
+    explicitRoot: options.repoRoot,
+    required: false,
+  });
+  const kind =
+    checkout?.kind || inferKindFromRepo(options.repo) || undefined;
+  const { workspaceInput, packages: extra } = splitWorkspaceArgs(
+    kind,
+    positional,
+  );
+  if ((!workspaceInput && kind !== LAYOUT_RHDH_CORE) || extra.length > 1) {
     usage();
     process.exit(1);
   }
+  const onlyPackage = extra[0];
 
-  const [workspace, onlyPackage] = positional;
-  const repoRoot = findRepoRoot(options.repoRoot);
-  const workspaceDir = resolvePath(repoRoot, 'workspaces', workspace);
-  const lockPath = resolvePath(workspaceDir, 'yarn.lock');
-
-  if (!existsSync(lockPath)) {
-    throw new Error(`No yarn.lock at workspaces/${workspace}`);
-  }
-
-  const resolvedRepo = await resolveGithubRepo({
+  const layout = resolveRepoLayout({
+    explicitRoot: options.repoRoot,
+    workspaceInput: workspaceInput || 'rhdh',
     explicitRepo: options.repo,
-    cwd: repoRoot,
-    requiredFor: 'Dependabot alerts read',
+    requireCheckout: true,
   });
-  const { owner, repo, full: repoFull } = parseOwnerRepo(resolvedRepo);
-  const token = resolveToken();
+  const workspace = layout.workspace;
+  const repoRoot = layout.repoRoot;
+  const workspaceDir = layout.workspaceDir;
+  const lockPath = layout.lockPath;
+
   const semver = loadSemver(repoRoot);
   const lockfileText = await readFile(lockPath, 'utf8');
 
-  const allAlerts = await fetchOpenAlerts({ token, owner, repo });
-  const prefix = `workspaces/${workspace}/`;
-  const workspaceAlerts = allAlerts.filter(a => {
-    const manifest = a.dependency?.manifest_path || '';
-    return manifest === 'yarn.lock'
-      ? workspace === 'root'
-      : manifest.startsWith(prefix);
-  });
+  const { alerts: allAlerts, repo: repoFull, fromSnapshot } =
+    await loadDependabotAlerts({
+      alertsJson: options.alertsJson,
+      explicitRepo: options.repo || layout.defaultDependabotRepo,
+      cwd: repoRoot,
+      state: 'open',
+    });
+  const workspaceAlerts = filterAlertsForLayout(allAlerts, layout);
+
+  if (fromSnapshot) {
+    const missingPatch = workspaceAlerts.filter(a => !alertHasPatchMetadata(a));
+    if (missingPatch.length) {
+      console.error(
+        `Warning: ${missingPatch.length} snapshot alert(s) lack security_vulnerability ranges; patch-status may be incomplete. Dump the raw GitHub list-alerts payload.`,
+      );
+    }
+  }
 
   const packageNames = onlyPackage
     ? [onlyPackage]
@@ -718,13 +668,16 @@ async function main() {
     const empty = {
       repo: repoFull,
       workspace,
+      source: fromSnapshot ? 'alerts-json' : 'github-rest',
       packageCount: 0,
       results: [],
     };
     if (flags.has('json') && !flags.has('table')) {
       console.log(JSON.stringify(empty, null, 2));
     } else {
-      console.log(`No open Dependabot alerts under ${prefix}`);
+      console.log(
+        `No open Dependabot alerts under ${layout.lockfileRel}`,
+      );
     }
     return;
   }
@@ -746,14 +699,18 @@ async function main() {
         yarnWhyOutput: classification.yarnWhyOutput,
         workspaceDir,
         packageName,
+        layoutKind: layout.kind,
         pluginProd: classification.pluginProd ?? [],
         pluginDev: classification.pluginDev ?? [],
+        coreProd: classification.coreProd ?? [],
+        coreDev: classification.coreDev ?? [],
       });
     }
 
     results.push(
       assessPackage({
         workspace,
+        layoutKind: layout.kind,
         packageName,
         classification: classification.classification,
         customerImpact: classification.customerImpact,
@@ -769,7 +726,10 @@ async function main() {
   const payload = {
     repo: repoFull,
     workspace,
+    layout: layout.kind,
+    lockfileRel: layout.lockfileRel,
     repoRoot,
+    source: fromSnapshot ? 'alerts-json' : 'github-rest',
     packageCount: results.length,
     results,
     dismissRunnerCandidates: results
