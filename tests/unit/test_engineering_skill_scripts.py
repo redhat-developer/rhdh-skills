@@ -59,6 +59,52 @@ def test_overlay_analyzers_preserve_workspace_and_priority_classification():
     assert triage.extract_workspace_from_title("Update catalog workspace to 1.2.3") == "catalog"
 
 
+def test_overlay_triage_names_the_next_command_from_pr_state():
+    triage = load_script(
+        "skills/plugins/rhdh-overlay/scripts/triage-prs.py",
+        "rhdh_overlay_triage_prs_state",
+    )
+
+    def pr(**overrides):
+        base = {
+            "labels": [],
+            "files": [{"path": "workspaces/catalog/source.json"}],
+            "statusCheckRollup": [],
+        }
+        base.update(overrides)
+        return base
+
+    def check(name, conclusion, completed_at="2026-01-01T00:00:00Z"):
+        return {"name": name, "conclusion": conclusion, "completedAt": completed_at}
+
+    assert triage.evaluate_pr_state(pr())[0] == "publish-missing"
+    assert (
+        triage.evaluate_pr_state(pr(statusCheckRollup=[check("publish", "SUCCESS")]))[0] == "ready"
+    )
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=[check("publish", "FAILURE")]))[0] == (
+        "publish-failed"
+    )
+    assert triage.evaluate_pr_state(pr(isDraft=True))[0] == "draft"
+    assert triage.evaluate_pr_state(pr(labels=[{"name": "do-not-merge"}]))[0] == "skip"
+
+    rerun = [check("publish", "FAILURE"), check("publish", "SUCCESS", "2026-01-02T00:00:00Z")]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=rerun))[0] == "ready"
+
+    pending_rerun = [check("publish", "SUCCESS"), {"name": "publish", "status": "IN_PROGRESS"}]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=pending_rerun))[0] == "publish-pending"
+
+    cancelled = [check("publish", "CANCELLED")]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=cancelled))[0] == "publish-missing"
+
+    multi = [
+        {"path": "workspaces/catalog/source.json"},
+        {"path": "workspaces/theme/source.json"},
+    ]
+    state, workspaces = triage.evaluate_pr_state(pr(files=multi))
+    assert state == "multi-workspace"
+    assert workspaces == ["catalog", "theme"]
+
+
 def test_shared_adf_parser_keeps_the_current_milestone_date():
     from datetime import datetime
 
