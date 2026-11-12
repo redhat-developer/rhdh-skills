@@ -509,3 +509,15 @@ Also include:
 | Dismiss candidates | policy A/B/C above |
 | Bump result | `bump-workspace-packages.js --json`: `versionsBefore`, `versionsAfter`, `status`, `remaining`, `cvesFixed`, `openCves` |
 | PR body tables | `format-bump-pr.js` from bump `--json` (Fully fixed / Partial leftovers / Unchanged) |
+
+## Completion
+
+An assessment is complete when the workspace and repo root are named, every
+package from open Dependabot alerts (or the caller-supplied list) has a
+classification and patch-status verdict in a markdown table, and dismiss
+candidates are called out by policy without dismissing unless the user asked.
+A bump is complete when `yarn up -R` / install / dedupe results are reported
+per package (`status`, before/after versions, remaining CVE ranges), any
+PR body from `format-bump-pr.js` has been shown before open, and lockfile
+edits remain local until a gated push or PR. Under Fullsend, dismiss was not
+attempted; say so explicitly.
