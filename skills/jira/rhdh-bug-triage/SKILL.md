@@ -35,19 +35,32 @@ Read the rules it depends on as needed:
 This skill has no write path. It does not comment, transition, link, assign, or
 edit a Jira issue, and it does not comment on, merge, or open a pull request.
 Proposed comments and close actions are Markdown files under `proposed/` in the
-output directory. Posting one is a separate, human-approved step: hand the
-approved proposal to `/rhdh-jira-update`, which applies `/mutation-gate` before
-any external write. If a caller asks this skill to apply or post its output, say
-that the skill cannot write and name that handoff instead.
+output directory. Each file leads with the exact comment that would be posted, so
+an approved proposal can travel to Jira unchanged. Posting one is a separate,
+human-approved step: hand the approved proposal to `/rhdh-jira-update`, which
+applies `/mutation-gate` before any external write. If a caller asks this skill to
+apply or post its output, say that the skill cannot write and name that handoff
+instead.
 
 ## Boundary with neighbouring skills
 
+- `/rhdh-jira-authoring` owns what counts as a duplicate and how Jira work is
+  phrased. This skill applies that definition to an aged-bug sample; it does not
+  restate it.
+- `/rhdh-jira-api` owns `acli` flags, JQL, field IDs, and the REST/GraphQL
+  fallbacks. Read it before writing a query or debugging an empty result.
+- `/rhdh-forge` owns GitHub and GitLab read mechanics. Use it for PR, commit, and
+  issue lookups; this skill decides what a merged change proves.
+- `/rhdh-context` owns repository and target-version context, including the
+  release under review.
+- `/rhdh-backport` owns backport mechanics and release-branch rules. This skill
+  only decides whether a fix is already released on the stream under review.
+- `/rhdh-jira-update` and `/rhdh-jira-link` own every Jira write: comment,
+  transition, close resolution, and issue or web link.
 - `/rhdh-jira-refine` judges whether an individual issue is ready to move
   forward. Load its readiness criteria when a still-valid bug needs a field or
   hierarchy assessment; this skill owns the aged-bug disposition, not general
   backlog hygiene.
-- `/rhdh-jira-api` owns `acli` flags, JQL, field IDs, and the REST/GraphQL
-  fallbacks. Read it before writing a query or debugging an empty result.
 - `/rhdh-plugin-bug-fix` owns reproduction and fixing for a still-valid bug.
   Hand the packet to it after the triage report, not inside this skill.
 - `/prose-editing` owns the final prose pass on any comment a human intends to
@@ -105,8 +118,12 @@ that the skill cannot write and name that handoff instead.
 - A missing affects or fix version is an evidence gap, not proof that the bug is
   old or fixed. Say so in the packet.
 - Every ticket gets a proposed comment, including `unclear` and `needs_repro`,
-  stating the disposition, the evidence, and one recommended next step. The
-  comment is always a local proposal; nothing here posts it.
+  stating the disposition, the evidence, and one recommended next step. Jira keys
+  and URLs in that comment are Markdown links. The comment is always a local
+  proposal; nothing here posts it.
+- The definition of the same bug belongs to `/rhdh-jira-authoring`; this skill
+  applies it and adds the close gates below. A candidate that would need a
+  different fix is related, not duplicate.
 - When the evidence is thin, the correct answer is `needs_repro` or `unclear`,
   not a guess. An abstention is a valid triage outcome.
 
@@ -135,10 +152,10 @@ walkthrough, fixture data, and expected numbers are in
 Complete when the run directory contains `report.md`, `packets.json`,
 `summary.csv`, `manifest.json`, and one `proposed/KEY.md` per sampled ticket;
 `report.md` opens with a bottom line and a per-ticket table a reviewer can act on;
-every packet names a disposition, an evidence count, a confidence basis, a
-recommended step, and a proposed comment; every close proposal has passed the
-policy gate and the verifier; every customer-linked ticket is absent from the
-sample or explicitly marked close-disabled; and the report states the
-decision-ready rate, the close-proposal count, and the evidence gaps. Say out
-loud that nothing was written to Jira, and name the approved handoff path for any
-proposal the human accepts.
+every `proposed/KEY.md` leads with the exact comment that would be posted, with
+Jira keys and evidence as links, followed by compact review details; every close
+proposal has passed the policy gate and the verifier; every customer-linked
+ticket is absent from the sample or explicitly marked close-disabled; and the
+report states the decision-ready rate, the close-proposal count, and the evidence
+gaps. Say out loud that nothing was written to Jira, and name the approved
+handoff path for any proposal the human accepts.

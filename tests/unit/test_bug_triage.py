@@ -431,6 +431,10 @@ class TestPolicy:
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
         assert packet.action == "comment_only"
         assert "Do not close" in packet.proposed_comment
+        assert (
+            "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)"
+            in packet.proposed_comment
+        )
 
     def test_invalid_evidence_is_dropped_and_fails_closed(self):
         document = json.loads(
@@ -475,8 +479,24 @@ class TestReport:
     def test_packet_marks_dry_run_and_never_posts(self):
         rendered = render_packet(self._packet(), by_key()["RHDHBUGS-1010"])
         assert "Dry run" in rendered
-        assert "Proposed Jira comment (not posted)" in rendered
+        assert "## Comment" in rendered
+        assert "## Review details" in rendered
+        assert "Closing as a duplicate of [RHDHBUGS-1009]" in rendered
+        assert "https://redhat.atlassian.net/browse/RHDHBUGS-1009" in rendered
         assert "propose_close_duplicate" in rendered
+        assert "```" not in rendered
+        assert "human gate" in rendered.lower()
+
+    def test_fixed_comment_links_the_pr_and_release(self):
+        assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
+        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
+        rendered = render_packet(packet, by_key()["RHDHBUGS-1006"])
+        assert "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)" in rendered
+        assert (
+            "[2.1.0 release](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0)"
+            in rendered
+        )
+        assert rendered.index("## Comment") < rendered.index("## Review details")
 
     def test_batch_report_has_method_and_controls(self):
         packet = self._packet()
@@ -552,6 +572,10 @@ class TestRun:
         for name in ("report.md", "packets.json", "summary.csv", "manifest.json"):
             assert (out / name).is_file()
         assert (out / "proposed" / "RHDHBUGS-1001.md").is_file()
+        proposal = (out / "proposed" / "RHDHBUGS-1006.md").read_text(encoding="utf-8")
+        assert "## Comment" in proposal
+        assert "[PR #999]" in proposal
+        assert proposal.index("## Comment") < proposal.index("## Review details")
         packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
         assert packets["dryRun"] is True
         close = [item for item in packets["packets"] if item["action"].startswith("propose_close")]

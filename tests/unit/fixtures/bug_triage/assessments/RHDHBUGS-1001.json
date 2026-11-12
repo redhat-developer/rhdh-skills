@@ -20,7 +20,10 @@
     "release": "2.1.0",
     "notes": "Install the chart into a clean namespace, then wait for the post-install hook."
   },
-  "review": {"independentPasses": 2, "agree": true},
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
   "notes": "Prefer fixing over closing. The bug is still reproducible.",
-  "comment": "Re-checked on 2.1.0: the Helm install still fails with release: not found in a clean OpenShift 4.14 namespace. Keeping this open and recommending the Install team reproduces it on the current chart."
+  "comment": "Re-checked on [2.1.0](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0): the Helm install still fails with `release: not found` in a clean OpenShift 4.14 namespace. Keeping this open and recommending the Install team reproduces it on the current chart."
 }

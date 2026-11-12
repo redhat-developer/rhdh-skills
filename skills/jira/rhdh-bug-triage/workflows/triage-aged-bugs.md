@@ -85,7 +85,9 @@ For each ticket the collector records:
 
 Use [../references/evidence-sources.md](../references/evidence-sources.md) to
 extend this with code inspection, release notes, and a current-release
-reproduction.
+reproduction. `/rhdh-forge` owns the PR and commit read mechanics, and
+`/rhdh-backport` owns backport rules; this skill only records what they return as
+evidence.
 
 ## 4. Adjudicate each ticket twice
 
@@ -111,12 +113,14 @@ Rules the adjudicator follows:
 
 1. Every evidence item names a type, a reference, why it matters, and a strength
    (`direct`, `strong`, or `supporting`). A claim without a reference is dropped.
-2. `duplicate` names the target key. The duplicate candidate list is a retrieval
-   aid; a reviewer still decides whether the failures are the same. The target is
-   the older report and may already be closed. Only an outward Jira Duplicate
-   link ("this ticket duplicates the target") supports a close; an inward "is
-   duplicated by" link means the other ticket is the duplicate. A candidate newer
-   than this ticket is a hint, never a close target.
+2. `duplicate` names the target key. `/rhdh-jira-authoring` owns what counts as
+   the same bug; this skill applies that definition and adds the close gates
+   below. The duplicate candidate list is a retrieval aid; a reviewer still
+   decides whether the failures are the same. The target is the older report and
+   may already be closed. Only an outward Jira Duplicate link ("this ticket
+   duplicates the target") supports a close; an inward "is duplicated by" link
+   means the other ticket is the duplicate. A candidate newer than this ticket is
+   a hint, never a close target.
 3. `already_fixed` names the PR or commit, the release that carries it, and that
    the fix is released. Merged but unreleased is a comment, not a close. The fix
    release must be no newer than the release under review; a fix that first ships
@@ -150,7 +154,7 @@ report/
   packets.json         structured packets used by evaluation and tooling
   summary.csv          one row per ticket for a spreadsheet
   manifest.json        inputs, counts, thresholds, and `writes: []`
-  proposed/KEY.md      one local packet per ticket, including its comment
+  proposed/KEY.md      the exact comment that would be posted, then review details
 ```
 
 The policy downgrades, never upgrades. A close that misses a gate becomes
@@ -158,6 +162,11 @@ The policy downgrades, never upgrades. A close that misses a gate becomes
 cannot close at all. The verifier re-checks each close and fails closed. Every
 ticket gets a proposed comment, including `unclear` and `needs_repro`, so no
 triaged ticket leaves without a written trace.
+
+Each `proposed/KEY.md` opens with the comment exactly as it would appear in Jira:
+terse, with Jira keys and the cited PRs, commits, or releases as Markdown links,
+and one recommendation. The review details below the rule justify that comment;
+they are not meant to be posted.
 
 ## 6. Review before anyone acts
 
@@ -167,8 +176,10 @@ Read `report.md` in this order:
    or are unclear.
 2. **What each ticket needs** — does each verdict match the packet you reviewed,
    and is "Do this next" the action you would take?
-3. **Close proposals to review** — open `proposed/KEY.md` for every close
-   proposal and every disagreement.
+3. **Close proposals to review** — open `proposed/KEY.md` and read the comment
+   first. Confirm that every Jira key and URL resolves, that the recommendation
+   matches the action, and that the review details cite the same evidence. Then
+   check the gaps for anything the comment overstates.
 4. **Method and limits** — confirm the corpus reached closed tickets, and that the
    report's caveats match what the evidence can support.
 
@@ -178,13 +189,14 @@ reason in the review notes; do not silently edit the disposition.
 ## 7. Hand off
 
 Present the report and the close proposals to the human who owns the queue. For
-each approved proposal, hand the exact comment and target to `/rhdh-jira-update`;
-that skill states the operation, preview, and failure behavior under
-`/mutation-gate` and executes only after approval. For a still-valid bug, hand
-the packet to `/rhdh-plugin-bug-fix`. For an unclear or needs-repro ticket, send
-the proposed comment through `/prose-editing` and stop. Any comment a human
-intends to post goes through `/prose-editing` once before approval; nothing is
-posted without an explicit gate.
+each approved proposal, hand the exact comment from `proposed/KEY.md` and its
+target to `/rhdh-jira-update`; that skill states the operation, preview, and
+failure behavior under `/mutation-gate` and executes only after approval. The
+review details are for the human, not for Jira. For a still-valid bug, hand the
+packet to `/rhdh-plugin-bug-fix`. For an unclear or needs-repro ticket, send the
+proposed comment through `/prose-editing` and stop. Any comment a human intends
+to post goes through `/prose-editing` once before approval; nothing is posted
+without an explicit gate.
 
 ## Optional: score the pass
 

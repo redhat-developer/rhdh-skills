@@ -26,7 +26,9 @@ an evidence gap; absence in an export is not absence in Jira.
 
 ## GitHub forge
 
-A merged pull request is the strongest affordable fix evidence.
+A merged pull request is the strongest affordable fix evidence. `/rhdh-forge` owns
+the read mechanics and payload construction; this section states what a merged
+change proves.
 
 - Search by the Jira key in PR titles and bodies across the RHDH repositories, and
   also by the Jira keys this ticket links to or mentions: a fix can land under
@@ -44,8 +46,11 @@ A merged pull request is the strongest affordable fix evidence.
 
 Use the release note, tag, or changelog that names the change. Record the exact
 release and whether it is supported. The current release for a pass is supplied
-with `--current-release` (for example `2.1.0`); a fix that exists only on an
-unsupported stream does not justify closing a report against a supported one.
+with `--current-release` (for example `2.1.0`); `/rhdh-context` resolves the
+target version, and `/rhdh-backport` owns backport mechanics and release-branch
+rules. This skill only decides whether a fix is on the stream under review, and a
+fix that exists only on an unsupported stream does not justify closing a report
+against a supported one.
 
 The fix release must also be no newer than the release under review. A fix that
 first ships in a later release cannot close the ticket yet: record it, keep the

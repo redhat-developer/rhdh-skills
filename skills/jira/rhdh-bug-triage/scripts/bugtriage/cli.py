@@ -152,7 +152,10 @@ def command_run(args: argparse.Namespace) -> int:
             f"cited evidence: {counts['withEvidence']}/{counts['packets']} · "
             f"customer-linked: {counts['customerLinked']}"
         )
-        print("Read report.md for the per-ticket table; details are in proposed/KEY.md.")
+        print(
+            "Read report.md for the per-ticket table; the exact comment for each "
+            "ticket is in proposed/KEY.md."
+        )
     return 0
 
 

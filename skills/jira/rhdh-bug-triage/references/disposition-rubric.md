@@ -14,19 +14,12 @@ what would be convenient.
 
 ## What counts as the same bug
 
-A duplicate is about the **failure**, not the wording. Two reports are the same
-bug when a reviewer would fix them with one change:
-
-- same observable symptom (the same error, wrong value, crash, or missing
-  behavior), even if the summaries use different words;
-- same trigger (the same action, configuration, install path, or upgrade step);
-- same code area (same component or plugin, and the same failing code path);
-- the target explains this report end to end. A shared stack trace with a
-  different root cause is related, not duplicate.
-
-A shared component, the same reporter, the same release, or a similar title is
-not enough on its own. When the two reports could close with two different
-fixes, they are related, not duplicates.
+`/rhdh-jira-authoring` owns duplicate classification: a candidate is a likely
+duplicate when it shares the intended outcome and affected area, related when the
+context overlaps but the outcome differs, and not a duplicate when only wording
+matches. Apply that to the failure, not the title: the same error, wrong value,
+crash, or missing behavior, reached by the same trigger in the same code area. A
+pair that would need two different fixes is related, not duplicate.
 
 ## Which candidates count
 
@@ -109,13 +102,25 @@ A close that misses any gate becomes `comment_only` when confidence is at least
 0.60, otherwise `needs_repro`. The verifier re-checks the packet and repeats the
 downgrade, so a bug in the policy cannot leak a close.
 
-## Every ticket gets a comment
+## Comment shape
 
 Every packet carries a proposed comment, including `unclear` and `needs_repro`.
-The comment states the disposition, the evidence behind it, and one recommended
-next step, so a human reviewer has something to read and post without
-reconstructing the reasoning. A comment is still a proposal: nothing here posts
-it, and posting stays a human-approved handoff.
+The comment is the payload a reviewer posts, so it has to stand on its own
+without the review details.
+
+- **Terse.** Two to four sentences. State the disposition, the one fact that
+  proves it, and one recommendation. Do not paste the packet.
+- **Linked.** Write a Jira key as `[KEY](https://redhat.atlassian.net/browse/KEY)`
+  and cite a PR, commit, or release as a Markdown link. A bare key or URL is
+  harder to verify.
+- **Grounded.** Link only evidence the packet cites. Do not claim a close the
+  policy did not propose; when the action is `comment_only`, say so.
+- **Actionable.** End with the next step: close as duplicate of the target, close
+  as fixed in the named release, keep open for the owning team, or ask for the
+  exact missing detail.
+
+A comment is still a proposal: nothing here posts it. `/prose-editing` owns the
+final prose pass before a human posts it, and `/rhdh-jira-update` owns the post.
 
 ## Confidence
 

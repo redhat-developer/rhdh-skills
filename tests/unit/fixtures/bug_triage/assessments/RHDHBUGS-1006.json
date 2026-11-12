@@ -21,7 +21,10 @@
     "release": "2.1.0",
     "released": true
   },
-  "review": {"independentPasses": 2, "agree": true},
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
   "notes": "The fix is on the current stream; no backport is needed for 1.10 because the report is not customer-linked.",
-  "comment": "The reported ENOTFOUND failure is fixed by https://github.com/redhat-developer/rhdh/pull/999 and released in 2.1.0. Closing as fixed; reopen with a current reproduction if it recurs on a supported release."
+  "comment": "The reported ENOTFOUND failure is fixed by [PR #999](https://github.com/redhat-developer/rhdh/pull/999) and included in the [2.1.0 release](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0). Closing as fixed; reopen with a current reproduction if it recurs on a supported release."
 }

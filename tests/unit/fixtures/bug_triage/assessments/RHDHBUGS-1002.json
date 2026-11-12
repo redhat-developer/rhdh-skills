@@ -10,7 +10,10 @@
       "strength": "direct"
     }
   ],
-  "review": {"independentPasses": 2, "agree": true},
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
   "notes": "Confirmed by reading both reports and the linked error text.",
-  "comment": "Closing as a duplicate of RHDHBUGS-1001. Both reports describe the same Helm release: not found failure during the OpenShift post-install hook, and the reproduction steps match."
+  "comment": "Closing as a duplicate of [RHDHBUGS-1001](https://redhat.atlassian.net/browse/RHDHBUGS-1001). Both reports describe the same `release: not found` failure during the OpenShift post-install hook, and the reproduction steps match."
 }

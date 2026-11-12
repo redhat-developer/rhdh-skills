@@ -10,6 +10,9 @@
       "strength": "direct"
     }
   ],
-  "review": {"independentPasses": 2, "agree": true},
-  "comment": "Closing as a duplicate of RHDHBUGS-1009. The focus-loss behavior and component match, and the existing Duplicate link points at the same defect."
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
+  "comment": "Closing as a duplicate of [RHDHBUGS-1009](https://redhat.atlassian.net/browse/RHDHBUGS-1009). The focus-loss behavior and component match, and the existing Duplicate link points at the same defect."
 }

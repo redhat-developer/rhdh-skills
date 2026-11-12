@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .model import Ticket, age_days, age_label
-from .policy import Packet
+from .policy import Packet, ref_link
 
 DRY_RUN_BANNER = (
     "**Dry run.** Nothing in this artifact was posted, transitioned, linked, or "
@@ -59,95 +59,80 @@ def render_packet(
     generated_at: Optional[str] = None,
 ) -> str:
     days = age_days(ticket.created, as_of)
+    context = " \u00b7 ".join(
+        [
+            packet.status or "unknown status",
+            age_label(days),
+            ticket.team or "team unset",
+            ", ".join(ticket.components) or "components unset",
+            ticket.assignee or "unassigned",
+            f"release {packet.current_release}",
+            kind + (f" ({control_label})" if control_label else ""),
+        ]
+    )
+
     lines = [
-        f"# {packet.key} — {packet.summary.strip() or '(no summary)'}",
+        f"# {packet.key} \u2014 {packet.summary.strip() or '(no summary)'}",
         "",
-        DRY_RUN_BANNER,
+        "> **Dry run.** This is the exact comment that would be posted to "
+        f"{ref_link(packet.key)}. Nothing was posted, transitioned, linked, or written "
+        "to Jira.",
         "",
-        "| Field | Value |",
-        "|---|---|",
-        f"| Status | {_cell(packet.status or 'unknown')} |",
-        f"| Kind | {_cell(kind + (f' ({control_label})' if control_label else ''))} |",
-        f"| Age | {_cell(age_label(days))} |",
-        f"| Team | {_cell(ticket.team or 'unset')} |",
-        f"| Components | {_cell(', '.join(ticket.components) or 'unset')} |",
-        f"| Assignee | {_cell(ticket.assignee or 'unassigned')} |",
-        f"| Priority | {_cell(ticket.priority or 'unset')} |",
-        f"| Current release | {_cell(packet.current_release)} |",
-        f"| Disposition | `{packet.disposition}` |",
-        f"| Confidence | {_confidence(packet.confidence)} |",
-        f"| Action | `{packet.action}` — {ACTION_LABELS.get(packet.action, packet.action)} |",
-        f"| Target | {_cell(packet.target or '—')} |",
-        "| Human gate | required before any write |",
-        "",
-        "## Recommendation",
-        "",
-        packet.recommended_step or "Review the evidence.",
-        "",
-        "## Confidence basis",
+        "## Comment",
         "",
     ]
-    if packet.confidence_basis:
-        lines.extend(f"- {item}" for item in packet.confidence_basis)
-    else:
-        lines.append("- no evidence")
+    comment = packet.proposed_comment.strip()
+    lines.append(comment if comment else "_No comment proposed._")
 
-    lines.extend(["", "## Evidence", ""])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## Review details",
+            "",
+            f"**Action:** `{packet.action}` — "
+            f"{ACTION_LABELS.get(packet.action, packet.action)} \u00b7 "
+            f"**Disposition:** `{packet.disposition}` \u00b7 "
+            f"**Confidence:** {_confidence(packet.confidence)} \u00b7 "
+            "**Human gate:** required",
+            "",
+            f"**Context.** {context}",
+            "",
+            f"**Why this comment.** {packet.recommended_step or 'Review the evidence.'}",
+        ]
+    )
+    if packet.target:
+        lines.extend(["", f"**Target.** {ref_link(packet.target)}"])
+    if packet.notes:
+        lines.extend(["", f"**Notes.** {' '.join(packet.notes.split())}"])
+    basis = "; ".join(packet.confidence_basis) or "no evidence basis recorded"
+    lines.extend(["", f"**Confidence basis.** {basis}"])
+
+    lines.extend(["", "**Evidence**", ""])
     if packet.evidence:
-        lines.extend(
-            [
-                "| Strength | Type | Reference | Why it matters |",
-                "|---|---|---|---|",
-            ]
-        )
         for item in packet.evidence:
-            lines.append(
-                f"| {_cell(item.strength)} | {_cell(item.type)} | {_cell(item.ref)} | "
-                f"{_cell(item.why)} |"
-            )
+            why = " ".join(item.why.split())
+            lines.append(f"- `{item.strength}` {ref_link(item.ref)} \u2014 {why}")
     else:
-        lines.append("No cited evidence was supplied.")
+        lines.append("- no cited evidence")
 
-    lines.extend(["", "## Duplicate candidates", ""])
     if packet.duplicate_candidates:
-        lines.extend(
-            [
-                "| Score | Ticket | Status | Reasons |",
-                "|---|---|---|---|",
-            ]
-        )
+        lines.extend(["", "**Duplicate candidates**", ""])
         for candidate in packet.duplicate_candidates:
-            lines.append(
-                f"| {candidate.score:.2f} | {candidate.key} | {_cell(candidate.status)} | "
-                f"{_cell('; '.join(candidate.reasons))} |"
-            )
-    else:
-        lines.append("No candidate above the retrieval floor.")
+            reasons = " ".join("; ".join(candidate.reasons).split())
+            lines.append(f"- {ref_link(candidate.key)} {candidate.score:.2f} \u2014 {reasons}")
 
-    lines.extend(["", "## Gaps and guardrails", ""])
     combined = list(packet.gaps)
     if packet.customer_signals:
         combined.append("Customer signals: " + ", ".join(packet.customer_signals))
     if packet.verification_errors:
         combined.extend(f"Verifier: {error}" for error in packet.verification_errors)
+    lines.extend(["", "**Gaps and guardrails**", ""])
     if combined:
         lines.extend(f"- {item}" for item in combined)
     else:
         lines.append("- none recorded")
-
-    if packet.proposed_comment.strip():
-        lines.extend(
-            [
-                "",
-                "## Proposed Jira comment (not posted)",
-                "",
-                "```text",
-                packet.proposed_comment.strip(),
-                "```",
-            ]
-        )
-    else:
-        lines.extend(["", "## Proposed Jira comment", "", "No comment proposed."])
 
     if generated_at:
         lines.extend(["", f"Generated {generated_at} by `rhdh-bug-triage`."])

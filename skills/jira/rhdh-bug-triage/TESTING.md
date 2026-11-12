@@ -67,7 +67,7 @@ Nothing was posted, transitioned, linked, or written to Jira.
   RHDHBUGS-1010  duplicate  Close as duplicate of RHDHBUGS-1009.
 
 Ready to review: 7/7 · cited evidence: 5/7 · customer-linked: 0
-Read report.md for the per-ticket table; details are in proposed/KEY.md.
+Read report.md for the per-ticket table; the exact comment for each ticket is in proposed/KEY.md.
 ```
 
 Two close proposals are expected:
@@ -86,7 +86,8 @@ it closes, the policy is broken.
 ```bash
 ls /tmp/bugtriage-run
 sed -n '1,60p' /tmp/bugtriage-run/report.md
-sed -n '1,80p' /tmp/bugtriage-run/proposed/RHDHBUGS-1002.md
+sed -n '1,30p' /tmp/bugtriage-run/proposed/RHDHBUGS-1006.md
+sed -n '1,45p' /tmp/bugtriage-run/proposed/RHDHBUGS-1002.md
 python3 -m json.tool /tmp/bugtriage-run/manifest.json | grep -E 'corpusHasClosed|writes'
 ```
 
@@ -95,11 +96,16 @@ Confirm:
 - `report.md` opens with a bottom line and a `What each ticket needs` table, not
   a metrics dump;
 - every artifact starts with the dry-run banner;
+- every `proposed/KEY.md` opens with `## Comment`, holding the exact text that
+  would be posted, and puts the review details after the rule;
+- the Jira keys, PRs, and releases cited in a comment are Markdown links;
 - `manifest.json` has `"writes": []` and `"corpusHasClosed": true` (the fixture
   includes the Done `RHDHBUGS-1012`);
 - no `proposed/` file says the comment was posted;
-- `RHDHBUGS-1002` reads `Possible duplicate` in the table and contains "not a
-  close proposal";
+- `RHDHBUGS-1002` reads `Possible duplicate` in the table, its comment links
+  `RHDHBUGS-1001`, and it contains "not a close proposal" without proposing a
+  close;
+- `RHDHBUGS-1006` names the PR and the release as links;
 - `RHDHBUGS-1007` and `RHDHBUGS-1011` have no assessment, show
   `Needs reproduction`, and still carry a proposed comment;
 - no customer-linked ticket appears in the sample.
@@ -225,6 +231,8 @@ Fill one file per ticket. The full schema is in
   with a target older than the ticket under review?
 - Does every ticket, including `unclear` and `needs_repro`, have a proposed
   comment with a disposition, evidence, and one next step?
+- Does every comment link its Jira keys and its PR, commit, or release evidence,
+  and stay terse enough to post as written?
 - Are the evidence gaps plausible for the export, or is the adapter dropping
   fields?
 - Did the verifier downgrade anything? Read the reason before overriding it.

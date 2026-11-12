@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
 from .duplicates import DUPLICATE_CLOSE_THRESHOLD, DuplicateCandidate
-from .model import DEFAULT_CURRENT_RELEASE, Ticket
+from .model import DEFAULT_CURRENT_RELEASE, JIRA_KEY_RE, Ticket
 
 POLICY_VERSION = 1
 
@@ -263,149 +263,174 @@ def _close_gate(
     return (not reasons, reasons)
 
 
+JIRA_BROWSE_URL = "https://redhat.atlassian.net/browse/"
+
+
+def ref_link(ref: str, label: str = "") -> str:
+    """Render a citation as a terse Markdown link when it points somewhere."""
+    value = (ref or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        return f"[{label or _link_label(value)}]({value})"
+    if JIRA_KEY_RE.fullmatch(value):
+        return f"[{value}]({JIRA_BROWSE_URL}{value})"
+    return f"`{value}`"
+
+
+def _link_label(url: str) -> str:
+    tail = url.rstrip("/").rsplit("/", 1)[-1]
+    if "/pull/" in url:
+        return f"PR #{tail}"
+    if "/merge_requests/" in url:
+        return f"MR !{tail}"
+    if "/releases/tag/" in url:
+        return url.split("/releases/tag/", 1)[1].strip("/") or "release"
+    if "/commit/" in url:
+        return f"commit {tail[:7]}"
+    return url
+
+
+def _first_why(assessment: Assessment, limit: int = 220) -> str:
+    for item in assessment.evidence:
+        why = " ".join(item.why.split())
+        if not why:
+            continue
+        if len(why) <= limit:
+            return why
+        return why[: limit - 1].rstrip() + "\u2026"
+    return ""
+
+
+def _evidence_line(assessment: Assessment, limit: int = 2) -> str:
+    links = []
+    seen = set()
+    for item in assessment.evidence:
+        link = ref_link(item.ref)
+        if not link or link in seen:
+            continue
+        seen.add(link)
+        links.append(link)
+        if len(links) >= limit:
+            break
+    return "; ".join(links)
+
+
 def _duplicate_comment(
     ticket: Ticket, assessment: Assessment, candidate: Optional[DuplicateCandidate]
 ) -> str:
-    lines = [f"Triaged as a duplicate of {assessment.duplicate_of}."]
-    if candidate:
-        lines.append(
-            f"The summaries and error signatures align at a lexical score of "
-            f"{candidate.score:.2f}; a reviewer confirmed the same failure."
-        )
-    lines.append("")
-    lines.append("Evidence:")
-    for item in assessment.evidence:
-        lines.append(f"- {item.why} ({item.ref})")
-    lines.append("")
-    lines.append(
-        "If this report describes a different failure, reopen with the distinct error "
-        "signature and the environment where it occurs."
-    )
+    target = ref_link(assessment.duplicate_of)
+    lines = [f"Closing as a duplicate of {target}."]
+    why = _first_why(assessment)
+    if why:
+        lines.extend(["", why])
+    lines.extend(["", "Reopen with a distinct error signature if this is a different failure."])
     return "\n".join(lines)
 
 
 def _duplicate_hint_comment(
     ticket: Ticket, assessment: Assessment, candidate: Optional[DuplicateCandidate]
 ) -> str:
-    lines = [
-        f"Possible duplicate of {assessment.duplicate_of}. This is a triage hint, not a "
-        "close proposal."
-    ]
+    target = ref_link(assessment.duplicate_of)
+    lines = [f"Possible duplicate of {target}. This is a triage hint, not a close proposal."]
+    why = _first_why(assessment)
+    if why:
+        lines.extend(["", why])
     if candidate:
-        lines.append(
-            f"Deterministic similarity is {candidate.score:.2f}, below the "
-            f"{DUPLICATE_CLOSE_THRESHOLD:.2f} close floor, so a reviewer must confirm "
-            "the match before any disposition."
+        lines.extend(
+            [
+                "",
+                f"Match score {candidate.score:.2f}, below the "
+                f"{DUPLICATE_CLOSE_THRESHOLD:.2f} close floor.",
+            ]
         )
-    else:
-        lines.append(
-            "The candidate is not in the retrieved set, so a reviewer must confirm the "
-            "match before any disposition."
-        )
-    lines.append("")
-    lines.append("Evidence:")
-    for item in assessment.evidence:
-        lines.append(f"- {item.why} ({item.ref})")
+    lines.extend(["", "Confirm the match before linking or closing."])
     return "\n".join(lines)
 
 
-def _fixed_comment(ticket: Ticket, assessment: Assessment) -> str:
-    artifact = assessment.fix_pr or assessment.fix_commit
-    lines = [f"The reported behavior is fixed by {artifact}."]
-    if assessment.fix_release:
-        lines.append(f"The fix is released in {assessment.fix_release}.")
-    lines.append("")
-    lines.append("Evidence:")
+def _release_link(assessment: Assessment) -> str:
+    """Prefer a linked release note; fall back to the release name."""
     for item in assessment.evidence:
-        lines.append(f"- {item.why} ({item.ref})")
-    lines.append("")
-    lines.append(
-        "Closing as fixed. If the behavior still occurs on a supported release, reopen "
-        "with the version and reproduction steps."
-    )
+        if item.type == "release_note" and item.ref:
+            return ref_link(item.ref, f"{assessment.fix_release or 'release'} note")
+    return assessment.fix_release
+
+
+def _fixed_comment(ticket: Ticket, assessment: Assessment) -> str:
+    artifact = ref_link(assessment.fix_pr or assessment.fix_commit)
+    release = _release_link(assessment)
+    opening = f"Fixed by {artifact}" if artifact else "The reported behavior is fixed"
+    if release:
+        opening += f" and included in {release}"
+    lines = [opening + ". Closing as fixed."]
+    lines.extend(["", "Reopen with a current-release reproduction if it recurs."])
     return "\n".join(lines)
 
 
 def _obsolete_comment(ticket: Ticket, assessment: Assessment) -> str:
-    lines = ["This behavior no longer applies to the current product."]
-    lines.append("")
-    lines.append("Evidence:")
-    for item in assessment.evidence:
-        lines.append(f"- {item.why} ({item.ref})")
-    lines.append("")
-    lines.append(
-        "Closing as no longer valid. Reopen with a current reproduction if the problem "
-        "returns on a supported release."
+    why = _first_why(assessment)
+    link = _evidence_line(assessment, limit=1)
+    opening = "This behavior no longer applies"
+    if why:
+        opening += f": {why}"
+    lines = [opening + "."]
+    if link:
+        lines.extend(["", f"Evidence: {link}."])
+    lines.extend(
+        ["", "Closing as no longer valid. Reopen with a current reproduction if it returns."]
     )
     return "\n".join(lines)
 
 
 def _obsolete_hint_comment(ticket: Ticket, assessment: Assessment) -> str:
+    why = _first_why(assessment)
+    link = _evidence_line(assessment, limit=1)
     lines = [
         "Possible no-longer-valid report. The evidence does not meet the close floor, "
         "so this is a comment only."
     ]
-    lines.append("")
-    lines.append("Evidence:")
-    for item in assessment.evidence:
-        lines.append(f"- {item.why} ({item.ref})")
-    lines.append("")
-    lines.append("A reviewer must confirm the removal or failed reproduction before closing.")
+    if why:
+        lines.extend(["", why])
+    if link:
+        lines.extend(["", f"Evidence: {link}."])
+    lines.extend(["", "Confirm the removal or failed reproduction before closing."])
     return "\n".join(lines)
 
 
 def _needs_repro_comment(ticket: Ticket, current_release: str) -> str:
     return (
-        "We are re-checking aged bug reports against the current release. This report "
-        "does not contain enough information to confirm whether it still occurs on "
-        f"{current_release}.\n\n"
-        "Please add:\n"
+        f"This report does not contain enough information to confirm whether it still "
+        f"occurs on {current_release}. Please add:\n"
         "- the exact RHDH version and installation method\n"
-        "- the environment (OpenShift/Kubernetes version, operator or Helm chart)\n"
-        "- minimal reproduction steps\n"
-        "- the full error message or stack trace\n\n"
-        "If the issue is no longer reproducible, say so and we will close it with that "
-        "evidence."
+        "- minimal reproduction steps and the full error text\n\n"
+        "Recommendation: keep this open until we can reproduce it or confirm it is gone."
     )
 
 
 def _unclear_comment(ticket: Ticket, assessment: Assessment, current_release: str) -> str:
     """A comment for an abstention, so every triaged ticket leaves a trace."""
-    lines = [
-        "We re-checked this aged report against "
-        f"{current_release} but could not reach a confident disposition."
-    ]
-    if assessment.notes:
-        lines.append(f"Reviewer note: {assessment.notes}.")
-    if assessment.evidence:
-        lines.append("")
-        lines.append("Evidence collected:")
-        for item in assessment.evidence:
-            lines.append(f"- {item.why} ({item.ref})")
-    lines.append("")
-    lines.append(
-        "Next step: keep this open and add a current-release reproduction, or record the "
-        "evidence that settles it. No action is proposed."
-    )
+    lines = [f"Re-checked against {current_release}; we could not reach a confident disposition."]
+    why = _first_why(assessment)
+    if why:
+        lines.extend(["", why])
+    link = _evidence_line(assessment, limit=2)
+    if link:
+        lines.extend(["", f"Evidence: {link}."])
+    lines.extend(["", "Recommendation: keep open and add a current-release reproduction."])
     return "\n".join(lines)
 
 
 def _still_valid_comment(ticket: Ticket, assessment: Assessment, current_release: str) -> str:
-    lines = [
-        f"Re-checked against {assessment.repro_release or current_release}: this is still "
-        "a real problem."
-    ]
-    if assessment.repro_result:
-        lines.append(f"Reproduction result: {assessment.repro_result}.")
-    lines.append("")
-    lines.append("Evidence:")
-    for item in assessment.evidence:
-        lines.append(f"- {item.why} ({item.ref})")
-    lines.append("")
-    lines.append(
-        "Recommendation: keep this open and assign it to the owning team. This triage "
-        "does not propose a close."
-    )
+    release = assessment.repro_release or current_release
+    why = _first_why(assessment)
+    if why:
+        lines = [f"Still reproducible on {release}: {why}"]
+    else:
+        lines = [f"Still reproducible on {release}."]
+    link = _evidence_line(assessment, limit=2)
+    if link:
+        lines.extend(["", f"Evidence: {link}."])
+    lines.extend(["", "Recommendation: keep this open for the owning team; no close is proposed."])
     return "\n".join(lines)
 
 
@@ -572,13 +597,10 @@ def evaluate(
             recommended = (
                 "Comment with the fix lead; keep open until the fix is on a supported release."
             )
+            release = _release_link(assessment)
             comment = (
-                f"Possible fix: {artifact or 'unknown artifact'}."
-                + (
-                    f" Reported fixed in {assessment.fix_release}."
-                    if assessment.fix_release
-                    else " No release is confirmed."
-                )
+                f"Possible fix: {ref_link(artifact) if artifact else 'unknown artifact'}."
+                + (f" Reported fixed in {release}." if release else " No release is confirmed.")
                 + "\n\nDo not close until the fix is verified on a supported release."
             )
 

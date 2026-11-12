@@ -9,7 +9,14 @@
       "strength": "direct"
     }
   ],
-  "repro": {"result": "fails", "release": "2.1.0", "notes": "Keyboard-only flow in the catalog table."},
-  "review": {"independentPasses": 2, "agree": true},
-  "comment": "Re-checked on 2.1.0: selecting a catalog filter still drops focus from the search input. Keeping this open for the Frontend Plugins & UI team."
+  "repro": {
+    "result": "fails",
+    "release": "2.1.0",
+    "notes": "Keyboard-only flow in the catalog table."
+  },
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
+  "comment": "Re-checked on [2.1.0](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0): selecting a catalog filter still drops focus from the search input. Keeping this open for the Frontend Plugins & UI team."
 }

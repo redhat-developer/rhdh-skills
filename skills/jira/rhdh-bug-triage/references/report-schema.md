@@ -42,7 +42,7 @@ One JSON file per ticket, named `KEY.json`. The minimal shape:
 | `review.independentPasses` | for a close | Integer; a close needs at least 2 |
 | `review.agree` | for a close | `true` only when the passes agree |
 | `notes` | optional | Reviewer context, including a recorded disagreement |
-| `comment` | optional | A ready-to-post comment; otherwise the policy drafts one |
+| `comment` | optional | A ready-to-post comment; otherwise the policy drafts one. Jira keys and URLs should be Markdown links |
 
 An unknown disposition, a missing key, or a malformed file aborts the run with a
 non-zero exit code. Invalid evidence items are dropped and counted as gaps; they
@@ -123,11 +123,13 @@ If the corpus had no closed tickets, the method section says duplicate search
 could not reach a closed canonical report and tells the reader to export a
 broader corpus and rerun.
 
-`proposed/KEY.md` is the long-form packet for one ticket. It repeats the dry-run
-banner, the ticket table, the recommendation, the confidence basis, the evidence
-table, the duplicate candidates, the gaps, and the proposed comment in a fenced
-block. The comment is never posted, and every ticket gets one, including
-`unclear` and `needs_repro`.
+`proposed/KEY.md` is the review artifact for one ticket. It leads with the exact
+comment that would be posted — terse, with Jira keys and evidence as links and one
+recommendation — then a horizontal rule and compact review details: action,
+disposition, confidence, context, target, confidence basis, evidence links,
+duplicate candidates, and gaps. The comment is never posted, and every ticket
+gets one, including `unclear` and `needs_repro`.
+[disposition-rubric.md](disposition-rubric.md) owns the comment shape.
 
 ## CSV
 
