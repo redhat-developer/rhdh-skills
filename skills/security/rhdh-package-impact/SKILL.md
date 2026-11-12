@@ -284,10 +284,12 @@ paths (e.g. other local workspace checkouts).
 ### 5a. Bump packages (`yarn up -R`)
 
 Run `bump-workspace-packages.js` to `yarn up -R` one or more packages (or all
-open-alert packages when none are named), then `yarn install` and `yarn dedupe`
-(rhdh-plugins lockfile hygiene so CI `yarn install --immutable` matches), and
-print a markdown table of version changes, classifications, open CVEs, and CVEs
-that look fixed.
+open-alert packages when none are named), then `yarn install`, and on plugins
+monorepos `yarn dedupe` (Fullsend / `--immutable` hygiene). **RHDH core skips
+dedupe by default** — CVE bumps must not silently collapse the root lockfile
+(seen on release-1.10 when `@react-stately/*` sections disappeared). Pass
+`--dedupe` only for intentional normalization. Print a markdown table of
+version changes, classifications, open CVEs, and CVEs that look fixed.
 
 **Known no-major-bump packages** (see `same-major-yarn-up.js`, currently
 `http-proxy-middleware`): bare `yarn up -R` can jump majors on wide
@@ -319,7 +321,8 @@ node "$SKILL_DIR/scripts/bump-workspace-packages.js" --repo-root /path/to/plugin
 | `--repo <owner/name>` | auto-detect | GitHub repo for Dependabot CVE metadata |
 | `--alerts-json <file>` | — | Use a runner snapshot; skip REST and token |
 | `--dry-run` | off | Report only; no `yarn up` / `install` / `dedupe` |
-| `--no-dedupe` | off | Skip `yarn dedupe` after `yarn install` |
+| `--dedupe` | off | Force `yarn dedupe` after install (overrides rhdh-core default skip) |
+| `--no-dedupe` | off | Skip `yarn dedupe` after install (overrides plugins default) |
 | `--no-ancestors` | off | Skip allowlisted leftover ancestor bumps (`qs`) |
 | `--json` | off | Machine-readable result on stdout |
 
@@ -331,10 +334,11 @@ Behavior:
    runs bare `yarn up -R <package>` (Yarn forbids ranges with `-R`). For **known
    no-major-bump packages** (currently `http-proxy-middleware`), if a descriptor
    major-jumped (e.g. `*` 3 → 4), re-pins it to the latest prior major via
-   `yarn set resolution`. Then `yarn install` (retried once on failure) and
-   `yarn dedupe` (unless `--no-dedupe` skips the dedupe step). This matches
-   rhdh-plugins `.fullsend/AGENTS.md`: install then dedupe so the lockfile is
-   clean for CI `--immutable`.
+   `yarn set resolution`. Then `yarn install` (retried once on failure). On
+   **plugins monorepos**, `yarn dedupe` follows (unless `--no-dedupe`) so CI
+   `--immutable` matches Fullsend hygiene. On **rhdh-core**, skip dedupe
+   unless `--dedupe` — the committed root lockfile is the contract; silent
+   dedupe has broken older release branches.
 4. If an **allowlisted leftover** (see `ancestor-allowlist.js`) still has a
    CVE-vulnerable resolved version after `yarn up -R` — a second lockfile line
    **or** a single parent-held unpatched pin — runs `bump-package-ancestors.js`
@@ -405,7 +409,8 @@ partial/unchanged; they are not a cue to walk parents.
 When the user asks (or the allowlist runs), `bump-package-ancestors.js` walks
 parents from `yarn why -R` and reverts lockfile collateral when parent bumps do
 not clear the CVE leftover. Successful ancestor bumps also run
-`yarn install` then `yarn dedupe`.
+`yarn install`, then `yarn dedupe` on plugins monorepos only (same layout
+default as the bump script; `--dedupe` / `--no-dedupe` override).
 
 ```bash
 node "$SKILL_DIR/scripts/bump-package-ancestors.js" --repo-root /path/to/plugins-repo <workspace> <package>
@@ -438,7 +443,8 @@ Task progress:
 - [ ] Report classifications to the user as a markdown table (required)
 - [ ] Call out RUNNER_ONLY / PLUGIN_DEV_ONLY / WORKSPACE_DEV_ONLY / PATCHED_EXCEPT_RUNNER / PROD_PATCHED_DEV_UNPATCHED vs PLUGIN_PROD remaining
 - [ ] If packages need bumping: `bump-workspace-packages.js <workspace> [package…]` for
-      bare `yarn up -R` + `yarn install` + `yarn dedupe` + CVE summary table.
+      bare `yarn up -R` + `yarn install` (+ `yarn dedupe` on plugins only) +
+      CVE summary table.
       Under Fullsend, pass `--alerts-json` with the staged snapshot (no PAT in sandbox).
       Known no-major-bump packages (`http-proxy-middleware`) are re-pinned if
       they jump majors. Allowlisted leftovers (see `ancestor-allowlist.js`) are
@@ -516,8 +522,9 @@ An assessment is complete when the workspace and repo root are named, every
 package from open Dependabot alerts (or the caller-supplied list) has a
 classification and patch-status verdict in a markdown table, and dismiss
 candidates are called out by policy without dismissing unless the user asked.
-A bump is complete when `yarn up -R` / install / dedupe results are reported
-per package (`status`, before/after versions, remaining CVE ranges), any
-PR body from `format-bump-pr.js` has been shown before open, and lockfile
-edits remain local until a gated push or PR. Under Fullsend, dismiss was not
-attempted; say so explicitly.
+A bump is complete when `yarn up -R` / install / (plugins-only) dedupe
+results are reported per package (`status`, before/after versions, remaining
+CVE ranges), any PR body from `format-bump-pr.js` has been shown before open,
+and lockfile edits remain local until a gated push or PR. On rhdh-core, say
+explicitly that dedupe was skipped unless `--dedupe` was passed. Under
+Fullsend, dismiss was not attempted; say so explicitly.

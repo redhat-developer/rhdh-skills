@@ -59,9 +59,18 @@ node "$SKILL_DIR/scripts/bump-workspace-packages.js" \
 
 PR title from `format-bump-pr.js`: `fix(deps): bump yarn.lock packages for Dependabot CVEs`.
 
-Same bump pipeline as plugins: `yarn up -R`, `yarn install`, `yarn dedupe`,
-allowlisted ancestor bumps, react-router pair sync. Never `yarn up`
-`@backstage/*` or `@backstage-community/*`.
+Bump pipeline on core: `yarn up -R`, then `yarn install` only. **Do not run
+`yarn dedupe` by default** — older release branches (for example 1.10) have
+lost large `@react-aria/*` / `@react-stately/*` lockfile sections when CVE
+bumps deduped as a silent side effect, breaking `@backstage/ui` resolves.
+Pass `--dedupe` only for intentional Backstage / lockfile normalization
+(same role as `scripts/update-backstage.mjs`). Plugins monorepos still
+dedupe by default. Allowlisted ancestor bumps and react-router pair sync
+still apply. Never `yarn up` `@backstage/*` or `@backstage-community/*`.
+
+Sandbox tip: set `YARN_ENABLE_GLOBAL_CACHE=false`,
+`YARN_CACHE_FOLDER=$PWD/.yarn/cache`, and `YARN_ENABLE_MIRROR=false` so Yarn
+does not write `~/.yarn/berry/cache` during bumps.
 
 ## Dismiss
 

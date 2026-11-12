@@ -26,7 +26,11 @@ import { isSkippedBumpPackage } from './bump-skip.js';
 import { isNoMajorBumpPackage, pinMajorJumps } from './same-major-yarn-up.js';
 import { leftoverVersions, cveLeftoverCleared } from './cve-version-status.js';
 import { loadDependabotAlerts } from './dependabot-alerts.js';
-import { filterAlertsForLayout, resolveRepoLayout } from './repo-layout.js';
+import {
+  filterAlertsForLayout,
+  resolveDedupe,
+  resolveRepoLayout,
+} from './repo-layout.js';
 
 const execFile = promisify(execFileCb);
 const NPM_PKG_RE = /((?:@[^/\s]+\/)?[^\s@[]+)@npm:/;
@@ -60,6 +64,8 @@ Options:
   --max-parents <number> Max parent packages to try per depth tier (default: 8)
   --max-depth <number>   Max ancestor depth from target (default: 2)
   --fast                 Shorthand for --max-depth 1 --max-parents 4
+  --dedupe               Force yarn dedupe after install (overrides core default)
+  --no-dedupe            Skip yarn dedupe after install (overrides plugins default)
   --json                 Print machine-readable result
   --dry-run              Analyze and print planned updates, but do not run yarn up
   -h, --help             Show this help
@@ -87,6 +93,10 @@ function parseArgs(argv) {
       flags.add('json');
     } else if (arg === '--dry-run') {
       flags.add('dry-run');
+    } else if (arg === '--dedupe') {
+      flags.add('dedupe');
+    } else if (arg === '--no-dedupe') {
+      flags.add('no-dedupe');
     } else if (arg === '--fast') {
       flags.add('fast');
     } else if (arg === '-h' || arg === '--help') {
@@ -447,7 +457,7 @@ async function updatePackage(repoRoot, workspaceDir, packageName, semver) {
   });
 }
 
-async function refreshLockfileResilient(repoRoot, workspaceDir) {
+async function refreshLockfileResilient(repoRoot, workspaceDir, { dedupe = true } = {}) {
   const install = await ensureWorkspaceInstall(repoRoot, workspaceDir);
   if (!install.ok) {
     return {
@@ -455,17 +465,34 @@ async function refreshLockfileResilient(repoRoot, workspaceDir) {
       installError: install.error,
       installRetried: install.retried,
       dedupeError: null,
+      deduped: false,
+    };
+  }
+  if (!dedupe) {
+    return {
+      ok: true,
+      installError: null,
+      installRetried: install.retried,
+      dedupeError: null,
+      deduped: false,
     };
   }
   try {
     await runYarn(repoRoot, workspaceDir, ['dedupe']);
-    return { ok: true, installError: null, installRetried: install.retried, dedupeError: null };
+    return {
+      ok: true,
+      installError: null,
+      installRetried: install.retried,
+      dedupeError: null,
+      deduped: true,
+    };
   } catch (error) {
     return {
       ok: false,
       installError: null,
       installRetried: install.retried,
       dedupeError: yarnFailureMessage(error),
+      deduped: false,
     };
   }
 }
@@ -620,6 +647,10 @@ async function main() {
   const repoRoot = layout.repoRoot;
   const workspaceDir = layout.workspaceDir;
   const lockPath = layout.lockPath;
+  const doDedupe = resolveDedupe(layout.kind, {
+    wantDedupe: flags.has('dedupe'),
+    noDedupe: flags.has('no-dedupe'),
+  });
 
   if (isSkippedBumpPackage(packageName)) {
     const result = {
@@ -875,7 +906,9 @@ async function main() {
     isComplete(versionsCurrent) &&
     attempts.some(a => !a.skipped && a.type !== 'revert' && !a.error)
   ) {
-    const refresh = await refreshLockfileResilient(repoRoot, workspaceDir);
+    const refresh = await refreshLockfileResilient(repoRoot, workspaceDir, {
+      dedupe: doDedupe,
+    });
     refreshInstallError = refresh.installError;
     refreshDedupeError = refresh.dedupeError;
     refreshInstallRetried = refresh.installRetried;
@@ -884,7 +917,11 @@ async function main() {
       error: refresh.installError,
       retried: refresh.installRetried,
     });
-    attempts.push({ type: 'dedupe', error: refresh.dedupeError });
+    if (doDedupe) {
+      attempts.push({ type: 'dedupe', error: refresh.dedupeError });
+    } else {
+      attempts.push({ type: 'dedupe', skipped: true, reason: 'layout-default' });
+    }
     ({
       why: currentWhy,
       versions: versionsCurrent,
@@ -897,8 +934,10 @@ async function main() {
     workspace,
     package: packageName,
     repoRoot,
+    layout: layout.kind,
     dryRun,
     fast,
+    dedupeRequested: doDedupe,
     versionsBefore,
     versionsAfter: versionsCurrent,
     leftoverAfter: leftoverVersions(semver, alerts, versionsCurrent),

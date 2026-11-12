@@ -26,9 +26,29 @@ import {
   isCoreWorkspaceToken,
   matchAlertManifest,
   parseWorkspaceInput,
+  resolveDedupe,
   splitWorkspaceArgs,
 } from './repo-layout.js';
 import { identifyWhyRoot } from './yarn-why-roots.js';
+
+describe('resolveDedupe', () => {
+  it('defaults to dedupe on plugins monorepos and skip on rhdh-core', () => {
+    assert.equal(resolveDedupe(LAYOUT_PLUGINS), true);
+    assert.equal(resolveDedupe(LAYOUT_RHDH_CORE), false);
+  });
+
+  it('lets explicit --dedupe / --no-dedupe override the layout default', () => {
+    assert.equal(resolveDedupe(LAYOUT_RHDH_CORE, { wantDedupe: true }), true);
+    assert.equal(resolveDedupe(LAYOUT_PLUGINS, { noDedupe: true }), false);
+  });
+
+  it('rejects both --dedupe and --no-dedupe', () => {
+    assert.throws(
+      () => resolveDedupe(LAYOUT_PLUGINS, { wantDedupe: true, noDedupe: true }),
+      /either --dedupe or --no-dedupe/,
+    );
+  });
+});
 
 describe('inferKindFromRepo', () => {
   it('maps rhdh to core and plugin repos to plugins-monorepo', () => {

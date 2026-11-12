@@ -25,6 +25,32 @@ export const LAYOUT_RHDH_CORE = 'rhdh-core';
 const CORE_PRODUCT_ALIASES = new Set(['', '.', 'rhdh', 'root']);
 const PLUGIN_RUNNER_PACKAGES = new Set(['app', 'app-legacy', 'backend']);
 
+/**
+ * Whether CVE bump scripts should run `yarn dedupe` by default for a layout.
+ * Plugins monorepos need install→dedupe for Fullsend / --immutable hygiene.
+ * RHDH core must not dedupe as a silent side effect of yarn up -R (older
+ * release branches can lose large @react-aria / @react-stately lockfile
+ * sections). Explicit --dedupe / --no-dedupe always win.
+ *
+ * @param {string} layoutKind
+ * @param {{ wantDedupe?: boolean, noDedupe?: boolean }} [flags]
+ * @returns {boolean}
+ */
+export function resolveDedupe(layoutKind, flags = {}) {
+  const wantDedupe = Boolean(flags.wantDedupe);
+  const noDedupe = Boolean(flags.noDedupe);
+  if (wantDedupe && noDedupe) {
+    throw new Error('Use either --dedupe or --no-dedupe, not both');
+  }
+  if (noDedupe) {
+    return false;
+  }
+  if (wantDedupe) {
+    return true;
+  }
+  return layoutKind !== LAYOUT_RHDH_CORE;
+}
+
 function isDir(path) {
   try {
     return statSync(path).isDirectory();

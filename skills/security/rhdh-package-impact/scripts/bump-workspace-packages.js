@@ -42,6 +42,7 @@ import {
 import { isNoMajorBumpPackage, pinMajorJumps } from './same-major-yarn-up.js';
 import {
   LAYOUT_RHDH_CORE,
+  resolveDedupe,
   filterAlertsForLayout,
   findCheckout,
   inferKindFromRepo,
@@ -65,8 +66,10 @@ function usage() {
 Runs yarn up -R for one or more packages in a workspace (bare package name;
 Yarn forbids ranges with -R). Known no-major-bump packages (currently
 http-proxy-middleware) are re-pinned if a descriptor major-jumped. Then
-yarn install and yarn dedupe, and prints a table summarizing version
-changes and which open CVEs look fixed.
+yarn install, and (plugins monorepos only by default) yarn dedupe, then
+prints a table summarizing version changes and which open CVEs look fixed.
+RHDH core skips dedupe by default — pass --dedupe only for intentional
+lockfile normalization.
 
 <workspace> is a plugins-monorepo name (homepage) or rhdh-core token
 (rhdh / .). On rhdh-core you may omit the token and pass package names
@@ -84,7 +87,8 @@ Options:
   --alerts-json <file> Snapshot of GitHub Dependabot alert objects (no token)
   --json               Machine-readable JSON on stdout
   --dry-run            Report only; do not run yarn up, install, or dedupe
-  --no-dedupe          Skip yarn dedupe after yarn install
+  --dedupe             Force yarn dedupe after yarn install (overrides core default)
+  --no-dedupe          Skip yarn dedupe after yarn install (overrides plugins default)
   --no-ancestors       Skip allowlisted leftover ancestor bumps
   -h, --help           Show this help
 
@@ -110,6 +114,8 @@ function parseArgs(argv) {
       flags.add('json');
     } else if (arg === '--dry-run') {
       flags.add('dry-run');
+    } else if (arg === '--dedupe') {
+      flags.add('dedupe');
     } else if (arg === '--no-dedupe') {
       flags.add('no-dedupe');
     } else if (arg === '--no-ancestors') {
@@ -311,7 +317,14 @@ async function alignReactRouterPair(
   };
 }
 
-async function runAncestorBump(repoRoot, workspace, packageName, repo, alertsJson) {
+async function runAncestorBump(
+  repoRoot,
+  workspace,
+  packageName,
+  repo,
+  alertsJson,
+  { dedupe } = {},
+) {
   const script = resolvePath(__dirname, 'bump-package-ancestors.js');
   const args = [script, '--repo-root', repoRoot];
   if (repo) {
@@ -319,6 +332,11 @@ async function runAncestorBump(repoRoot, workspace, packageName, repo, alertsJso
   }
   if (alertsJson) {
     args.push('--alerts-json', alertsJson);
+  }
+  if (dedupe === false) {
+    args.push('--no-dedupe');
+  } else if (dedupe === true) {
+    args.push('--dedupe');
   }
   args.push(workspace, packageName, '--json');
   try {
@@ -558,6 +576,10 @@ async function main() {
   const workspaceDir = layout.workspaceDir;
   const lockPath = layout.lockPath;
   const requestedPackages = requestedFromArgs;
+  const doDedupe = resolveDedupe(layout.kind, {
+    wantDedupe: flags.has('dedupe'),
+    noDedupe: flags.has('no-dedupe'),
+  });
 
   const {
     alerts: allAlerts,
@@ -663,7 +685,7 @@ async function main() {
       if (!installResult.ok) {
         yarnErrors.__install = installResult.error;
       }
-      if (!flags.has('no-dedupe') && !yarnErrors.__install) {
+      if (doDedupe && !yarnErrors.__install) {
         try {
           await runYarn(repoRoot, workspaceDir, ['dedupe']);
         } catch (error) {
@@ -709,6 +731,7 @@ async function main() {
           packageName,
           repoFull,
           options.alertsJson,
+          { dedupe: doDedupe },
         );
         lockAfterUp = await readFile(lockPath, 'utf8');
       } catch (error) {
@@ -739,10 +762,7 @@ async function main() {
         lockPath,
         semver,
       );
-      if (
-        reactRouterPairAlign?.aligned &&
-        !flags.has('no-dedupe')
-      ) {
+      if (reactRouterPairAlign?.aligned && doDedupe) {
         try {
           await runYarn(repoRoot, workspaceDir, ['dedupe']);
         } catch (error) {
@@ -762,11 +782,7 @@ async function main() {
 
   const attemptedBump =
     !dryRun && packageNames.some(name => !skippedPackages[name]);
-  if (
-    attemptedBump &&
-    !flags.has('no-dedupe') &&
-    !yarnErrors.__install
-  ) {
+  if (attemptedBump && doDedupe && !yarnErrors.__install) {
     try {
       await runYarn(repoRoot, workspaceDir, ['dedupe']);
     } catch (error) {
@@ -834,10 +850,11 @@ async function main() {
       !yarnErrors.__install,
     installError: yarnErrors.__install || null,
     installRetried,
+    dedupeRequested: doDedupe,
     deduped:
       !dryRun &&
       packageNames.some(name => !skippedPackages[name]) &&
-      !flags.has('no-dedupe') &&
+      doDedupe &&
       !yarnErrors.__install &&
       !yarnErrors.__dedupe &&
       !yarnErrors.__finalDedupe,

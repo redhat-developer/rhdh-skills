@@ -270,8 +270,13 @@ async function main() {
 
   console.log('## Summary');
   console.log('');
+  const skipDedupe =
+    output.dedupeRequested === false ||
+    (output.dedupeRequested == null && output.layout === 'rhdh-core');
   console.log(
-    `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` and \`yarn dedupe\`.`,
+    skipDedupe
+      ? `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` (no \`yarn dedupe\`; rhdh-core default).`
+      : `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` and \`yarn dedupe\`.`,
   );
   const pairAdded = Array.isArray(output.reactRouterPairAdded)
     ? output.reactRouterPairAdded
