@@ -22,6 +22,10 @@ DEFAULT_REPOS = (
 
 PR_FIELDS = "number,title,state,mergedAt,mergeCommit,baseRefName,url,closedAt"
 
+# Searching every key a bug mentions would turn one collection pass into many
+# forge calls; the first few cover the linked-ticket case in practice.
+MAX_LINKED_KEYS = 5
+
 
 class ForgeAdapterError(RuntimeError):
     """A read adapter failed; the caller records it as missing evidence."""
@@ -174,15 +178,25 @@ def collect_for_ticket(
     use_gh: bool,
 ) -> Dict[str, Any]:
     pulls = [lookup_pr(url, cache, use_gh) for url in ticket.pr_urls]
-    searched = search_prs_for_key(ticket.key, cache, use_gh)
-    known = {pull.get("url") for pull in pulls}
-    for pull in searched:
-        if pull.get("url") not in known:
-            pulls.append(pull)
-            known.add(pull.get("url"))
     jira_keys = sorted(
         {match for match in JIRA_KEY_RE.findall(ticket.search_text) if match != ticket.key}
+        | {link.key for link in ticket.links if link.key and link.key != ticket.key}
     )
+    known = {pull.get("url") for pull in pulls}
+
+    def add(found: List[Dict[str, Any]], via: str) -> None:
+        for pull in found:
+            url = pull.get("url")
+            if not url or url in known:
+                continue
+            known.add(url)
+            pulls.append({**pull, "foundVia": via})
+
+    add(search_prs_for_key(ticket.key, cache, use_gh), ticket.key)
+    # A fix can land under another bug's key while this ticket stays open. The
+    # linked keys are where that shows up, so search them too.
+    for linked_key in jira_keys[:MAX_LINKED_KEYS]:
+        add(search_prs_for_key(linked_key, cache, use_gh), linked_key)
     return {
         "key": ticket.key,
         "summary": ticket.summary,

@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, List, Sequence, Set
 
-from .model import Ticket
+from .model import Ticket, parse_datetime
 
 DUPLICATE_CLOSE_THRESHOLD = 0.85
 DUPLICATE_HINT_THRESHOLD = 0.70
@@ -250,6 +250,15 @@ def _same_team(left: Ticket, right: Ticket) -> bool:
     return bool(left.team and right.team and left.team == right.team)
 
 
+def _created_after(candidate: Ticket, query: Ticket) -> bool:
+    """True only when both dates parse and the candidate is strictly later."""
+    candidate_time = parse_datetime(candidate.created)
+    query_time = parse_datetime(query.created)
+    if candidate_time is None or query_time is None:
+        return False
+    return candidate_time > query_time
+
+
 @dataclass
 class DuplicateCandidate:
     key: str
@@ -325,10 +334,6 @@ def score_candidate(query: Ticket, candidate: Ticket) -> DuplicateCandidate:
         score += 0.10
         reasons.append("outward Duplicate link")
     elif relationship == "reverse-duplicate":
-        # The candidate is the duplicate and the query is the canonical report.
-        # Keep the pair visible for a human, but never let this path reach the
-        # close floor: closing the canonical ticket would be backwards.
-        score = min(score, DUPLICATE_CLOSE_THRESHOLD - 0.01)
         reasons.append("candidate duplicates this ticket")
     elif relationship == "related":
         score += 0.02
@@ -341,6 +346,19 @@ def score_candidate(query: Ticket, candidate: Ticket) -> DuplicateCandidate:
         reasons.append("same team")
     if not reasons:
         reasons.append("lexical similarity only")
+
+    # Caps are applied last, after every bonus.
+    # 1. The candidate is the duplicate and the query is the canonical report.
+    #    Closing the canonical ticket would be backwards, so this pair must
+    #    never reach the close floor.
+    # 2. Duplicate targets are the older reports. A newer candidate is still a
+    #    useful hint, but closing an aged ticket as a duplicate of a younger one
+    #    usually closes the canonical report; keep that pair under the floor.
+    if relationship == "reverse-duplicate":
+        score = min(score, DUPLICATE_CLOSE_THRESHOLD - 0.01)
+    if relationship != "reverse-duplicate" and _created_after(candidate, query):
+        score = min(score, DUPLICATE_CLOSE_THRESHOLD - 0.01)
+        reasons.append("candidate is newer than this ticket")
 
     return DuplicateCandidate(
         key=candidate.key,

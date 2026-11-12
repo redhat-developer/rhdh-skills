@@ -135,13 +135,24 @@ def command_run(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(summary, indent=2))
     else:
-        print(f"DRY RUN complete: {counts['packets']} packet(s) in {result.output_dir}")
-        print(f"  with cited evidence: {counts['withEvidence']}")
-        print(f"  local close proposals: {counts['closeProposals']}")
-        print(f"  customer-linked: {counts['customerLinked']}")
-        print(f"  dispositions: {summary['dispositions']}")
-        print(f"  actions: {summary['actions']}")
+        actionable = sum(1 for packet in result.packets if packet.action != "unclear")
+        close = [packet for packet in result.packets if packet.action.startswith("propose_close")]
+        print(f"DRY RUN complete: {counts['packets']} ticket(s) in {result.output_dir}")
         print("Nothing was posted, transitioned, linked, or written to Jira.")
+        print("")
+        if close:
+            print(f"{len(close)} close proposal(s) need your review:")
+            for packet in close:
+                print(f"  {packet.key}  {packet.disposition}  {packet.recommended_step}")
+        else:
+            print("No close proposals. Nothing is waiting for a close decision.")
+        print("")
+        print(
+            f"Ready to review: {actionable}/{counts['packets']} · "
+            f"cited evidence: {counts['withEvidence']}/{counts['packets']} · "
+            f"customer-linked: {counts['customerLinked']}"
+        )
+        print("Read report.md for the per-ticket table; details are in proposed/KEY.md.")
     return 0
 
 

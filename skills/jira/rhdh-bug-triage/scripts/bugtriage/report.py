@@ -154,6 +154,44 @@ def render_packet(
     return "\n".join(lines) + "\n"
 
 
+DISPOSITION_LABELS = {
+    "duplicate": "Duplicate",
+    "already_fixed": "Already fixed",
+    "still_valid": "Still valid",
+    "no_longer_valid": "No longer valid",
+    "needs_repro": "Needs reproduction",
+    "unclear": "Unclear",
+}
+
+
+def _short(value: Any, limit: int = 160) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "\u2026"
+
+
+def _verdict(packet: Packet) -> str:
+    label = DISPOSITION_LABELS.get(packet.disposition, packet.disposition)
+    closing = packet.action.startswith("propose_close")
+    if packet.disposition == "duplicate":
+        base = f"Duplicate of {packet.target}" if packet.target else "Duplicate"
+        return base if closing else f"Possible {base[0].lower() + base[1:]}"
+    if packet.disposition == "unclear" and packet.action == "needs_repro":
+        return "Needs reproduction"
+    if not closing and packet.disposition in ("already_fixed", "no_longer_valid"):
+        return f"Possibly {label[0].lower() + label[1:]}"
+    return label
+
+
+def _why(packet: Packet) -> str:
+    if packet.evidence:
+        return packet.evidence[0].why
+    if packet.disposition == "unclear":
+        return "No assessment reached a confident disposition."
+    return "No cited evidence yet."
+
+
 def render_report(
     packets: List[Packet],
     tickets: Dict[str, Ticket],
@@ -168,145 +206,137 @@ def render_report(
     excluded: List[Dict[str, str]],
     selection: Dict[str, Dict[str, Any]],
     thresholds: Dict[str, float],
+    corpus_has_closed: bool = True,
 ) -> str:
     total = len(packets)
     decision_ready = sum(1 for packet in packets if packet.action != "unclear")
-    classified = sum(
-        1 for packet in packets if packet.disposition not in ("unclear", "needs_repro")
-    )
-    close_proposals = sum(1 for packet in packets if packet.action.startswith("propose_close"))
-    customer = sum(1 for packet in packets if packet.customer_signals)
     with_evidence = sum(1 for packet in packets if packet.evidence)
     gaps = sum(len(packet.gaps) for packet in packets)
+    close_proposals = [p for p in packets if p.action.startswith("propose_close")]
+    needs_repro = sum(1 for p in packets if p.action == "needs_repro")
+    keep_open = sum(1 for p in packets if p.action == "keep_open")
+    comment_only = sum(1 for p in packets if p.action == "comment_only")
+    no_action = sum(1 for p in packets if p.action == "unclear")
+    customer = sum(1 for p in packets if p.customer_signals)
 
-    disposition_counts: Dict[str, int] = {}
-    action_counts: Dict[str, int] = {}
-    for packet in packets:
-        disposition_counts[packet.disposition] = disposition_counts.get(packet.disposition, 0) + 1
-        action_counts[packet.action] = action_counts.get(packet.action, 0) + 1
+    outcome = []
+    if close_proposals:
+        outcome.append(
+            f"{len(close_proposals)} can be closed once you approve the proposed comment"
+        )
+    else:
+        outcome.append("no ticket passed the close gates")
+    if keep_open:
+        outcome.append(f"{keep_open} should stay open")
+    if needs_repro:
+        outcome.append(f"{needs_repro} need{'s' if needs_repro == 1 else ''} a reproduction")
+    if comment_only:
+        verb = "warrants" if comment_only == 1 else "warrant"
+        outcome.append(f"{comment_only} {verb} a comment only")
+    if no_action:
+        outcome.append(f"{no_action} {'is' if no_action == 1 else 'are'} unclear")
+    bottom_line = "; ".join(outcome) + "."
 
     lines = [
-        "# RHDH aged-bug triage report",
+        f"# RHDH aged-bug triage \u2014 {as_of.date().isoformat()}",
         "",
         DRY_RUN_BANNER,
         "",
-        f"Generated {generated_at} · as of {as_of.date().isoformat()} · "
-        f"current release **{current_release}**.",
+        f"**Bottom line.** {bottom_line[0].upper() + bottom_line[1:]}",
         "",
-        "## Run at a glance",
+        f"Scope: **{sample_size}** aged \u00b7 **Controls:** {control_count} \u00b7 "
+        f"**Corpus:** {corpus_size} \u00b7 **Release:** {current_release} \u00b7 "
+        f"**Decision-ready:** {decision_ready}/{total} \u00b7 "
+        f"**Cited evidence:** {with_evidence}/{total} \u00b7 **Gaps:** {gaps}",
         "",
-        "| Metric | Value |",
-        "|---|---|",
-        f"| Tickets in report | {total} |",
-        f"| Aged sample | {sample_size} |",
-        f"| Controls | {control_count} |",
-        f"| Corpus available for duplicate retrieval | {corpus_size} |",
-        f"| Decision-ready | {decision_ready}/{total} ({_pct(decision_ready, total)}) |",
-        f"| Classified disposition | {classified}/{total} ({_pct(classified, total)}) |",
-        f"| Packets with cited evidence | {with_evidence}/{total} ({_pct(with_evidence, total)}) |",
-        f"| Close proposals (local only) | {close_proposals} |",
-        f"| Customer-linked tickets in report | {customer} |",
-        f"| Recorded evidence gaps | {gaps} |",
+        "## What each ticket needs",
         "",
-        "## Dispositions",
-        "",
-        "| Disposition | Count |",
-        "|---|---|",
+        "| Ticket | Verdict | Why | Do this next |",
+        "|---|---|---|---|",
     ]
-    for name in sorted(disposition_counts):
-        lines.append(f"| `{name}` | {disposition_counts[name]} |")
-    lines.extend(["", "## Actions", "", "| Action | Count |", "|---|---|"])
-    for name in sorted(action_counts):
-        lines.append(f"| `{name}` | {action_counts[name]} |")
-
-    lines.extend(
-        [
-            "",
-            "## Sample",
-            "",
-            "| Key | Kind | Age | Team | Disposition | Conf | Action | Evidence |",
-            "|---|---|---|---|---|---|---|---|",
-        ]
-    )
     for packet in packets:
-        selection_entry = selection.get(packet.key, {})
-        ticket = tickets[packet.key]
-        kind = str(selection_entry.get("kind", "aged"))
-        if selection_entry.get("controlLabel"):
-            kind += f" ({selection_entry['controlLabel']})"
-        evidence_line = packet.evidence[0].why if packet.evidence else "—"
+        why = _why(packet)
+        next_step = packet.recommended_step or "Review the evidence."
+        if packet.action.startswith("propose_close"):
+            next_step = f"{next_step} Review `proposed/{packet.key}.md` first."
         lines.append(
-            f"| {packet.key} | {_cell(kind)} | {age_label(age_days(ticket.created, as_of))} | "
-            f"{_cell(selection_entry.get('stratum', ticket.team or 'unset'))} | "
-            f"`{packet.disposition}` | {_confidence(packet.confidence)} | "
-            f"`{packet.action}` | {_cell(evidence_line)} |"
+            f"| {packet.key} | {_cell(_verdict(packet))} | {_cell(_short(why))} | "
+            f"{_cell(next_step)} |"
         )
 
-    lines.extend(["", "## Method", ""])
+    lines.extend(["", "## Close proposals to review", ""])
+    if close_proposals:
+        for packet in close_proposals:
+            lines.append(
+                f"- **{packet.key} \u2014 {_verdict(packet)}.** {packet.recommended_step} "
+                f"Comment: `proposed/{packet.key}.md`."
+            )
+    else:
+        lines.append("No ticket passed the close gates. Nothing is waiting for a close decision.")
+
+    if customer:
+        lines.extend(
+            [
+                "",
+                "## Customer-linked",
+                "",
+                f"{customer} ticket(s) carry a customer signal and are close-disabled.",
+            ]
+        )
+
     lines.extend(
         [
-            f"- Selection JQL: `{jql}`",
-            f"- Customer filter: labels {sorted(set(['RHDH-Customer']))}, links to "
-            "RHDHSUPP/ACCOUNT, and the customer/support fields; any hit excludes the "
-            "ticket and disables a close proposal.",
-            "- Duplicate retrieval: deterministic lexical similarity over summary, "
-            "description, error signatures, components, and explicit links; the top "
-            "candidates are shown for human adjudication.",
-            "- Confidence is evidence-based: direct = 1.0, strong = 0.8, supporting = 0.5, "
-            "plus a small bonus for independent citations. The model does not supply a "
-            "confidence number.",
+            "",
+            "## How this was decided",
+            "",
+            f"- Selection query: `{jql}`",
+            "- Selection excludes customer-linked tickets, anything already Done, and "
+            "anything younger than the aged threshold. Controls are appended deliberately.",
+        ]
+    )
+    if corpus_has_closed:
+        lines.append(
+            "- Duplicate retrieval searched open **and closed** tickets in the corpus, so a "
+            "closed canonical report was reachable."
+        )
+    else:
+        lines.append(
+            "- Duplicate retrieval had **no closed tickets** in the corpus, so a closed "
+            "canonical report could not be found. Export `project = RHDHBUGS` (or open plus "
+            "recently resolved) and rerun to close that gap."
+        )
+    lines.extend(
+        [
+            "- Duplicate scoring uses summary, description, error signatures, components, "
+            "and Jira links. It ranks candidates; it never declares a duplicate on its own.",
             f"- Close thresholds: duplicate {thresholds['duplicate']:.2f}, fixed "
-            f"{thresholds['fixed']:.2f}, obsolete {thresholds['obsolete']:.2f}. A close "
-            "also requires direct evidence and two agreeing independent passes.",
-            "- Posting, transitions, links, and field writes are out of scope. A human "
-            "hands an approved proposal to `/rhdh-jira-update`, which applies "
-            "`/mutation-gate`.",
+            f"{thresholds['fixed']:.2f}, no-longer-valid {thresholds['obsolete']:.2f}. A "
+            "close also needs direct evidence and two agreeing independent passes.",
+            "- Confidence comes from evidence strength, never from the model: direct 1.00, "
+            "strong 0.80, supporting 0.50.",
+            f"- Generated {generated_at} by the read-only triage pass.",
+            "- Nothing was written: no comment, transition, link, or field change.",
         ]
     )
 
     if excluded:
-        lines.extend(["", "## Excluded from the sample", ""])
-        for item in excluded[:50]:
-            lines.append(f"- {item['key']}: {item['reason']}")
-        if len(excluded) > 50:
-            lines.append(f"- … and {len(excluded) - 50} more")
-
-    lines.extend(["", "## Per-ticket packets", ""])
-    for packet in packets:
-        ticket = tickets[packet.key]
-        lines.extend(
-            [
-                f"### {packet.key} — {packet.summary.strip() or '(no summary)'}",
-                "",
-                f"- Disposition: `{packet.disposition}` at {packet.confidence:.2f}",
-                f"- Action: `{packet.action}`" + (f" → {packet.target}" if packet.target else ""),
-                f"- Recommendation: {packet.recommended_step}",
-                f"- Evidence: {len(packet.evidence)} cited item(s)"
-                + (
-                    f"; first: {packet.evidence[0].why} ({packet.evidence[0].ref})"
-                    if packet.evidence
-                    else ""
-                ),
-            ]
-        )
-        if packet.gaps:
-            lines.append("- Gaps: " + "; ".join(packet.gaps))
-        if packet.proposed_comment.strip():
-            lines.append(f"- Proposed comment: `proposed/{packet.key}.md`")
-        lines.append("")
+        lines.extend(["", "## Not in the sample", ""])
+        for item in excluded[:10]:
+            lines.append(f"- {item['key']}: {_short(item['reason'], 120)}")
+        if len(excluded) > 10:
+            lines.append(f"- \u2026 and {len(excluded) - 10} more (see `manifest.json`)")
 
     lines.extend(
         [
+            "",
             "## Limits",
             "",
-            "- A deterministic score is a retrieval aid, not a duplicate verdict. The "
-            "packet shows the candidates; a human confirms meaning.",
-            "- A missing affects or fix version is recorded as a data gap, not read as "
-            "evidence that the bug is old or fixed.",
-            "- Code inspection and reproduction are optional inputs. When they are absent, "
-            "the packet says `needs_repro` rather than guessing.",
-            "- This report makes no claim about customer impact beyond the customer "
-            "signals it lists.",
+            "- A deterministic score is a retrieval aid, not a duplicate verdict.",
+            "- A missing affects or fix version is a data gap, not proof that the bug is old "
+            "or fixed.",
+            "- Code inspection and reproduction are optional inputs. Without them the verdict "
+            "is `needs_repro`, not a guess.",
+            "- This report makes no claim about customer impact beyond the signals it lists.",
             "",
         ]
     )
@@ -366,6 +396,7 @@ def render_manifest(
     assessments_path: str,
     output_path: str,
     corpus_size: int,
+    corpus_has_closed: bool = True,
     sample_size: int,
     control_count: int,
     packets: List[Packet],
@@ -387,6 +418,7 @@ def render_manifest(
         "output": output_path,
         "jql": jql,
         "corpusSize": corpus_size,
+        "corpusHasClosed": corpus_has_closed,
         "sampleSize": sample_size,
         "controlCount": control_count,
         "thresholds": thresholds,

@@ -9,6 +9,7 @@ checks: a direct citation, a reviewed second pass, and a non-customer ticket.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -219,6 +220,29 @@ def _reviewed(passes: int, agree: bool) -> bool:
     return passes >= 2 and agree
 
 
+def _release_tuple(value: str):
+    """Plain numeric release tuple, or None when the string is not a version."""
+    match = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", value.strip())
+    if match is None:
+        return None
+    return tuple(int(part or 0) for part in match.groups())
+
+
+def _release_after(release: str, base: str) -> bool:
+    """True only when ``release`` parses and is strictly newer than ``base``.
+
+    Unparsable strings return False: this guard can only prove that a fix is
+    absent from the release under review, never that it is present. Presence
+    stays a supplied claim, so independent release verification is a separate
+    step.
+    """
+    left = _release_tuple(release)
+    right = _release_tuple(base)
+    if left is None or right is None:
+        return False
+    return left > right
+
+
 def _close_gate(
     ticket: Ticket,
     confidence: float,
@@ -343,6 +367,27 @@ def _needs_repro_comment(ticket: Ticket, current_release: str) -> str:
         "If the issue is no longer reproducible, say so and we will close it with that "
         "evidence."
     )
+
+
+def _unclear_comment(ticket: Ticket, assessment: Assessment, current_release: str) -> str:
+    """A comment for an abstention, so every triaged ticket leaves a trace."""
+    lines = [
+        "We re-checked this aged report against "
+        f"{current_release} but could not reach a confident disposition."
+    ]
+    if assessment.notes:
+        lines.append(f"Reviewer note: {assessment.notes}.")
+    if assessment.evidence:
+        lines.append("")
+        lines.append("Evidence collected:")
+        for item in assessment.evidence:
+            lines.append(f"- {item.why} ({item.ref})")
+    lines.append("")
+    lines.append(
+        "Next step: keep this open and add a current-release reproduction, or record the "
+        "evidence that settles it. No action is proposed."
+    )
+    return "\n".join(lines)
 
 
 def _still_valid_comment(ticket: Ticket, assessment: Assessment, current_release: str) -> str:
@@ -491,6 +536,14 @@ def evaluate(
             gaps.append("no release carrying the fix")
         if not assessment.fix_released:
             gaps.append("fix is not confirmed released")
+        # The release under review must contain the fix. A fix that only landed
+        # in a later release cannot close this ticket yet.
+        fix_ahead_of_review = _release_after(assessment.fix_release, current_release)
+        if fix_ahead_of_review:
+            gaps.append(
+                f"fix release {assessment.fix_release} is newer than the release "
+                f"under review {current_release}"
+            )
         threshold = FIXED_CLOSE_THRESHOLD
         allowed, reasons = _close_gate(
             ticket,
@@ -500,7 +553,12 @@ def evaluate(
             assessment.independent_passes,
             assessment.agreement,
         )
-        if not artifact or not assessment.fix_released or not assessment.fix_release:
+        if (
+            not artifact
+            or not assessment.fix_released
+            or not assessment.fix_release
+            or fix_ahead_of_review
+        ):
             allowed = False
         if allowed:
             action = "propose_close_fixed"
@@ -554,11 +612,23 @@ def evaluate(
             "Keep open and assign to the owning team; add current-release reproduction "
             "detail to the ticket."
         )
+        has_direct = any(item.strength == "direct" for item in assessment.evidence)
         if not assessment.evidence:
             gaps.append("still-valid claim has no citation")
             confidence = 0.0
             action = "needs_repro"
             recommended = "Ask for a reproduction; do not keep the claim uncited."
+            comment = _needs_repro_comment(ticket, current_release)
+        elif not has_direct:
+            # "Still valid" asserts a behavior on a supported release. Supporting
+            # context alone cannot prove that, so it degrades to an information
+            # request instead of a confident classification.
+            gaps.append("still-valid claim has no direct reproduction or code citation")
+            action = "needs_repro"
+            recommended = (
+                "Ask for a current-release reproduction or a direct code citation "
+                "before keeping this as still valid."
+            )
             comment = _needs_repro_comment(ticket, current_release)
         else:
             comment = assessment.comment or _still_valid_comment(
@@ -575,7 +645,7 @@ def evaluate(
         recommended = "Do not act; collect more evidence first."
         if assessment.evidence:
             confidence, basis = evidence_confidence(assessment.evidence)
-        comment = assessment.comment
+        comment = assessment.comment or _unclear_comment(ticket, assessment, current_release)
 
     packet = Packet(
         key=ticket.key,

@@ -59,10 +59,13 @@ that the skill cannot write and name that handoff instead.
    aged RHDHBUGS tickets, stratified by Team (first component when Team is
    empty), plus a small number of controls whose disposition a reviewer already
    knows. Exclude customer-linked tickets from the sample and never propose a
-   close on one.
+   close on one. Export a corpus that also contains closed bugs: selection
+   filters Done, young, and customer-linked tickets, so a broad export costs
+   nothing and keeps closed duplicate targets reachable.
 2. **Collect evidence.** Pull the issue, comments, links, fix and affects
    versions, then look for PRs, commits, release notes, code, and a current
-   reproduction. Record where each fact came from.
+   reproduction. Search the ticket key and the Jira keys it links to or mentions.
+   Record where each fact came from.
 3. **Adjudicate twice.** Produce the disposition and evidence in one pass, then
    repeat it independently. A close requires two passes that agree.
 4. **Let policy grade the evidence.** The model supplies claims and citations,
@@ -78,18 +81,32 @@ that the skill cannot write and name that handoff instead.
 - A ticket with any customer signal — `RHDH-Customer` label, RHDHSUPP or
   ACCOUNT link, customer field, or a support key in the text — is excluded from
   sampling and can never receive a close proposal.
+- Duplicate retrieval must search open **and recently closed** tickets. The
+  canonical report is often already Done, so an open-only export cannot find it.
+  If the corpus has no closed tickets, the report says so; do not read a missing
+  duplicate as proof that the bug is unique.
+- A duplicate target is the older report. A candidate newer than the ticket
+  under review is a hint only and is capped below the close floor.
 - A duplicate close needs a lexical candidate score of at least 0.85 or an
   explicit *outward* Jira Duplicate link (this ticket duplicates the target),
   plus a direct citation, confidence of at least 0.85, and two agreeing
   independent passes. An inward "is duplicated by" link means the other ticket
   is the duplicate; it never justifies closing this one.
+- A fix can land under another bug or PR. Search the ticket key and the Jira
+  keys it links to or mentions before concluding a bug is unfixed.
 - An already-fixed close needs a merged PR or commit, a confirmed release that
   carries the fix, direct evidence, confidence of at least 0.80, and two
-  agreeing independent passes.
+  agreeing independent passes. The fix release must be no newer than the
+  release under review: a fix that first ships later cannot close this ticket
+  yet.
 - A no-longer-valid close needs direct code, documentation, reproduction, or
   release-note evidence, confidence of at least 0.80, and two agreeing passes.
+  Age alone is never evidence; without it the disposition is `needs_repro`.
 - A missing affects or fix version is an evidence gap, not proof that the bug is
   old or fixed. Say so in the packet.
+- Every ticket gets a proposed comment, including `unclear` and `needs_repro`,
+  stating the disposition, the evidence, and one recommended next step. The
+  comment is always a local proposal; nothing here posts it.
 - When the evidence is thin, the correct answer is `needs_repro` or `unclear`,
   not a guess. An abstention is a valid triage outcome.
 
@@ -117,10 +134,11 @@ walkthrough, fixture data, and expected numbers are in
 
 Complete when the run directory contains `report.md`, `packets.json`,
 `summary.csv`, `manifest.json`, and one `proposed/KEY.md` per sampled ticket;
-every packet names a disposition, an evidence count, a confidence basis, and a
-recommended step; every close proposal has passed the policy gate and the
-verifier; every customer-linked ticket is absent from the sample or explicitly
-marked close-disabled; and the report states the decision-ready rate, the
-close-proposal count, and the evidence gaps. Say out loud that nothing was
-written to Jira, and name the approved handoff path for any proposal the human
-accepts.
+`report.md` opens with a bottom line and a per-ticket table a reviewer can act on;
+every packet names a disposition, an evidence count, a confidence basis, a
+recommended step, and a proposed comment; every close proposal has passed the
+policy gate and the verifier; every customer-linked ticket is absent from the
+sample or explicitly marked close-disabled; and the report states the
+decision-ready rate, the close-proposal count, and the evidence gaps. Say out
+loud that nothing was written to Jira, and name the approved handoff path for any
+proposal the human accepts.

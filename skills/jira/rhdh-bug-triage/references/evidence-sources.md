@@ -28,7 +28,9 @@ an evidence gap; absence in an export is not absence in Jira.
 
 A merged pull request is the strongest affordable fix evidence.
 
-- Search by the Jira key in PR titles and bodies across the RHDH repositories.
+- Search by the Jira key in PR titles and bodies across the RHDH repositories, and
+  also by the Jira keys this ticket links to or mentions: a fix can land under
+  another bug's key while this ticket stays open. Record which key found the PR.
 - Prefer the merge commit and the base branch over the PR description.
 - Record the PR URL, merge state, merge date, and merge commit.
 - A closed-but-unmerged PR is not a fix.
@@ -44,6 +46,11 @@ Use the release note, tag, or changelog that names the change. Record the exact
 release and whether it is supported. The current release for a pass is supplied
 with `--current-release` (for example `2.1.0`); a fix that exists only on an
 unsupported stream does not justify closing a report against a supported one.
+
+The fix release must also be no newer than the release under review. A fix that
+first ships in a later release cannot close the ticket yet: record it, keep the
+ticket open, and let the next stream carry it. Do not propose a backport unless
+the ticket is customer-linked or critical.
 
 ## Code
 

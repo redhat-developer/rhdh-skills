@@ -26,7 +26,12 @@ from bugtriage.duplicates import (  # noqa: E402
     score_candidate,
 )
 from bugtriage.evaluate import evaluate, load_truth, render_evaluation  # noqa: E402
-from bugtriage.forge import load_cache, lookup_pr, normalize_pr  # noqa: E402
+from bugtriage.forge import (  # noqa: E402
+    collect_for_ticket,
+    load_cache,
+    lookup_pr,
+    normalize_pr,
+)
 from bugtriage.jira import JiraAdapterError, parse_acli_json, search_acli  # noqa: E402
 from bugtriage.model import (  # noqa: E402
     Link,
@@ -279,6 +284,27 @@ class TestDuplicates:
         assert candidate.score < DUPLICATE_CLOSE_THRESHOLD
         assert "candidate duplicates this ticket" in candidate.reasons
 
+    def test_candidate_created_after_query_is_capped(self):
+        query = Ticket(
+            key="RHDHBUGS-1",
+            summary="Helm install fails with release not found",
+            description="Error: release: not found",
+            team="RHDH Install",
+            components=["Helm Chart"],
+            created="2023-01-01T09:00:00.000+0000",
+        )
+        newer = Ticket(
+            key="RHDHBUGS-2",
+            summary="Helm install fails with release not found",
+            description="Error: release: not found",
+            team="RHDH Install",
+            components=["Helm Chart"],
+            created="2024-01-01T09:00:00.000+0000",
+        )
+        candidate = score_candidate(query, newer)
+        assert candidate.score < DUPLICATE_CLOSE_THRESHOLD
+        assert "candidate is newer than this ticket" in candidate.reasons
+
 
 class TestPolicy:
     def test_missing_assessment_is_unclear_and_asks_for_repro(self):
@@ -359,6 +385,38 @@ class TestPolicy:
         assert packet.disposition == "already_fixed"
         assert packet.action == "propose_close_fixed"
         assert "2.1.0" in packet.proposed_comment
+
+    def test_fix_release_ahead_of_review_blocks_close(self):
+        assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
+        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, current_release="2.0.0")
+        assert packet.action == "comment_only"
+        assert any("newer than the release under review" in gap for gap in packet.gaps)
+
+    def test_unclear_assessment_still_gets_a_comment(self):
+        ticket = by_key()["RHDHBUGS-1007"]
+        assessment = Assessment(key=ticket.key, disposition="unclear", evidence=[])
+        packet = evaluate_packet(ticket, [], assessment)
+        assert packet.action == "unclear"
+        assert packet.proposed_comment
+        assert "could not reach a confident disposition" in packet.proposed_comment
+
+    def test_still_valid_without_direct_evidence_asks_for_repro(self):
+        ticket = by_key()["RHDHBUGS-1001"]
+        assessment = Assessment(
+            key=ticket.key,
+            disposition="still_valid",
+            evidence=[
+                Evidence(
+                    type="jira",
+                    ref="RHDHBUGS-1002",
+                    why="A similar report exists.",
+                    strength="supporting",
+                )
+            ],
+        )
+        packet = evaluate_packet(ticket, [], assessment)
+        assert packet.action == "needs_repro"
+        assert any("no direct" in gap for gap in packet.gaps)
 
     def test_done_ticket_never_gets_a_close_action(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
@@ -659,6 +717,23 @@ class TestAdapters:
         assert pull["merged"] is True
         assert pull["mergeCommit"] == "abc1234"
         assert normalize_pr({"state": "OPEN"}, "u")["merged"] is False
+
+    def test_collect_searches_linked_jira_keys_for_prs(self):
+        # A fix can land under the canonical bug's key while this ticket stays
+        # open, so the collector must search linked keys, not only its own.
+        ticket = by_key()["RHDHBUGS-1010"]
+        cache = {
+            "https://github.com/redhat-developer/rhdh/pull/888": {
+                "url": "https://github.com/redhat-developer/rhdh/pull/888",
+                "title": "RHDHBUGS-1009 restore search input focus",
+                "state": "MERGED",
+                "mergedAt": "2024-01-01T00:00:00Z",
+            }
+        }
+        evidence = collect_for_ticket(ticket, cache, use_gh=False)
+        found = [pull for pull in evidence["pullRequests"] if pull["url"].endswith("/pull/888")]
+        assert found
+        assert found[0]["foundVia"] == "RHDHBUGS-1009"
 
     def test_collect_writes_one_evidence_file_per_ticket(self, tmp_path):
         sample = sample_manifest(tmp_path)

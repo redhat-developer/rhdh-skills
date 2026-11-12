@@ -59,14 +59,15 @@ python3 skills/jira/rhdh-bug-triage/scripts/run_poc.py run \
 Expected output:
 
 ```
-DRY RUN complete: 7 packet(s) in /tmp/bugtriage-run
-  with cited evidence: 5
-  local close proposals: 2
-  customer-linked: 0
-  dispositions: {'already_fixed': 1, 'duplicate': 2, 'still_valid': 2, 'unclear': 2}
-  actions: {'comment_only': 1, 'keep_open': 2, 'needs_repro': 2,
-            'propose_close_duplicate': 1, 'propose_close_fixed': 1}
+DRY RUN complete: 7 ticket(s) in /tmp/bugtriage-run
 Nothing was posted, transitioned, linked, or written to Jira.
+
+2 close proposal(s) need your review:
+  RHDHBUGS-1006  already_fixed  Close as fixed by https://github.com/redhat-developer/rhdh/pull/999, released in 2.1.0.
+  RHDHBUGS-1010  duplicate  Close as duplicate of RHDHBUGS-1009.
+
+Ready to review: 7/7 · cited evidence: 5/7 · customer-linked: 0
+Read report.md for the per-ticket table; details are in proposed/KEY.md.
 ```
 
 Two close proposals are expected:
@@ -84,17 +85,23 @@ it closes, the policy is broken.
 
 ```bash
 ls /tmp/bugtriage-run
-sed -n '1,120p' /tmp/bugtriage-run/report.md
+sed -n '1,60p' /tmp/bugtriage-run/report.md
 sed -n '1,80p' /tmp/bugtriage-run/proposed/RHDHBUGS-1002.md
-python3 -m json.tool /tmp/bugtriage-run/manifest.json | grep -A2 writes
+python3 -m json.tool /tmp/bugtriage-run/manifest.json | grep -E 'corpusHasClosed|writes'
 ```
 
 Confirm:
 
+- `report.md` opens with a bottom line and a `What each ticket needs` table, not
+  a metrics dump;
 - every artifact starts with the dry-run banner;
-- `manifest.json` has `"writes": []`;
+- `manifest.json` has `"writes": []` and `"corpusHasClosed": true` (the fixture
+  includes the Done `RHDHBUGS-1012`);
 - no `proposed/` file says the comment was posted;
-- `RHDHBUGS-1002` contains "not a close proposal";
+- `RHDHBUGS-1002` reads `Possible duplicate` in the table and contains "not a
+  close proposal";
+- `RHDHBUGS-1007` and `RHDHBUGS-1011` have no assessment, show
+  `Needs reproduction`, and still carry a proposed comment;
 - no customer-linked ticket appears in the sample.
 
 ### 4. Evaluate
@@ -170,6 +177,20 @@ Then run the same commands with `--source export --input /tmp/rhdhbugs.json`.
 Keep the export local; it may contain customer field values. The selector removes
 customer-linked tickets, but the raw file should still be treated as internal.
 
+Export a **broad corpus**, not just open tickets. Selection removes Done, young,
+and customer-linked tickets by itself, and duplicate retrieval needs closed
+tickets to find a canonical report that is already resolved:
+
+```bash
+acli jira workitem search --jql 'project = RHDHBUGS' \
+  --fields '*all' --paginate --json > /tmp/rhdhbugs.json
+```
+
+If you already have a saved open-only export for the sample, pass this broad file
+separately with `--corpus /tmp/rhdhbugs.json`. If the corpus has no closed
+tickets, the report says duplicate search could not reach a closed canonical
+report; rerun with a broader export rather than concluding a bug is unique.
+
 ### Sample size and controls
 
 Use 12–15 aged tickets. Add 1–3 controls whose disposition you already know; they
@@ -196,8 +217,14 @@ Fill one file per ticket. The full schema is in
 - Does the report's decision-ready rate include abstentions honestly?
 - Does every close proposal have a direct citation a reviewer can open?
 - Is every customer-linked ticket either absent or explicitly close-disabled?
-- Does every `already_fixed` proposal name a release and `released: true`?
-- Does every duplicate proposal clear 0.85 or carry an outward Duplicate link?
+- Does every `already_fixed` proposal name a release and `released: true`, and is
+  that release no newer than the release under review?
+- Did the corpus contain closed tickets, so duplicate search could reach a closed
+  canonical report?
+- Does every duplicate proposal clear 0.85 or carry an outward Duplicate link,
+  with a target older than the ticket under review?
+- Does every ticket, including `unclear` and `needs_repro`, have a proposed
+  comment with a disposition, evidence, and one next step?
 - Are the evidence gaps plausible for the export, or is the adapter dropping
   fields?
 - Did the verifier downgrade anything? Read the reason before overriding it.

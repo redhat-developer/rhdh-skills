@@ -95,23 +95,39 @@ the verifier rejected has `verificationErrors` populated and an action of
 
 ## Markdown report
 
-`report.md` is for a human reviewer:
+`report.md` is for a human reviewer, not a machine. It leads with the decision
+and answers the only question a reader has: what should happen to each ticket?
 
-1. **Run at a glance** — sample size, corpus size, decision-ready rate,
-   cited-evidence rate, close proposals, customer-linked count, recorded gaps.
-2. **Dispositions and actions** — counts by name.
-3. **Sample** — key, kind, age, team, disposition, confidence, action, and the
-   first evidence line.
-4. **Method** — JQL, customer filter, retrieval, confidence model, thresholds,
-   and the write boundary.
-5. **Excluded** — the first 50 exclusions with reasons.
-6. **Per-ticket packets** — a short summary of each packet.
-7. **Limits** — what the report cannot claim.
+1. **Bottom line** — one sentence: how many can close, stay open, need a
+   reproduction, or are unclear.
+2. **Scope line** — sample size, controls, corpus size, release under review,
+   how many are decision-ready, how many carry cited evidence, and the gap count.
+3. **What each ticket needs** — a table with `Ticket | Verdict | Why | Do this
+   next`. `Verdict` is plain language (`Duplicate of RHDHBUGS-1009`,
+   `Still valid`, `Needs reproduction`); a closeable-looking disposition whose
+   gate failed reads `Possible duplicate` or `Possibly already fixed`. `Why` is
+   the first cited evidence line. `Do this next` is the recommended step.
+4. **Close proposals to review** — one bullet per ticket that passed every gate,
+   naming the proposed comment file. When none passed, it says so instead of
+   leaving an empty section.
+5. **Customer-linked** — present only when a customer-linked ticket reached a
+   packet; states the close-disabled count.
+6. **How this was decided** — the selection JQL, what selection excludes, whether
+   the duplicate corpus contained closed tickets, the retrieval signals, the
+   close thresholds, the confidence model, and the write boundary.
+7. **Not in the sample** — the first ten exclusions with reasons, pointing to
+   `manifest.json` for the rest.
+8. **Limits** — what the report cannot claim.
+
+If the corpus had no closed tickets, the method section says duplicate search
+could not reach a closed canonical report and tells the reader to export a
+broader corpus and rerun.
 
 `proposed/KEY.md` is the long-form packet for one ticket. It repeats the dry-run
 banner, the ticket table, the recommendation, the confidence basis, the evidence
 table, the duplicate candidates, the gaps, and the proposed comment in a fenced
-block. The comment is never posted.
+block. The comment is never posted, and every ticket gets one, including
+`unclear` and `needs_repro`.
 
 ## CSV
 
@@ -137,6 +153,7 @@ sorting and filtering, not for pasting into Jira.
   "inputs": {"export": "...", "sample": "...", "assessments": "..."},
   "jql": "...",
   "corpusSize": 250,
+  "corpusHasClosed": true,
   "sampleSize": 12,
   "controlCount": 3,
   "thresholds": {"duplicate": 0.85, "fixed": 0.8, "obsolete": 0.8},

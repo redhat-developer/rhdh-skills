@@ -184,6 +184,10 @@ def run(config: RunConfig) -> RunResult:
     corpus = tickets
     if config.corpus_path:
         corpus = load_export(config.corpus_path)
+    # Duplicate retrieval is only as good as the corpus. A closed canonical
+    # report is invisible when the export holds open tickets only, so record
+    # that instead of silently implying the search was complete.
+    corpus_has_closed = any(ticket.is_done for ticket in corpus)
 
     assessments = load_assessments(config.assessments_dir)
     packets: List[Packet] = []
@@ -231,6 +235,7 @@ def run(config: RunConfig) -> RunResult:
         sample_size=sum(1 for entry in selection.values() if entry.get("kind") == "aged"),
         control_count=sum(1 for entry in selection.values() if entry.get("kind") == "control"),
         corpus_size=len(corpus),
+        corpus_has_closed=corpus_has_closed,
         excluded=sample.get("excluded", []),
         selection=selection,
         thresholds=thresholds,
@@ -273,6 +278,7 @@ def run(config: RunConfig) -> RunResult:
         assessments_path=config.assessments_dir or "(none)",
         output_path=str(output_dir),
         corpus_size=len(corpus),
+        corpus_has_closed=corpus_has_closed,
         sample_size=sum(1 for entry in selection.values() if entry.get("kind") == "aged"),
         control_count=sum(1 for entry in selection.values() if entry.get("kind") == "control"),
         packets=packets,

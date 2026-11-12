@@ -6,11 +6,66 @@ what would be convenient.
 | Disposition | Meaning | Minimum evidence | Close eligible |
 |---|---|---|---|
 | `duplicate` | The same failure is already tracked under another key | Direct Jira citation of the target, plus a candidate score of at least 0.85 or an explicit outward Duplicate link | Yes, at confidence 0.85 |
-| `already_fixed` | A merged change fixes this report and the fix is in a supported release | Direct PR or commit citation, a confirmed release, and `released: true` | Yes, at confidence 0.80 |
+| `already_fixed` | A merged change fixes this report and the fix is in a release that the release under review already contains | Direct PR or commit citation, a confirmed release, and `released: true`; the fix release must not be newer than the release under review | Yes, at confidence 0.80 |
 | `still_valid` | The behavior is still present on a supported release, or the current code path still has the defect | A direct reproduction or direct code citation | No — keep open |
 | `no_longer_valid` | The feature or behavior the report targets no longer exists, or a reproduction on a supported release proves it is gone | Direct code, documentation, release-note, or reproduction citation | Yes, at confidence 0.80 |
 | `needs_repro` | The report lacks the version, environment, steps, or error text needed to decide | None required; the recommended action asks for them | No |
 | `unclear` | Evidence conflicts, is missing, or the passes disagree | None required | No |
+
+## What counts as the same bug
+
+A duplicate is about the **failure**, not the wording. Two reports are the same
+bug when a reviewer would fix them with one change:
+
+- same observable symptom (the same error, wrong value, crash, or missing
+  behavior), even if the summaries use different words;
+- same trigger (the same action, configuration, install path, or upgrade step);
+- same code area (same component or plugin, and the same failing code path);
+- the target explains this report end to end. A shared stack trace with a
+  different root cause is related, not duplicate.
+
+A shared component, the same reporter, the same release, or a similar title is
+not enough on its own. When the two reports could close with two different
+fixes, they are related, not duplicates.
+
+## Which candidates count
+
+Duplicate retrieval searches the **whole corpus**, open **and recently closed**
+tickets, because the canonical report is often already Done. A closed target is
+still a valid duplicate target: the pair is closed to the canonical fix, not to
+the ticket's status.
+
+Export a corpus that includes closed bugs. If the export is open-only, the
+report says so and duplicate search cannot be trusted; rerun with
+`project = RHDHBUGS` (or open plus recently resolved) rather than concluding a
+bug is unique.
+
+The duplicate target is the **older** report. A candidate created after the
+ticket under review is a hint, not a close target: closing the older report as a
+duplicate of a newer one usually closes the canonical report. Such a candidate
+is capped below the close floor and labelled `candidate is newer than this
+ticket`.
+
+## Already fixed elsewhere
+
+A fix can land under another bug's key, a linked PR, or a release note while this
+ticket stays open. Treat that as `already_fixed` when all of these hold:
+
+- a merged PR or commit is cited, and it changes the failing code;
+- the fix is reachable from a linked ticket or an explicit reference, not only
+  from the ticket's own key;
+- a release note or release page confirms the fix shipped;
+- that release is no newer than the release under review. A fix that first ships
+  in a later release cannot close the ticket yet: report it and keep the ticket
+  open.
+
+Search PRs for the ticket key **and** for the Jira keys it links to or mentions,
+so a fix recorded under another bug is still found. Record which key found the
+PR in `foundVia`.
+
+The default target is the stream the fix landed on; do not propose a backport
+just because the report is old. Propose one only for a customer-linked or
+critical ticket, and never alongside a close for a customer-linked ticket.
 
 ## Actions
 
@@ -39,8 +94,10 @@ Every close must pass all five:
    `review.agree == true`.
 5. **Disposition-specific proof.**
    - duplicate: a candidate at 0.85 or an explicit outward Jira Duplicate link,
-     and a direct citation of the target;
-   - fixed: a direct PR or commit citation, a release, and `released: true`;
+     and a direct citation of the target. A candidate newer than this ticket
+     never clears the floor;
+   - fixed: a direct PR or commit citation, a release, `released: true`, and a
+     fix release no newer than the release under review;
    - no-longer-valid: a direct code, documentation, reproduction, or
      release-note citation.
 
@@ -51,6 +108,14 @@ is the duplicate, so this ticket is the canonical report and must stay open.
 A close that misses any gate becomes `comment_only` when confidence is at least
 0.60, otherwise `needs_repro`. The verifier re-checks the packet and repeats the
 downgrade, so a bug in the policy cannot leak a close.
+
+## Every ticket gets a comment
+
+Every packet carries a proposed comment, including `unclear` and `needs_repro`.
+The comment states the disposition, the evidence behind it, and one recommended
+next step, so a human reviewer has something to read and post without
+reconstructing the reasoning. A comment is still a proposal: nothing here posts
+it, and posting stays a human-approved handoff.
 
 ## Confidence
 
@@ -115,6 +180,8 @@ Abstain when:
 - the fix is merged but not in a release, or the release is unknown;
 - the only duplicate candidate is below the retrieval floor and there is no
   explicit link;
+- a "still valid" claim rests only on supporting context, with no current
+  reproduction or direct code citation;
 - two passes disagree about meaning rather than wording;
 - the evidence points to a different failure than the one described.
 
