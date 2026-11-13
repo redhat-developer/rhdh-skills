@@ -151,7 +151,9 @@ walkthrough, fixture data, and expected numbers are in
 
 Complete when the run directory contains `report.md`, `packets.json`,
 `summary.csv`, `manifest.json`, and one `proposed/KEY.md` per sampled ticket;
-`report.md` opens with a bottom line and a per-ticket table a reviewer can act on;
+`report.md` is the one file a reviewer opens: the numbers, then one section per
+ticket (no tables), each with the verdict, the evidence, the next step, and the
+exact comment that would be posted;
 every `proposed/KEY.md` leads with the exact comment that would be posted, with
 Jira keys and evidence as links, followed by compact review details; every close
 proposal has passed the policy gate and the verifier; every customer-linked
@@ -159,3 +161,20 @@ ticket is absent from the sample or explicitly marked close-disabled; and the
 report states the decision-ready rate, the close-proposal count, and the evidence
 gaps. Say out loud that nothing was written to Jira, and name the approved
 handoff path for any proposal the human accepts.
+
+## Talking to the human
+
+Do not narrate data preparation, capability checks, pass counts, or provisional
+runs. The human wants the result, not the pipeline.
+
+When the run finishes, answer with three things and nothing else:
+
+1. the bottom line in one sentence;
+2. the path to `report.md`, said to be the one file that holds everything;
+3. any decision the human must make now — a close to approve, or an unclear
+   ticket that needs an owner.
+
+Do not paste JSON, do not paste a per-ticket table (the report has no tables),
+and do not offer intermediate artifacts as the answer. If the human asks where
+the output is, give the single file path first; the machine files are a
+footnote.

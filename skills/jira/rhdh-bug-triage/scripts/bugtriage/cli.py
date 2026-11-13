@@ -153,9 +153,10 @@ def command_run(args: argparse.Namespace) -> int:
             f"customer-linked: {counts['customerLinked']}"
         )
         print(
-            "Read report.md for the per-ticket table; the exact comment for each "
-            "ticket is in proposed/KEY.md."
+            "Everything is in report.md: the numbers, one section per ticket, the "
+            "evidence, the next step, and the exact comment that would be posted."
         )
+        print("Nothing else needs opening to review this run.")
     return 0
 
 

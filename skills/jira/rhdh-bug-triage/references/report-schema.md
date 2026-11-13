@@ -95,40 +95,44 @@ the verifier rejected has `verificationErrors` populated and an action of
 
 ## Markdown report
 
-`report.md` is for a human reviewer, not a machine. It leads with the decision
-and answers the only question a reader has: what should happen to each ticket?
+`report.md` is for a human reviewer, not a machine. It is the single file a
+reviewer needs: it carries the numbers, every ticket's verdict, the evidence, the
+next step, and the exact comment that would be posted. It contains no tables; each
+ticket is its own section, one below the other, so it reads top to bottom.
 
-1. **Bottom line** — one sentence: how many can close, stay open, need a
+1. **Title and dry-run banner** — one sentence stating that nothing was posted.
+2. **Framing** — states explicitly that everything a reviewer needs is in this
+   file and what the file contains.
+3. **Bottom line** — one sentence: how many can close, stay open, need a
    reproduction, or are unclear.
-2. **Scope line** — sample size, controls, corpus size, release under review,
-   how many are decision-ready, how many carry cited evidence, and the gap count.
-3. **What each ticket needs** — a table with `Ticket | Verdict | Why | Do this
-   next`. `Verdict` is plain language (`Duplicate of RHDHBUGS-1009`,
-   `Still valid`, `Needs reproduction`); a closeable-looking disposition whose
-   gate failed reads `Possible duplicate` or `Possibly already fixed`. `Why` is
-   the first cited evidence line. `Do this next` is the recommended step.
-4. **Close proposals to review** — one bullet per ticket that passed every gate,
-   naming the proposed comment file. When none passed, it says so instead of
-   leaving an empty section.
-5. **Customer-linked** — present only when a customer-linked ticket reached a
-   packet; states the close-disabled count.
-6. **How this was decided** — the selection JQL, what selection excludes, whether
+4. **The numbers** — bullet metrics: sampled, controls, corpus, release under
+   review, can close, keep open, need reproduction, comment only, unclear,
+   decision-ready, tickets with cited evidence, and the evidence-gap count.
+5. **Close proposals** — one short paragraph per closeable ticket; when none
+   passed the gates, the section says so instead of going missing.
+6. **Customer-linked** — only when a customer-linked ticket reached a packet;
+   states the close-disabled count.
+7. **The tickets** — one `### KEY — summary` section per ticket in sample order.
+   Each section carries a plain-language verdict headline with confidence and
+   context, one paragraph explaining why, a **Do this next** line, the exact
+   proposed comment as a blockquote, the evidence list, any duplicate candidates,
+   and the gaps. No table.
+8. **How this was decided** — the selection JQL, what selection excludes, whether
    the duplicate corpus contained closed tickets, the retrieval signals, the
    close thresholds, the confidence model, and the write boundary.
-7. **Not in the sample** — the first ten exclusions with reasons, pointing to
+9. **Not in the sample** — the first ten exclusions with reasons, pointing to
    `manifest.json` for the rest.
-8. **Limits** — what the report cannot claim.
+10. **Limits** — what the report cannot claim.
 
 If the corpus had no closed tickets, the method section says duplicate search
 could not reach a closed canonical report and tells the reader to export a
 broader corpus and rerun.
 
-`proposed/KEY.md` is the review artifact for one ticket. It leads with the exact
-comment that would be posted — terse, with Jira keys and evidence as links and one
-recommendation — then a horizontal rule and compact review details: action,
-disposition, confidence, context, target, confidence basis, evidence links,
-duplicate candidates, and gaps. The comment is never posted, and every ticket
-gets one, including `unclear` and `needs_repro`.
+`proposed/KEY.md` remains the per-ticket handoff artifact: it leads with the exact
+comment that would be posted, then compact review details. The same comment is
+embedded in `report.md`, so a reviewer never has to open `proposed/` to decide.
+The comment is never posted, and every ticket gets one, including `unclear` and
+`needs_repro`.
 [disposition-rubric.md](disposition-rubric.md) owns the comment shape.
 
 ## CSV

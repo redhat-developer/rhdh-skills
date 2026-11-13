@@ -67,7 +67,8 @@ Nothing was posted, transitioned, linked, or written to Jira.
   RHDHBUGS-1010  duplicate  Close as duplicate of RHDHBUGS-1009.
 
 Ready to review: 7/7 · cited evidence: 5/7 · customer-linked: 0
-Read report.md for the per-ticket table; the exact comment for each ticket is in proposed/KEY.md.
+Everything is in report.md: the numbers, one section per ticket, the evidence, the next step, and the exact comment that would be posted.
+Nothing else needs opening to review this run.
 ```
 
 Two close proposals are expected:
@@ -93,16 +94,17 @@ python3 -m json.tool /tmp/bugtriage-run/manifest.json | grep -E 'corpusHasClosed
 
 Confirm:
 
-- `report.md` opens with a bottom line and a `What each ticket needs` table, not
-  a metrics dump;
+- `report.md` opens with the numbers and then one section per ticket (no tables),
+  each carrying its verdict, evidence, next step, and proposed comment;
 - every artifact starts with the dry-run banner;
 - every `proposed/KEY.md` opens with `## Comment`, holding the exact text that
   would be posted, and puts the review details after the rule;
+- the same proposed comment is embedded in `report.md` under the ticket heading;
 - the Jira keys, PRs, and releases cited in a comment are Markdown links;
 - `manifest.json` has `"writes": []` and `"corpusHasClosed": true` (the fixture
   includes the Done `RHDHBUGS-1012`);
 - no `proposed/` file says the comment was posted;
-- `RHDHBUGS-1002` reads `Possible duplicate` in the table, its comment links
+- `RHDHBUGS-1002` reads `Possible duplicate` in its section, its comment links
   `RHDHBUGS-1001`, and it contains "not a close proposal" without proposing a
   close;
 - `RHDHBUGS-1006` names the PR and the release as links;

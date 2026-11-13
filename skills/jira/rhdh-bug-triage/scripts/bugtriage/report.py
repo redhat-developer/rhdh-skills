@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -31,17 +32,6 @@ ACTION_LABELS = {
     "needs_repro": "Ask for reproduction",
     "unclear": "No action",
 }
-
-
-def _cell(value: Any) -> str:
-    text = "" if value is None else str(value)
-    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
-
-
-def _pct(part: int, total: int) -> str:
-    if not total:
-        return "n/a"
-    return f"{100 * part / total:.0f}%"
 
 
 def _confidence(value: float) -> str:
@@ -156,6 +146,33 @@ def _short(value: Any, limit: int = 160) -> str:
     return text[: limit - 1].rstrip() + "\u2026"
 
 
+URL_RE = re.compile(r"https?://[^\s<>\])]+")
+PR_URL_RE = re.compile(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)")
+RELEASE_URL_RE = re.compile(r"https://github\.com/([^/]+/[^/]+)/releases/tag/([^\s<>\])]+)")
+
+
+def _url_label(url: str) -> str:
+    pr = PR_URL_RE.match(url)
+    if pr:
+        return f"PR #{pr.group(2)}"
+    release = RELEASE_URL_RE.match(url)
+    if release:
+        return release.group(2)
+    if "atlassian.net/browse/" in url:
+        return url.rsplit("/", 1)[-1]
+    return url if len(url) <= 50 else _short(url, 47)
+
+
+def _linkify(text: str) -> str:
+    """Turn bare URLs into Markdown links with a readable label."""
+
+    def replace(match: re.Match) -> str:
+        url = match.group(0).rstrip(".,;:")
+        return f"[{_url_label(url)}]({url})"
+
+    return URL_RE.sub(replace, text)
+
+
 def _verdict(packet: Packet) -> str:
     label = DISPOSITION_LABELS.get(packet.disposition, packet.disposition)
     closing = packet.action.startswith("propose_close")
@@ -222,56 +239,154 @@ def render_report(
         outcome.append(f"{no_action} {'is' if no_action == 1 else 'are'} unclear")
     bottom_line = "; ".join(outcome) + "."
 
+    def boolean(value: int, singular: str, plural: str) -> str:
+        return f"{value} {singular if value == 1 else plural}"
+
+    sampled = boolean(sample_size, "aged ticket", "aged tickets")
+    if control_count:
+        sampled += " and " + boolean(control_count, "control", "controls")
+
     lines = [
         f"# RHDH aged-bug triage \u2014 {as_of.date().isoformat()}",
         "",
         DRY_RUN_BANNER,
         "",
+        "**Everything a reviewer needs is in this file.** It opens with the numbers, "
+        "then gives one section per ticket: the verdict, the evidence behind it, the "
+        "next step, and the exact comment that would be posted. Nothing here is a "
+        "close until a human approves it.",
+        "",
         f"**Bottom line.** {bottom_line[0].upper() + bottom_line[1:]}",
         "",
-        f"Scope: **{sample_size}** aged \u00b7 **Controls:** {control_count} \u00b7 "
-        f"**Corpus:** {corpus_size} \u00b7 **Release:** {current_release} \u00b7 "
-        f"**Decision-ready:** {decision_ready}/{total} \u00b7 "
-        f"**Cited evidence:** {with_evidence}/{total} \u00b7 **Gaps:** {gaps}",
+        "## The numbers",
         "",
-        "## What each ticket needs",
+        f"- **Sampled:** {sampled}.",
+        f"- **Corpus searched:** {corpus_size} tickets"
+        + (", including closed reports." if corpus_has_closed else ", with no closed reports."),
+        f"- **Release under review:** {current_release}.",
+        f"- **Can close now:** {len(close_proposals)}.",
+        f"- **Keep open:** {keep_open}.",
+        f"- **Need a reproduction:** {needs_repro}.",
+        f"- **Comment only:** {comment_only}.",
+        f"- **Unclear:** {no_action}.",
+        f"- **Decision-ready:** {decision_ready} of {total}.",
+        f"- **Tickets with cited evidence:** {with_evidence} of {total}.",
+        f"- **Evidence gaps:** {gaps} across the sample.",
         "",
-        "| Ticket | Verdict | Why | Do this next |",
-        "|---|---|---|---|",
+        "## Close proposals",
+        "",
     ]
-    for packet in packets:
-        why = _why(packet)
-        next_step = packet.recommended_step or "Review the evidence."
-        if packet.action.startswith("propose_close"):
-            next_step = f"{next_step} Review `proposed/{packet.key}.md` first."
-        lines.append(
-            f"| {packet.key} | {_cell(_verdict(packet))} | {_cell(_short(why))} | "
-            f"{_cell(next_step)} |"
-        )
-
-    lines.extend(["", "## Close proposals to review", ""])
     if close_proposals:
         for packet in close_proposals:
-            lines.append(
-                f"- **{packet.key} \u2014 {_verdict(packet)}.** {packet.recommended_step} "
-                f"Comment: `proposed/{packet.key}.md`."
+            lines.extend(
+                [
+                    f"**{packet.key} \u2014 {_verdict(packet)}.** "
+                    f"{_linkify(packet.recommended_step)}",
+                    "",
+                    "The exact comment is in this file, under this ticket's own heading below.",
+                    "",
+                ]
             )
     else:
-        lines.append("No ticket passed the close gates. Nothing is waiting for a close decision.")
+        lines.extend(
+            [
+                "No ticket passed the close gates, so nothing is waiting for a close "
+                "decision. Every ticket still carries its own proposed comment below.",
+                "",
+            ]
+        )
 
     if customer:
         lines.extend(
             [
-                "",
                 "## Customer-linked",
                 "",
-                f"{customer} ticket(s) carry a customer signal and are close-disabled.",
+                f"{boolean(customer, 'ticket carries', 'tickets carry')} a customer signal "
+                "and cannot be closed by this skill.",
+                "",
             ]
         )
 
+    lines.extend(["## The tickets", ""])
+    for packet in packets:
+        ticket = tickets.get(packet.key)
+        days = age_days(ticket.created, as_of) if ticket else None
+        context = " \u00b7 ".join(
+            [
+                packet.status or "unknown status",
+                age_label(days),
+                (ticket.team if ticket else "") or "team unset",
+                ", ".join(ticket.components)
+                if ticket and ticket.components
+                else "components unset",
+                (ticket.assignee if ticket else "") or "unassigned",
+            ]
+        )
+        why = " ".join(_why(packet).split())
+        score = (
+            f"Confidence {_confidence(packet.confidence)}."
+            if packet.evidence or packet.confidence > 0
+            else "Not scored yet."
+        )
+        lines.extend(
+            [
+                f"### {packet.key} \u2014 {packet.summary.strip() or '(no summary)'}",
+                "",
+                f"**{_verdict(packet)}.** {score} {context}.",
+                "",
+                _linkify(why[0].upper() + why[1:]) if why else "",
+                "",
+                f"**Do this next:** {_linkify(packet.recommended_step or 'Review the evidence.')}",
+                "",
+                "**Proposed comment** (local only, never posted):",
+                "",
+            ]
+        )
+        comment = packet.proposed_comment.strip()
+        if comment:
+            lines.extend(f"> {line}" if line else ">" for line in comment.splitlines())
+        else:
+            lines.append("> _No comment proposed._")
+        lines.append("")
+
+        if packet.target:
+            lines.extend([f"**Target:** {ref_link(packet.target)}", ""])
+
+        if packet.evidence:
+            lines.extend(["**Evidence**", ""])
+            for item in packet.evidence:
+                ref = (
+                    _linkify(item.ref)
+                    if item.ref.startswith(("http://", "https://"))
+                    else ref_link(item.ref)
+                )
+                lines.append(f"- `{item.strength}` {ref} \u2014 {' '.join(item.why.split())}")
+            lines.append("")
+        else:
+            lines.extend(["**Evidence:** none cited yet.", ""])
+
+        if packet.duplicate_candidates:
+            lines.extend(["**Possible duplicates**", ""])
+            for candidate in packet.duplicate_candidates:
+                reasons = " ".join("; ".join(candidate.reasons).split())
+                lines.append(f"- {ref_link(candidate.key)} {candidate.score:.2f} \u2014 {reasons}")
+            lines.append("")
+
+        combined = list(packet.gaps)
+        if packet.customer_signals:
+            combined.append("Customer signals: " + ", ".join(packet.customer_signals))
+        if packet.verification_errors:
+            combined.extend(f"Verifier: {error}" for error in packet.verification_errors)
+        if combined:
+            lines.extend(["**Gaps and guardrails**", ""])
+            lines.extend(f"- {item}" for item in combined)
+            lines.append("")
+        if packet.notes:
+            lines.extend([f"**Review note:** {' '.join(packet.notes.split())}", ""])
+        lines.extend(["---", ""])
+
     lines.extend(
         [
-            "",
             "## How this was decided",
             "",
             f"- Selection query: `{jql}`",
@@ -322,6 +437,9 @@ def render_report(
             "- Code inspection and reproduction are optional inputs. Without them the verdict "
             "is `needs_repro`, not a guess.",
             "- This report makes no claim about customer impact beyond the signals it lists.",
+            "",
+            "_Machine-readable copies for tooling live beside this file: `packets.json`, "
+            "`summary.csv`, and `manifest.json`._",
             "",
         ]
     )

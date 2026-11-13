@@ -150,7 +150,8 @@ The run writes:
 
 ```
 report/
-  report.md            brief: bottom line, per-ticket table, close proposals
+  report.md            one file: numbers, close proposals, then one section per
+                       ticket (verdict, evidence, next step, proposed comment)
   packets.json         structured packets used by evaluation and tooling
   summary.csv          one row per ticket for a spreadsheet
   manifest.json        inputs, counts, thresholds, and `writes: []`
@@ -174,8 +175,8 @@ Read `report.md` in this order:
 
 1. **Bottom line** — how many tickets can close, stay open, need a reproduction,
    or are unclear.
-2. **What each ticket needs** — does each verdict match the packet you reviewed,
-   and is "Do this next" the action you would take?
+2. **The tickets** — one section per ticket, in sample order. Does each verdict
+   match the evidence under it, and is "Do this next" the action you would take?
 3. **Close proposals to review** — open `proposed/KEY.md` and read the comment
    first. Confirm that every Jira key and URL resolves, that the recommendation
    matches the action, and that the review details cite the same evidence. Then
