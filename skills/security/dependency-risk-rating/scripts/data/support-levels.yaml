@@ -1,0 +1,31 @@
+# Support-level data for Backstage-ecosystem packages.
+# This file ships WITH the skill (maintained in the skill repo, not in target repos).
+# lib/support.ts reads it; in a future version the data may be loaded from a remote
+# source, with this file remaining the offline fallback.
+version: 1
+
+# Where support levels come from. "file" = this file only.
+# Reserved for later: "remote" with remoteUrl, falling back to this file.
+source: file
+#remoteUrl: https://example.com/support-levels.json
+
+# Only packages matching one of these scopes are considered "support-level relevant";
+# other packages never receive the `unknown` support-level penalty.
+ecosystemScopes:
+  - "@backstage/*"
+  - "@backstage-community/*"
+  - "@red-hat-developer-hub/*"
+  - "@janus-idp/*"
+
+# Package name (exact or trailing-* glob) -> support level.
+# Levels: production | tech-preview | dev-preview
+levels:
+  "@red-hat-developer-hub/*": production
+  "@backstage/*": production
+
+# Score adjustment per level, applied by score.ts to support-relevant packages.
+scoreAdjust:
+  production: 0
+  tech-preview: 1
+  dev-preview: 2
+  unknown: 1
