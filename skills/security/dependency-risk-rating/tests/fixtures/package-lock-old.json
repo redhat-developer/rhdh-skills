@@ -1,0 +1,27 @@
+{
+  "name": "fixture-npm",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "fixture-npm",
+      "version": "1.0.0",
+      "dependencies": {
+        "debug": "^4.3.0"
+      }
+    },
+    "node_modules/debug": {
+      "version": "4.3.4",
+      "dependencies": {
+        "ms": "2.1.2"
+      }
+    },
+    "node_modules/debug/node_modules/ms": {
+      "version": "2.1.2"
+    },
+    "node_modules/ms": {
+      "version": "2.0.0"
+    }
+  }
+}

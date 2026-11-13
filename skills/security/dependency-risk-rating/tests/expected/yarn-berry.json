@@ -1,0 +1,54 @@
+{
+  "format": "yarn-berry",
+  "changes": [
+    {
+      "name": "@backstage/config",
+      "from": "1.1.1",
+      "to": "1.2.0",
+      "kind": "updated",
+      "direct": false,
+      "delta": {
+        "type": "minor",
+        "effectiveType": "minor",
+        "downgrade": false,
+        "prereleaseTarget": false
+      }
+    },
+    {
+      "name": "react",
+      "from": "18.2.0",
+      "to": "18.3.1",
+      "kind": "updated",
+      "direct": false,
+      "delta": {
+        "type": "minor",
+        "effectiveType": "minor",
+        "downgrade": false,
+        "prereleaseTarget": false
+      }
+    },
+    {
+      "name": "zod",
+      "from": null,
+      "to": "3.23.8",
+      "kind": "added",
+      "direct": false,
+      "delta": {
+        "type": "unknown",
+        "effectiveType": "unknown",
+        "downgrade": false,
+        "prereleaseTarget": false
+      }
+    }
+  ],
+  "counts": {
+    "total": 3,
+    "direct": 0,
+    "added": 1,
+    "removed": 0,
+    "major": 0,
+    "minor": 2,
+    "patch": 0,
+    "other": 0
+  }
+}

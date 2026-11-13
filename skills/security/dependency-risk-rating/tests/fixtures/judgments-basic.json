@@ -1,0 +1,5 @@
+{
+  "lodash": { "changelog": "bugfix-only", "notes": "security patch release" },
+  "tiny-evil-lib": { "changelog": "significant", "majorIsNodeDropOnly": false },
+  "@red-hat-developer-hub/plugin-utils": { "changelog": "routine", "majorIsNodeDropOnly": true }
+}

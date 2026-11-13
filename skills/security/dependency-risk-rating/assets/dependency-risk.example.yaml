@@ -1,0 +1,58 @@
+# Example configuration for the dependency-risk-rating skill.
+# Copy this file to the root of the repository you want to analyze and adjust it.
+# A .dependency-risk.json file with the same structure is accepted as well.
+version: 1
+
+# Package name patterns whose updates are always considered OK (capped at LOW risk).
+# Supports exact names and trailing-* globs, e.g. "@scope/*".
+trustedPackages:
+  - "@red-hat-developer-hub/*"
+
+# Even trusted packages surface when a security signal fires: an introduced
+# known vulnerability forces HIGH, and a newly added install script keeps its
+# real (uncapped) score. Set false for a hard allowlist.
+trustedOverridesSecurity: true
+
+# A new version younger than this many days is considered risky (freshness penalty).
+minAgeDays: 3
+
+# When more packages than this change AND a large share could not be fully
+# analyzed, the overall rating is escalated by one band.
+manyPackagesThreshold: 100
+
+# How many packages get the full metric fan-out (downloads, publisher, license,
+# install scripts, Scorecard). The rest get a lightweight pass: version delta,
+# age, and vulnerabilities. OSV is always checked for every package regardless
+# of this setting, since an introduced vulnerability forces the overall rating.
+maxPackagesDetailed: 20
+
+# Score → band thresholds (score is 0-10 internally, displayed as 0-100).
+bands:
+  medium: 3
+  high: 6
+
+# Optional partial overrides of the default scoring weights.
+# See references/scoring.md in the skill for all keys and defaults.
+weights: {}
+#  installScriptAdded: 4
+#  ageBelowMin: 3
+
+backstage:
+  # Check @backstage/* versions against the release manifest for the version
+  # pinned in this repo's backstage.json. Defaults to true when backstage.json exists.
+  enabled: true
+
+# Test-coverage lookup on codecov.io, used to phrase the recommendation
+# ("CI can be trusted" vs "manual verification suggested").
+#codecov:
+#  service: github
+#  owner: redhat-developer
+#  tokenEnv: CODECOV_TOKEN        # env var holding the codecov API token
+#  repos:
+#    ".": rhdh                    # workspace directory -> codecov repo slug
+
+# Manual fallback/override when codecov is not configured or unreachable.
+# Values: high | medium | low
+#testConfidence:
+#  ".": medium
+#  "plugins/foo": high

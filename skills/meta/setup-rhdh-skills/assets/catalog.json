@@ -310,6 +310,16 @@
       ]
     },
     {
+      "name": "dependency-risk-rating",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "prose-editing"
+      ],
+      "requiresExternalSkills": []
+    },
+    {
       "name": "rhdh-platform-lifecycle",
       "category": "release",
       "invocation": "model",
