@@ -33,7 +33,10 @@ imminent GA. Always use the live result.
 |-----------|----------|--------|
 | RHDH x.y is EOL | close | Closing — RHDH x.y is end of life |
 | Major version bump | close | No major bumps on release branches |
-| Minor bump of a Go builder image (e.g. `go-toolset`) | normal rules | Build-time image — minor allowed on release branches |
+| rhdh-local: `CATALOG_INDEX_IMAGE` moves ahead of `RHDH_IMAGE` | hold | Catalog index must not lead the RHDH image |
+| Minor bump of a builder-stage image (`go-toolset`, `golang:1.x`, `node:22`, any vendor) | normal rules | Build-time image — minor allowed on release branches |
+| Minor bump of a GitHub Actions `uses:` version | normal rules | CI-only — actions do not ship in the artifact |
+| Minor bump of a Red Hat UBI base image (`ubi9`, `ubi10`, `-minimal`, `-micro`) | normal rules | Vendor stream — minor allowed on release branches |
 | Minor version bump, PR has `[security]` label | normal rules | Security fix — minor allowed on release branches |
 | Minor version bump | close | Release branches take patch-level updates only |
 | Go repo: `go` directive bumped in go.mod, PR has `[security]` label | flag | Human review — security + go directive bump |
@@ -53,18 +56,21 @@ imminent GA. Always use the live result.
 A `release-x.y` branch ships to customers and stays stable between z-streams, so
 it takes patch-level updates only. A minor or major bump there is closed, not
 held and not bumped — holding it leaves a PR nobody intends to merge, and a
-`/bump` publishes the change into the release. Two narrow exceptions follow: a
-security fix, and a Go builder image.
+`/bump` publishes the change into the release. Four narrow exceptions follow: a
+security fix, a builder-stage image, a GitHub Actions version, and a Red Hat UBI
+base image.
 
 This rule is not chart-specific and not repo-specific. It holds in rhdh-operator,
 rhdh-chart, rhdh-must-gather and rhdh-local alike: none of them takes an ordinary
 minor bump on a release branch. The chart bump rules below change only how a
 patch-level change is landed, never whether a minor is allowed.
 
-This applies to every dependency class: GitHub Actions versions, Go modules,
-container image tags, and chart values. A digest pin (`to <sha>`) carries no
-version and is not a bump; a move such as `v1.7.0` to `v1.9.0`, `8.22.0` to
-`8.23.0`, or `v1.19.x` to `v1.20.2` is a minor.
+This applies to most dependency classes: Go modules, container image tags, and
+chart values. Three classes are exempt — builder-stage images, GitHub Actions
+versions, and Red Hat UBI base images — because none of them is an ordinary
+dependency move. A digest pin (`to <sha>`) carries no version and is not a bump; a
+move such as `v1.7.0` to `v1.9.0`, `8.22.0` to `8.23.0`, or `v1.19.x` to
+`v1.20.2` is a minor.
 
 Read the diff, not the script's `semver_level`. That field only recognises an
 `x.y.z` to `x.y.z` or `from vX to vY` shape, so image tags, action versions, and
@@ -77,13 +83,46 @@ and merges once the branch is open, because refusing it would leave a CVE unfixe
 on a supported branch. The exception is narrow — the label has to be on the PR,
 and it covers the security update itself, not whatever else the bump drags in.
 
-Go builder images are the other exception. An image such as `ubi9/go-toolset` or a
-`golang:1.x` builder stage compiles the binary and does not ship in the artifact
-a customer installs, so a minor bump to one — `go-toolset:1.24` to
-`go-toolset:1.25` — is allowed on a release branch and follows the ordinary
-release-branch rules rather than this one. It is the `FROM` of the build stage
-that qualifies. A runtime or final base image (`ubi-minimal`, `distroless`, a
-runtime stage) is shipped and stays patch-only.
+Builder-stage images are one exception, and it is not vendor-scoped. An image
+compiles or assembles the artifact and does not ship in what a customer installs,
+so a minor bump to one is allowed on a release branch and follows the ordinary
+release-branch rules rather than this one. That covers `ubi9/go-toolset` or
+`ubi10/go-toolset` moving a Go minor, a `golang:1.x` or `node:22` builder stage,
+and a chainguard or any other third-party build image. What qualifies is the
+position — the `FROM` that feeds the build — not who publishes it and not the
+repository it came from.
+
+GitHub Actions versions are another exception, on the same reasoning: a `uses:`
+reference in `.github/workflows/` configures the build, not the artifact, so a
+minor bump to one — `azure/setup-helm` v5.0.1 to v5.1.0,
+`tombi-toml/setup-tombi` v1.9.9 to v1.11.2 — is allowed on a release branch and
+follows the ordinary release-branch rules. This covers the action's own version
+only. A Renovate grouping that mixes an action with a shipped dependency is read
+against the shipped dependency. Action **major** bumps stay closed under the
+major-version row above.
+
+Red Hat UBI base images are the fourth exception, and this one ships. The `ubi9`,
+`ubi10`, `ubi10-minimal` and `ubi10-micro` streams are rebuilt by the vendor
+continuously and move as a stream, so a release branch pinned to an older stream
+carries a userspace the vendor no longer refreshes — which is the opposite of what
+a stable branch is for. A minor stream move is therefore allowed on a release
+branch, in the final stage as well as a build stage, and follows the ordinary
+release-branch rules: `ubi10-minimal:10.2-…` to `10.3-…`, `ubi10/ubi-micro` 10.2
+to 10.3, `ubi9:9.5` to `9.6`. Read the stream, not the build stamp — a rebuild
+inside the same stream (`10.3-1794493716` to `10.3-1794519911`) is patch-level
+either way.
+
+The UBI exemption covers shipped images and is scoped to
+`registry.access.redhat.com/ubi*`; the builder-stage exemption above does not
+overlap with it. A *shipped* final image from anywhere else — `distroless`, a
+chainguard or other third-party runtime image, an upstream base image — stays
+patch-only, because no vendor commitment to rebuild it into the branch exists. The
+same chainguard image used as a build stage is a builder and is allowed.
+
+Example: rhdh-must-gather #577 moved `ubi10/go-toolset` and `ubi10-minimal` from
+the 10.2 to the 10.3 stream on `release-2.1` and merges; rhdh-operator #4074 is
+the same shape. Both carry the builder and the shipped image in one grouped PR,
+and the shipped image no longer blocks it.
 
 A minor bump landing in this category is itself the signal: Renovate should not be
 raising one there. Say so in the close comment and point the update at the
@@ -92,14 +131,15 @@ development branch is `main`, or `dev` for rhdh-local; minor bumps are welcome
 there.
 
 Example: rhdh-chart #672 moved the `curl` test image from `8.22.0` to `8.23.0` on
-`release-2.1`. It carried no `[security]` label, so it should have been closed
-rather than treated as a chart bump. The same run merged three more non-security
-minors in rhdh-chart — #709 (`chart-releaser-action` v1.7.0 to v1.9.0), #682
-(`chainguard/actions/setup-gitsign` v1.6.41 to v1.8.1) and #679 (`setup-tombi`
-v1.8.4 to v1.11.2). The two security minors that merged, rhdh-operator #4012 and
-#3938, are correct under the exception. Catching the shape in one repository is
-not evidence that the others are clean: check every PR on every release branch
-against this rule.
+`release-2.1`. It carried no `[security]` label and is not a UBI image, so it
+should have been closed rather than treated as a chart bump. The same run merged
+three more non-security minors in rhdh-chart — #709 (`chart-releaser-action`
+v1.7.0 to v1.9.0), #682 (`chainguard/actions/setup-gitsign` v1.6.41 to v1.8.1) and
+#679 (`setup-tombi` v1.8.4 to v1.11.2) — which are all GitHub Actions and are
+allowed under that exception. The two security minors that merged, rhdh-operator
+#4012 and #3938, are correct under the security exception. Catching the shape in
+one repository is not evidence that the others are clean: check every PR on every
+release branch against this rule.
 
 ### Go pseudo-versions
 
@@ -124,6 +164,24 @@ above win, because the table is applied top to bottom.
 This rule arrived after the fact: `k8s.io/utils` (#3968),
 `github.com/openshift/api` (#3864) and `golang.org/x/exp` (#3865) were all merged
 to `release-2.1` as digest bumps and would be closed under it.
+
+### go.sum churn is not a version bump
+
+Renovate's `go get` rewrites `go.sum` for every module the new version requires.
+A version that appears only in `go.sum`, and not on a `require` line in `go.mod`,
+is the upstream module's own requirement rather than a bump this repository
+chose. Judge the bump by `go.mod`.
+
+When `go.mod` moves only at patch level and the minor or major moves sit in
+`go.sum` alone, the change is a patch and follows the ordinary rules. Closing it
+would block a legitimate patch fix on a supported branch, and no patch-only
+variant of it exists — the transitive moves come with the direct one.
+
+Example: `helm.sh/helm/v4` v4.3.1 to v4.3.2 in rhdh-must-gather moves only
+`go.mod` patches; `sirupsen/logrus` 1.9.4 to 1.10.2, `docker/go-metrics` 0.0.1 to
+0.1.0 and `klauspost/compress` 1.19.0 to 1.20.3 are `go.sum`-only and are required
+by helm v4.3.2 itself. That merges. The reverse also holds: a minor or major move
+on a `require` line in `go.mod` is a real bump, whatever `go.sum` says.
 
 ### Unknown release state
 
@@ -223,6 +281,39 @@ dep bump gets `/bump <chart> minor`, a patch gets `/bump <chart> patch`.
 rhdh-local uses `dev` as its development branch. The `main` branch is kept
 stable per a PM requirement and does not receive bot PRs. Treat PRs targeting
 `dev` in rhdh-local the same as PRs targeting `main` in other repositories.
+
+### Catalog index must not lead the RHDH image
+
+On a `release-x.y` branch, rhdh-local ships a matched pair: `RHDH_IMAGE` in
+`compose.yaml` and `CATALOG_INDEX_IMAGE` in `default.env`. The index is the
+plugin catalog the matching RHDH image was tested against, so moving it to
+`x.y.z` while `compose.yaml` still points at `x.y.(z-1)` hands the environment a
+catalog its RHDH build never saw. Hold such a PR instead of merging it.
+
+Both conditions must hold before unholding, and both are checked on the release
+branch, not in the PR:
+
+1. `RHDH_IMAGE` in `compose.yaml` already points at the same `x.y.z`:
+
+   ```
+   gh api 'repos/redhat-developer/rhdh-local/contents/compose.yaml?ref=release-x.y' \
+     --jq '.content' | tr -d '\n' | base64 -d | grep 'rhdh-community/rhdh:'
+   ```
+
+2. The `x.y.z` tag is present in rhdh-local, which is what makes the release
+   available to this repository at all:
+
+   ```
+   git ls-remote --tags https://github.com/redhat-developer/rhdh-local.git | grep -E 'refs/tags/x\.y\.z$'
+   ```
+
+Until both hold, comment `/hold` with the z-stream the index is waiting on, and
+do not approve. Example: a PR moving `CATALOG_INDEX_IMAGE` to `1.10.8` while
+`compose.yaml` still reads `rhdh:1.10.7` and no `1.10.8` tag exists is held, not
+merged — the index would otherwise run ahead of the image it must match.
+
+The reverse order is fine: a PR that moves `RHDH_IMAGE` forward is not held, and
+the index catches up afterwards. Only the index leading the image is a problem.
 
 ## Merge strategy
 
