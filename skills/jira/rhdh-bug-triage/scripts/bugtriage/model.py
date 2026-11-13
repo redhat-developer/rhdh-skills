@@ -126,6 +126,7 @@ def _comments(payload: Dict[str, Any]) -> List["Comment"]:
         author = as_name(item.get("author")) or as_name(item.get("updateAuthor"))
         comments.append(
             Comment(
+                id=as_text(item.get("id")),
                 author=author,
                 body=as_text(item.get("body")),
                 created=as_text(item.get("created")),
@@ -220,6 +221,7 @@ class Comment:
     author: str = ""
     body: str = ""
     created: str = ""
+    id: str = ""
 
 
 @dataclass
@@ -257,6 +259,7 @@ class Ticket:
     customer_signals: List[str] = field(default_factory=list)
     is_done: bool = False
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
+    comments_complete: bool = False
 
     @property
     def search_text(self) -> str:
@@ -282,6 +285,19 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
     labels = as_names(payload.get("labels"))
     links = _links(payload)
     comments = _comments(payload)
+    raw_comments = payload.get("comment", payload.get("comments"))
+    comments_complete = (
+        isinstance(raw_comments, list)
+        and payload.get("commentsComplete") is True
+        and len(comments) == len(raw_comments)
+    ) or (
+        isinstance(raw_comments, dict)
+        and isinstance(raw_comments.get("comments"), list)
+        and isinstance(raw_comments.get("total"), int)
+        and raw_comments.get("startAt", 0) == 0
+        and raw_comments["total"] == len(raw_comments["comments"])
+        and len(comments) == len(raw_comments["comments"])
+    )
     team = as_name(_first(payload, "customfield_10001", "team")) or ""
     components = as_names(payload.get("components"))
     is_done = bool(status_category.lower() in DONE_CATEGORIES or status.lower() in DONE_STATUSES)
@@ -304,6 +320,7 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
         assignee=as_name(_first(payload, "assignee")),
         reporter=as_name(_first(payload, "reporter")),
         comments=comments,
+        comments_complete=comments_complete,
         links=links,
         pr_urls=_collect_pr_urls(payload, links),
         commit_shas=_collect_commits(payload),

@@ -398,7 +398,8 @@ class TestPolicy:
         packet = evaluate_packet(ticket, [], assessment)
         assert packet.action == "unclear"
         assert packet.proposed_comment
-        assert "could not reach a confident disposition" in packet.proposed_comment
+        assert "unclear" in packet.proposed_comment
+        assert "Re-checked against" not in packet.proposed_comment
 
     def test_still_valid_without_direct_evidence_asks_for_repro(self):
         ticket = by_key()["RHDHBUGS-1001"]
@@ -479,7 +480,7 @@ class TestReport:
     def test_packet_marks_dry_run_and_never_posts(self):
         rendered = render_packet(self._packet(), by_key()["RHDHBUGS-1010"])
         assert "Dry run" in rendered
-        assert "## Comment" in rendered
+        assert rendered.startswith(self._packet().proposed_comment)
         assert "## Review details" in rendered
         assert "Closing as a duplicate of [RHDHBUGS-1009]" in rendered
         assert "https://redhat.atlassian.net/browse/RHDHBUGS-1009" in rendered
@@ -496,7 +497,7 @@ class TestReport:
             "[2.1.0 release](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0)"
             in rendered
         )
-        assert rendered.index("## Comment") < rendered.index("## Review details")
+        assert rendered.startswith(packet.proposed_comment)
 
     def test_batch_report_has_method_and_controls(self):
         packet = self._packet()
@@ -569,13 +570,17 @@ class TestRun:
             )
         )
         assert len(result.packets) == 7
+        assert sum(result.manifest["commentPolicy"]["counts"].values()) == 7
+        assert result.manifest["commentPolicy"]["cooldownDays"] == 14
         for name in ("report.md", "packets.json", "summary.csv", "manifest.json"):
             assert (out / name).is_file()
         assert (out / "proposed" / "RHDHBUGS-1001.md").is_file()
         proposal = (out / "proposed" / "RHDHBUGS-1006.md").read_text(encoding="utf-8")
-        assert "## Comment" in proposal
+        assert proposal.startswith(
+            next(p.proposed_comment for p in result.packets if p.key == "RHDHBUGS-1006")
+        )
         assert "[PR #999]" in proposal
-        assert proposal.index("## Comment") < proposal.index("## Review details")
+        assert proposal.index("[PR #999]") < proposal.index("## Review details")
         packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
         assert packets["dryRun"] is True
         close = [item for item in packets["packets"] if item["action"].startswith("propose_close")]

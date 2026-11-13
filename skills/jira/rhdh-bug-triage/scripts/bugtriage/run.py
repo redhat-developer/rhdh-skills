@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from .comments import DEFAULT_COOLDOWN_DAYS, attach_comment_plan
 from .duplicates import (
     DUPLICATE_CLOSE_THRESHOLD,
     DUPLICATE_HINT_THRESHOLD,
@@ -65,6 +66,7 @@ class RunConfig:
     controls: List[Control] = field(default_factory=list)
     corpus_path: str = ""
     jql: str = ""
+    comment_cooldown_days: int = DEFAULT_COOLDOWN_DAYS
 
 
 @dataclass
@@ -155,6 +157,8 @@ def load_assessments(directory: str) -> Dict[str, Assessment]:
 
 
 def run(config: RunConfig) -> RunResult:
+    if config.comment_cooldown_days < 0:
+        raise RunError("--comment-cooldown-days must be nonnegative")
     as_of = parse_as_of(config.as_of)
     tickets = load_export(config.input_path)
     if not tickets:
@@ -213,6 +217,9 @@ def run(config: RunConfig) -> RunResult:
             packet.recommended_step = (
                 "Verifier rejected the close proposal; keep open and review the evidence."
             )
+        attach_comment_plan(
+            ticket, packet, assessments.get(key), as_of, config.comment_cooldown_days
+        )
         packets.append(packet)
 
     generated_at = now_iso()
@@ -285,6 +292,14 @@ def run(config: RunConfig) -> RunResult:
         thresholds=thresholds,
         policy_version=POLICY_VERSION,
     )
+    manifest["commentPolicy"] = {
+        "cooldownDays": config.comment_cooldown_days,
+        "historySource": "complete Jira comments; dry runs are not posting history",
+        "counts": {
+            status: sum(packet.comment_plan.get("status") == status for packet in packets)
+            for status in ("propose", "suppress", "review_required")
+        },
+    }
     write_json(output_dir / "manifest.json", manifest)
 
     return RunResult(

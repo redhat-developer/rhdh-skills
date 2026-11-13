@@ -43,12 +43,44 @@ One JSON file per ticket, named `KEY.json`. The minimal shape:
 | `review.agree` | for a close | `true` only when the passes agree |
 | `notes` | optional | Reviewer context, including a recorded disagreement |
 | `comment` | optional | A ready-to-post comment; otherwise the policy drafts one. Jira keys and URLs should be Markdown links |
+| `recommendedStep` | optional | Specific next step for an unclear, needs-repro, or supported still-valid finding. It cannot override a failed close gate. Use the same next step in the comment |
+| `followUp` | for repeat proposals | Latest posted `priorCommentId`, `state` (`completed` or `superseded`), and direct cited `evidence` showing the previous action's result or supersession |
 
 An unknown disposition, a missing key, or a malformed file aborts the run with a
 non-zero exit code. Invalid evidence items are dropped and counted as gaps; they
 do not abort the run.
 
 Confidence is not an input. If a file contains one, it is ignored.
+
+Example follow-up (a claim to verify, not proof by itself):
+
+```json
+"followUp": {
+  "priorCommentId": "12345",
+  "state": "completed",
+  "evidence": [{
+    "type": "comment",
+    "ref": "https://redhat.atlassian.net/browse/RHDHBUGS-1234?focusedCommentId=12346",
+    "why": "The owner supplied the requested versioned retest and logs.",
+    "strength": "direct"
+  }]
+}
+```
+
+Every packet also carries `commentPlan`: `status` (`propose`, `suppress`, or
+`review_required`), `reason`, stable `reference`, and `cooldownDays`. A recognized
+previous post adds `priorCommentId` and, when available, `lastPostedAt` and
+`earliestReconsiderAt`. This is independent of the bug's disposition: a valid
+close recommendation can still be suppressed as already posted. It is not write
+authorization, a durable posting receipt, or proof of exactly-once delivery.
+
+The comment ends with a visible `Triage reference: rhdh-bug-triage:v1:<hash>`
+footer (the token is inline code in Markdown). Preserve it unchanged in ADF and
+readback. Dry runs do not insert posting history. Changes to prose or evidence
+ordering do not create a new identity. Missing/truncated comment history, invalid
+citations, and comments claiming a closure instead of recommending it require
+review. `report.md` shows the delivery reason beside the draft and counts all
+three delivery states. No extra file is required for a reviewer.
 
 ## Packets
 

@@ -16,6 +16,26 @@ From the repository root:
 uv sync --extra dev
 ```
 
+## Comment-preview checks
+
+The repeat-comment tests require no Jira writes. They check first proposals,
+the 14-day boundary, configurable/zero cooldowns, pending actions after the
+cooldown, unrelated replies, a follow-up citing the wrong comment, incomplete
+history, malformed references, future timestamps, and customer/completed issues.
+A second dry run must not masquerade as a previous Jira post. A wording-only
+change must not create a new recommendation identity.
+
+Inspect `report.md` for each comment's delivery status and reason. A suppressed
+draft still appears for audit but must not be handed off for posting. Source-only
+findings must not claim a runtime reproduction; close drafts must recommend a
+close rather than announce one. `proposed/KEY.md` must start with the exact body
+embedded in the report, including its triage reference.
+
+Before enabling any future writer, separately test preserving the reference
+through ADF conversion, fresh customer/history checks, per-issue serialization,
+and reconciliation after a post times out. The dry-run planner cannot certify
+those unimplemented write-path behaviors or infer equivalent legacy comments.
+
 ## Fixture run
 
 The fixtures live at `tests/unit/fixtures/bug_triage/` and contain 12 issues:

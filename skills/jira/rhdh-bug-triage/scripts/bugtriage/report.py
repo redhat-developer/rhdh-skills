@@ -38,6 +38,23 @@ def _confidence(value: float) -> str:
     return f"{value:.2f}"
 
 
+def _comment_delivery(packet: Packet) -> List[str]:
+    plan = packet.comment_plan
+    if not plan:
+        return []
+    lines = [f"**Comment delivery:** `{plan['status']}` — {plan['reason']}", ""]
+    if plan.get("priorCommentId"):
+        url = f"https://redhat.atlassian.net/browse/{packet.key}?focusedCommentId={plan['priorCommentId']}"
+        lines.extend([f"Previous recommendation: {ref_link(url, 'comment')}.", ""])
+    if plan.get("earliestReconsiderAt"):
+        lines.extend(
+            [f"Cooldown ends: {plan['earliestReconsiderAt']}. Pending-work checks still apply.", ""]
+        )
+    for item in plan.get("followUp", {}).get("evidence", []):
+        lines.extend([f"Follow-up evidence: {ref_link(item['ref'])} — {item['why']}", ""])
+    return lines
+
+
 def render_packet(
     packet: Packet,
     ticket: Ticket,
@@ -61,18 +78,19 @@ def render_packet(
         ]
     )
 
+    comment = packet.proposed_comment.strip()
     lines = [
+        comment if comment else "_No comment proposed._",
+        "",
+        "---",
+        "",
         f"# {packet.key} \u2014 {packet.summary.strip() or '(no summary)'}",
         "",
         "> **Dry run.** This is the exact comment that would be posted to "
         f"{ref_link(packet.key)}. Nothing was posted, transitioned, linked, or written "
         "to Jira.",
         "",
-        "## Comment",
-        "",
     ]
-    comment = packet.proposed_comment.strip()
-    lines.append(comment if comment else "_No comment proposed._")
 
     lines.extend(
         [
@@ -92,6 +110,7 @@ def render_packet(
             f"**Why this comment.** {packet.recommended_step or 'Review the evidence.'}",
         ]
     )
+    lines.extend(["", *_comment_delivery(packet)])
     if packet.target:
         lines.extend(["", f"**Target.** {ref_link(packet.target)}"])
     if packet.notes:
@@ -272,6 +291,12 @@ def render_report(
         f"- **Decision-ready:** {decision_ready} of {total}.",
         f"- **Tickets with cited evidence:** {with_evidence} of {total}.",
         f"- **Evidence gaps:** {gaps} across the sample.",
+        "- **Comment plans:** "
+        + ", ".join(
+            f"{sum(p.comment_plan.get('status') == status for p in packets)} {status}"
+            for status in ("propose", "suppress", "review_required")
+        )
+        + ". These are dry-run plans, not permission to post.",
         "",
         "## Close proposals",
         "",
@@ -343,6 +368,7 @@ def render_report(
             ]
         )
         comment = packet.proposed_comment.strip()
+        lines.extend(_comment_delivery(packet))
         if comment:
             lines.extend(f"> {line}" if line else ">" for line in comment.splitlines())
         else:

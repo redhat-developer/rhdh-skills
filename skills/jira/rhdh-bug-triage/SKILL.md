@@ -42,6 +42,12 @@ applies `/mutation-gate` before any external write. If a caller asks this skill 
 apply or post its output, say that the skill cannot write and name that handoff
 instead.
 
+The current milestone is **recommendation comments**, not PR creation or fixing
+bugs. A close is advice for a human, never an action this skill takes. Dry-run
+comments must be the same useful, linked, recommendation-first text a reviewer
+would approve for Jira; do not say "Closing as" or imply a reproduction ran when
+the evidence is only source inspection.
+
 ## Boundary with neighbouring skills
 
 - `/rhdh-jira-authoring` owns what counts as a duplicate and how Jira work is
@@ -88,6 +94,11 @@ instead.
 5. **Review locally.** Read `report.md` and the per-ticket packets. Hand an
    approved action to the write skill; leave every rejected or unclear ticket
    alone.
+6. **Plan delivery, not reminders.** Read complete Jira comment history. Use a
+   14-day configurable cooldown, but never repeat an unchanged recommendation or
+   chase an outstanding request merely because time elapsed. The report includes
+   `propose`, `suppress`, or `review_required` for each comment. Dry runs do not
+   count as posted history. See the workflow's comment-delivery rules.
 
 ## Non-negotiable rules
 
@@ -121,6 +132,10 @@ instead.
   stating the disposition, the evidence, and one recommended next step. Jira keys
   and URLs in that comment are Markdown links. The comment is always a local
   proposal; nothing here posts it.
+- Make the next step specific to the actual gap. Reuse existing reproduction
+  steps rather than asking for them again. A missing publication link needs a
+  Documentation check, not a product reproduction. Name the owning team when
+  known; do not invent an owner or assign anyone.
 - The definition of the same bug belongs to `/rhdh-jira-authoring`; this skill
   applies it and adds the close gates below. A candidate that would need a
   different fix is related, not duplicate.
@@ -141,6 +156,10 @@ python3 scripts/run_poc.py run --input export.json --sample sample.json \
 python3 scripts/run_poc.py evaluate --packets report/packets.json --truth truth.json \
   --out report/evaluation.md --strict
 ```
+
+`run --comment-cooldown-days 14` sets the minimum interval between proposed
+follow-up comments. Even `0` does not bypass unchanged or pending-action checks.
+`propose` is not write authorization. No autonomous posting mode exists here.
 
 `--source acli` works for `select` when a Jira session is available. `collect`
 uses cached PR state by default; `--gh` opts into read-only `gh` lookups. The full

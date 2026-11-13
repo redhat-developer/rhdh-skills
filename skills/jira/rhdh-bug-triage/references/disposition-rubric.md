@@ -56,9 +56,13 @@ Search PRs for the ticket key **and** for the Jira keys it links to or mentions,
 so a fix recorded under another bug is still found. Record which key found the
 PR in `foundVia`.
 
-The default target is the stream the fix landed on; do not propose a backport
-just because the report is old. Propose one only for a customer-linked or
-critical ticket, and never alongside a close for a customer-linked ticket.
+For an existing fix, record the stream that actually carries it. For a still-valid
+bug requiring new work, recommend the next y-stream by default. Do not propose a
+backport just because the report is old: an explicit customer request with
+critical impact on a supported stream is the exception to assess through
+`/rhdh-backport`. Customer-linked tickets remain outside this sample and must
+never receive a close proposal. This skill recommends work; it creates no PR,
+fix, backport, or assignment.
 
 ## Actions
 
@@ -118,6 +122,18 @@ without the review details.
 - **Actionable.** End with the next step: close as duplicate of the target, close
   as fixed in the named release, keep open for the owning team, or ask for the
   exact missing detail.
+- **A recommendation, not a mutation receipt.** Say "Recommendation: close as
+  duplicate of …", never "Closing as …". Explain why the same trigger/failure
+  needs the same fix; a similar title or score alone is not that explanation.
+  For already-fixed findings name the change and release that carries it. For
+  still-valid findings distinguish a cited reproduction from source inspection.
+  For unclear findings ask the owner to settle the specific missing fact, not
+  automatically to reproduce the product. Do not ask again for existing steps.
+
+The generated `Triage reference` footer is delivery metadata, not evidence or a
+second recommended action. Keep it in the exact comment a human approves. A
+cooldown alone is not grounds to repeat advice: follow the workflow's pending
+action and changed-recommendation rules.
 
 A comment is still a proposal: nothing here posts it. `/prose-editing` owns the
 final prose pass before a human posts it, and `/rhdh-jira-update` owns the post.

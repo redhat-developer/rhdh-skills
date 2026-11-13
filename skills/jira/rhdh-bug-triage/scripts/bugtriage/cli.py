@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .collect import CollectConfig, collect
+from .comments import DEFAULT_COOLDOWN_DAYS
 from .evaluate import write_evaluation
 from .forge import ForgeAdapterError
 from .jira import JiraAdapterError, load_tickets_from_acli, write_acli_probe
@@ -118,6 +119,7 @@ def command_run(args: argparse.Namespace) -> int:
             controls=_controls(args.control),
             corpus_path=args.corpus or "",
             jql=args.jql or "",
+            comment_cooldown_days=args.comment_cooldown_days,
         )
     )
     counts = result.manifest["counts"]
@@ -217,6 +219,8 @@ def command_template(args: argparse.Namespace) -> int:
                 "review": {"independentPasses": 0, "agree": False},
                 "notes": "",
                 "comment": "",
+                "recommendedStep": "",
+                "followUp": {"priorCommentId": "", "state": "unknown", "evidence": []},
             },
         )
         written.append(key)
@@ -299,6 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--assessments", help="directory of KEY.json assessments")
     run_parser.add_argument("--out", required=True, help="output directory")
     run_parser.add_argument("--current-release", default=DEFAULT_CURRENT_RELEASE)
+    run_parser.add_argument(
+        "--comment-cooldown-days",
+        type=int,
+        default=DEFAULT_COOLDOWN_DAYS,
+        help="minimum days between triage comments; pending/unchanged recommendations still suppress",
+    )
     run_parser.add_argument("--as-of", default="")
     run_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
     run_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)

@@ -64,6 +64,15 @@ Use 12–15 aged tickets. Add controls only when a reviewer already knows the
 answer; a control that is itself uncertain teaches nothing. If the export is
 missing fields the selector needs, stop and fix the export rather than guessing.
 
+Resolve the release under review through `/rhdh-context` before selection and
+check the affects versions: an aged validation candidate should affect a release
+older than that target. The age-only CLI selector does not enforce that version
+comparison. A missing affects version is a gap, not evidence of an old release.
+Keep newer/equal-version reports out of an aged validation sample, or explicitly
+mark their release scope unresolved. Do not assess a new feature on a release
+that predates it and call the issue obsolete. Do not silently substitute the
+CLI's example/default release for the current product target.
+
 ## 3. Collect evidence
 
 ```bash
@@ -104,6 +113,52 @@ record both results under `review`:
 ```json
 "review": {"independentPasses": 2, "agree": true}
 ```
+
+Fill `recommendedStep` with one evidence-specific action and a team/owner when
+known. Write `comment` as a recommendation, its linked basis, and that action.
+For example (replace these illustrative links): "Based on [the older report](https://example.invalid/older-report), both tickets describe the same
+error after the same trigger and require the same fix. Recommendation: close
+this issue as a duplicate of [KEY](https://example.invalid/older-report), subject to human confirmation."
+Do not claim a close has happened, ask for details the ticket already contains,
+or describe code inspection as a runtime reproduction. Source evidence can
+justify keeping work open without claiming the shipped image was tested.
+
+### Decide whether a comment should be proposed
+
+The dry run models the future comment behavior; it still posts nothing:
+
+- Fetch complete comments, IDs and posting timestamps. Missing/truncated history
+  produces `review_required`, not permission to comment. A flattened export with
+  only a `comments` list must include `commentsComplete: true` from an adapter
+  that actually fetched every page; do not add this flag to bypass a failed read.
+- An approved posted body retains its `Triage reference` footer. This stable
+  identity covers ticket, release, disposition, action, target and evidence
+  references, not wording or evidence order. Recognized Jira comments are the
+  history, never a local proposal file or the issue's `updated` timestamp.
+- The same identity already posted means `suppress`, regardless of age.
+- A changed recommendation must first wait `--comment-cooldown-days` (14 by
+  default). After that, suppress it while the previous requested action is
+  pending or its outcome is unknown. An unrelated reply, label edit or newer
+  release does not by itself clear the pending action.
+- A later proposal needs a `followUp` assessment naming the latest triage
+  `priorCommentId`, `state: completed` or `superseded`, and direct cited evidence
+  explaining the result or why the previous request is no longer appropriate.
+  Check that evidence independently. Do not infer completion from silence or
+  from a model's uncited statement. Identical advice stays suppressed even then.
+- Unknown/malformed references or unreliable timestamps require review. Existing
+  unmarked human/legacy triage must be reviewed for equivalent advice before a
+  first marked comment is approved; marker detection cannot infer its meaning.
+- Every ticket still has a draft in `report.md`, including suppressed drafts.
+  The delivery status explains why it must not be posted. A suppression is a
+  successful no-op, not a reason to send another reminder or a Slack notification.
+
+Before a future approved handoff, `/rhdh-jira-update` must freshly read the issue
+and complete comments, recheck customer signals, re-evaluate the comment plan,
+preserve the approved body/reference, and read back the created comment ID.
+Serialize writes per issue: a check then a post is not atomic, and this planner
+does not supply a concurrency lock. After a timeout or uncertain delivery, stop
+and reconcile Jira history before retrying. No automatic write or retry path is
+implemented by this skill, and `/mutation-gate` still applies to every write.
 
 The second pass must not copy the first. It re-reads the ticket and the evidence
 and reaches its own disposition. If the passes disagree, set `agree` to `false`
