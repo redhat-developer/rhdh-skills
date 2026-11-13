@@ -1,0 +1,41 @@
+{
+  "format": "package-json",
+  "changes": [
+    {
+      "name": "chalk",
+      "from": null,
+      "to": "^4.1.0",
+      "kind": "added",
+      "direct": true,
+      "delta": {
+        "type": "unknown",
+        "effectiveType": "unknown",
+        "downgrade": false,
+        "prereleaseTarget": false
+      }
+    },
+    {
+      "name": "left-pad",
+      "from": "^1.3.0",
+      "to": null,
+      "kind": "removed",
+      "direct": true,
+      "delta": {
+        "type": "unknown",
+        "effectiveType": "unknown",
+        "downgrade": false,
+        "prereleaseTarget": false
+      }
+    }
+  ],
+  "counts": {
+    "total": 2,
+    "direct": 2,
+    "added": 1,
+    "removed": 1,
+    "major": 0,
+    "minor": 0,
+    "patch": 0,
+    "other": 0
+  }
+}
