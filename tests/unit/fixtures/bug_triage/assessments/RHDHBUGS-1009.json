@@ -1,0 +1,22 @@
+{
+  "key": "RHDHBUGS-1009",
+  "disposition": "still_valid",
+  "evidence": [
+    {
+      "type": "repro",
+      "ref": "repro:2.1.0/chrome-129",
+      "why": "Selecting a catalog filter still moves focus away from the search input on 2.1.0.",
+      "strength": "direct"
+    }
+  ],
+  "repro": {
+    "result": "fails",
+    "release": "2.1.0",
+    "notes": "Keyboard-only flow in the catalog table."
+  },
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
+  "comment": "Re-checked on [2.1.0](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0): selecting a catalog filter still drops focus from the search input. Keeping this open for the Frontend Plugins & UI team."
+}

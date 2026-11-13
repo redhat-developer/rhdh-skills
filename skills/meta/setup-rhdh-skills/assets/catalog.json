@@ -17,6 +17,20 @@
   ],
   "skills": [
     {
+      "name": "rhdh-bug-triage",
+      "category": "jira",
+      "invocation": "model",
+      "requiresSkills": [
+        "rhdh-jira-api",
+        "rhdh-jira-refine",
+        "prose-editing"
+      ],
+      "optionalSkills": [
+        "mutation-gate",
+        "rhdh-plugin-bug-fix"
+      ]
+    },
+    {
       "name": "rhdh-jira-create",
       "category": "jira",
       "invocation": "model",

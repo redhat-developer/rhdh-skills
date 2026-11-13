@@ -1,0 +1,306 @@
+{
+  "fieldNames": {
+    "customfield_10746": "Customer Name",
+    "customfield_10716": "Customers",
+    "customfield_10747": "Customer Impact",
+    "customfield_10748": "Case Link",
+    "customfield_10749": "Support Case Reference"
+  },
+  "issues": [
+    {
+      "key": "RHDHBUGS-1001",
+      "fields": {
+        "summary": "Helm install fails with 'release not found' on OpenShift",
+        "description": "Installing the RHDH Helm chart on OpenShift 4.14 fails during the operator step. The release is created but the next hook cannot find it.\n\nError: release: not found\nError: INSTALLATION FAILED: failed to install release rhdh: release: not found",
+        "status": {"name": "Backlog", "category": {"name": "To Do"}},
+        "resolution": null,
+        "created": "2023-12-01T10:00:00.000+0000",
+        "updated": "2024-02-01T10:00:00.000+0000",
+        "priority": {"name": "Major"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Install"}},
+        "components": [{"name": "Helm Chart"}],
+        "labels": ["Refined"],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Alex Example"},
+        "comment": {
+          "comments": [
+            {
+              "author": {"displayName": "Alex Example"},
+              "created": "2024-01-10T10:00:00.000+0000",
+              "body": "Still reproducible on 1.1.5 with the same release: not found error."
+            }
+          ]
+        },
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1002",
+      "fields": {
+        "summary": "Helm install fails: release not found in OpenShift namespace",
+        "description": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Same failure as the Helm chart installation on OpenShift 4.14. Error: release: not found when the post-install hook runs."
+                }
+              ]
+            }
+          ]
+        },
+        "status": {"name": "New", "category": {"name": "To Do"}},
+        "resolution": null,
+        "created": "2024-01-15T11:30:00.000+0000",
+        "updated": "2024-01-20T11:30:00.000+0000",
+        "priority": {"name": "Normal"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Install"}},
+        "components": [{"name": "Helm Chart"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Jordan Example"},
+        "reporter": {"displayName": "Sam Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1003",
+      "fields": {
+        "summary": "Helm install fails with 'release not found' for customer cluster",
+        "description": "Customer reports the Helm install failure. Error: release: not found.",
+        "status": {"name": "Backlog", "category": {"name": "To Do"}},
+        "created": "2023-11-01T09:00:00.000+0000",
+        "updated": "2023-11-10T09:00:00.000+0000",
+        "priority": {"name": "Major"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Install"}},
+        "components": [{"name": "Helm Chart"}],
+        "labels": ["RHDH-Customer"],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Support Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1004",
+      "fields": {
+        "summary": "Helm upgrade loses custom values after operator restart",
+        "description": "Upgrade with custom values, restart the operator, and the values are gone.",
+        "status": {"name": "Backlog", "category": {"name": "To Do"}},
+        "created": "2023-10-01T09:00:00.000+0000",
+        "updated": "2023-10-10T09:00:00.000+0000",
+        "priority": {"name": "Normal"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Install"}},
+        "components": [{"name": "Operator"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Support Example"},
+        "comment": {"comments": []},
+        "issuelinks": [
+          {
+            "type": {"name": "Related"},
+            "outwardIssue": {"key": "RHDHSUPP-456", "fields": {"summary": "Customer case"}}
+          }
+        ]
+      }
+    },
+    {
+      "key": "RHDHBUGS-1005",
+      "fields": {
+        "summary": "Backstage pod crashes when external database TLS certificate rotates",
+        "description": "The pod crashes after the database TLS certificate rotates.",
+        "status": {"name": "Backlog", "category": {"name": "To Do"}},
+        "created": "2023-09-01T09:00:00.000+0000",
+        "updated": "2023-09-10T09:00:00.000+0000",
+        "priority": {"name": "Critical"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Install"}},
+        "customfield_10746": "Acme Corporation",
+        "components": [{"name": "Operator"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Support Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1006",
+      "fields": {
+        "summary": "TechDocs build fails with ENOTFOUND when using external S3",
+        "description": "TechDocs build fails with getaddrinfo ENOTFOUND when the publisher uses an external S3 endpoint.\n\nSee https://github.com/redhat-developer/rhdh/pull/999 for the fix.",
+        "status": {"name": "Review", "category": {"name": "In Progress"}},
+        "resolution": null,
+        "created": "2023-08-01T09:00:00.000+0000",
+        "updated": "2024-03-01T09:00:00.000+0000",
+        "priority": {"name": "Major"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Plugins"}},
+        "components": [{"name": "TechDocs"}],
+        "labels": ["upstream"],
+        "fixVersions": [{"name": "2.1.0"}],
+        "versions": [],
+        "assignee": {"displayName": "Taylor Example"},
+        "reporter": {"displayName": "Riley Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1007",
+      "fields": {
+        "summary": "Catalog import stuck at 99% for large repositories",
+        "description": "A repository with more than 2,000 catalog entities never completes import.",
+        "status": {"name": "Backlog", "category": {"name": "To Do"}},
+        "resolution": null,
+        "created": "2023-07-01T09:00:00.000+0000",
+        "updated": "2023-07-10T09:00:00.000+0000",
+        "priority": {"name": "Normal"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Plugins"}},
+        "components": [{"name": "Catalog"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Morgan Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1008",
+      "fields": {
+        "summary": "Entity page title truncates with a long namespace",
+        "description": "The title is clipped when the namespace is longer than 40 characters.",
+        "status": {"name": "New", "category": {"name": "To Do"}},
+        "resolution": null,
+        "created": "2026-10-01T09:00:00.000+0000",
+        "updated": "2026-10-02T09:00:00.000+0000",
+        "priority": {"name": "Minor"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Frontend Plugins & UI"}},
+        "components": [{"name": "UI"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Casey Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1009",
+      "fields": {
+        "summary": "Search bar loses focus after selecting a catalog filter",
+        "description": "After selecting a filter in the catalog table, the search input loses focus and the next keystroke is dropped.",
+        "status": {"name": "Backlog", "category": {"name": "To Do"}},
+        "resolution": null,
+        "created": "2023-06-01T09:00:00.000+0000",
+        "updated": "2023-06-10T09:00:00.000+0000",
+        "priority": {"name": "Normal"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Frontend Plugins & UI"}},
+        "components": [{"name": "UI"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Jamie Example"},
+        "comment": {"comments": []},
+        "issuelinks": []
+      }
+    },
+    {
+      "key": "RHDHBUGS-1010",
+      "fields": {
+        "summary": "Search input loses focus when a catalog filter is selected",
+        "description": "Selecting a catalog filter moves focus away from the search bar; the next typed character is lost.",
+        "status": {"name": "New", "category": {"name": "To Do"}},
+        "resolution": null,
+        "created": "2023-05-01T09:00:00.000+0000",
+        "updated": "2023-05-10T09:00:00.000+0000",
+        "priority": {"name": "Normal"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Frontend Plugins & UI"}},
+        "components": [{"name": "UI"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Jamie Example"},
+        "comment": {"comments": []},
+        "issuelinks": [
+          {
+            "type": {"name": "Duplicate"},
+            "outwardIssue": {"key": "RHDHBUGS-1009", "fields": {"summary": "Search bar loses focus"}}
+          }
+        ]
+      }
+    },
+    {
+      "key": "RHDHBUGS-1011",
+      "summary": "Build fails on Node 20 with ERR_REQUIRE_ESM",
+      "description": "The build fails with ERR_REQUIRE_ESM after moving to Node 20.",
+      "status": {"name": "Backlog", "category": {"name": "To Do"}},
+      "created": "2023-04-01T09:00:00.000+0000",
+      "updated": "2023-04-10T09:00:00.000+0000",
+      "priority": {"name": "Normal"},
+      "issue_type": {"name": "Bug"},
+      "team": "RHDH Plugins",
+      "components": ["Build"],
+      "labels": ["tech-debt"],
+      "fix_versions": [],
+      "affects_versions": [],
+      "assignee": {"displayName": "Unassigned"},
+      "reporter": {"displayName": "Drew Example"},
+      "comment": [],
+      "issuelinks": []
+    },
+    {
+      "key": "RHDHBUGS-1012",
+      "fields": {
+        "summary": "Helm install fails with release not found on OpenShift",
+        "description": "Duplicate report of the Helm release not found failure.",
+        "status": {"name": "Closed", "category": {"name": "Done"}},
+        "resolution": {"name": "Duplicate"},
+        "created": "2023-03-01T09:00:00.000+0000",
+        "updated": "2023-04-01T09:00:00.000+0000",
+        "priority": {"name": "Major"},
+        "issuetype": {"name": "Bug"},
+        "customfield_10001": {"value": {"name": "RHDH Install"}},
+        "components": [{"name": "Helm Chart"}],
+        "labels": [],
+        "fixVersions": [],
+        "versions": [],
+        "assignee": {"displayName": "Unassigned"},
+        "reporter": {"displayName": "Alex Example"},
+        "comment": {"comments": []},
+        "issuelinks": [
+          {
+            "type": {"name": "Duplicate"},
+            "outwardIssue": {"key": "RHDHBUGS-1001", "fields": {"summary": "Helm install fails"}}
+          }
+        ]
+      }
+    }
+  ]
+}

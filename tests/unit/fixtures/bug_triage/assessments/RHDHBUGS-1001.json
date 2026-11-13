@@ -1,0 +1,29 @@
+{
+  "key": "RHDHBUGS-1001",
+  "disposition": "still_valid",
+  "evidence": [
+    {
+      "type": "repro",
+      "ref": "repro:2.1.0/openshift-4.14",
+      "why": "A fresh Helm install on 2.1.0 still fails with release: not found during the post-install hook.",
+      "strength": "direct"
+    },
+    {
+      "type": "jira",
+      "ref": "RHDHBUGS-1002",
+      "why": "A second report describes the same failure with matching steps and error text.",
+      "strength": "strong"
+    }
+  ],
+  "repro": {
+    "result": "fails",
+    "release": "2.1.0",
+    "notes": "Install the chart into a clean namespace, then wait for the post-install hook."
+  },
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
+  "notes": "Prefer fixing over closing. The bug is still reproducible.",
+  "comment": "Re-checked on [2.1.0](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0): the Helm install still fails with `release: not found` in a clean OpenShift 4.14 namespace. Keeping this open and recommending the Install team reproduces it on the current chart."
+}
