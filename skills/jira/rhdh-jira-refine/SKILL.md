@@ -6,7 +6,7 @@ description: >-
   sprint, or a backlog against the exit criteria for its status, then reports
   missing fields, hierarchy gaps, likely duplicates, unaddressed comments, stale
   work, and Feature Exploration readiness. Use for "is RHIDP-1234 ready",
-  "refine this", "refine the backlog", "backlog hygiene", "what's missing on
+  "refine this", "refine the backlog", "is the backlog ready", "what's missing on
   this epic", "run the Feature Exploration checklist", or "which of these are
   stale". Assesses existing work; it does not open new issues and does not build
   a sprint.
@@ -38,6 +38,9 @@ and exact command per row — rather than approving them one at a time.
   `/rhdh-jira-update`. Refinement reports across many issues; it does not
   replace that.
 - Building the next sprint from the refined backlog is `/rhdh-jira-sprint-plan`.
+- Fixing rule-based hygiene violations — missing fields, freeze gaps, duplicate
+  fix versions, release-note gaps — is `/rhdh-jira-lint`. It remediates the fixed
+  rule set; this skill judges readiness and recommends.
 - Pre-refinement ceremony brief with smart analysis is `/rhdh-prepare-refinement`.
 - Exit criteria tables, field IDs, JQL, and the component catalog are
   `/rhdh-jira-api`.
