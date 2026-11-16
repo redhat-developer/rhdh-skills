@@ -27,11 +27,12 @@ hand-write CVE tables.
 
 1. `prepare-workspace-bump.js` — fetch upstream base, `checkout -B
    chore/<workspace>-cve-bumps`.
-2. `bump-workspace-packages.js` — `yarn up -R`, install, dedupe, classify,
-   CVE summary. Skips `@backstage/*` / `@backstage-community/*`. Allowlisted
-   leftovers (`qs`) auto ancestor-bump. Known no-major-jump packages
-   (`http-proxy-middleware`) re-pin if they jumped majors. `react-router` /
-   `react-router-dom` co-bump.
+2. `bump-workspace-packages.js` — `yarn up -R`, install, then dedupe on
+   plugins monorepos only (rhdh-core skips dedupe unless `--dedupe`),
+   classify, CVE summary. Skips `@backstage/*` / `@backstage-community/*`.
+   Allowlisted leftovers (`qs`) auto ancestor-bump. Known no-major-jump
+   packages (`http-proxy-middleware`) re-pin if they jumped majors.
+   `react-router` / `react-router-dom` co-bump.
 3. Pipe bump `--json` into `format-bump-pr.js` for Fully fixed / Partial /
    Unchanged tables.
 4. Do **not** run `bump-package-ancestors.js` for non-allowlisted packages
