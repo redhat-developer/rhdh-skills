@@ -126,7 +126,11 @@ Invoke `/mutation-gate` with the full operation list. Each operation states:
 
 Every action must include a comment on the PR stating the reason briefly. For
 approve+merge, comment the reason before approving. For close, hold, unhold,
-and bump, include the reason in the comment body.
+and bump, include the reason in the comment body. When the action is a rebase or
+recreate, the command belongs to the app that opened the PR — `@renovatebot
+rebase` or `@dependabot recreate` — and goes on its own line as the last line of
+the comment, after the reason (see "Addressing the bot" in
+`references/policy.md`).
 
 When the decision is "skip" because a release tag is not yet pushed, also
 comment `/hold` with the reason if `do-not-merge/hold` is not already on the PR.
@@ -139,6 +143,7 @@ Example operations:
 | rhdh-operator #42 | `gh pr comment 42 --repo redhat-developer/rhdh-operator --body "Approved by triage: CI green, patch toolchain bump on main."` | Comment reason | Skip, report |
 | rhdh-operator #42 | `gh pr review 42 --repo redhat-developer/rhdh-operator --approve` | Approve | Skip, report |
 | rhdh-operator #42 | `gh pr merge 42 --repo redhat-developer/rhdh-operator --squash` | Squash-merge | Skip, report |
+| rhdh-operator #43 | `gh pr comment 43 --repo redhat-developer/rhdh-operator --body $'go.mod conflicts after #42 merged; approved, will merge once CI is green.\n\n@renovatebot rebase'` | Request rebase from the PR's own bot | Skip, report |
 | rhdh-chart #18 | `gh pr comment 18 --repo redhat-developer/rhdh-chart --body "/hold until 1.10.5 is out — code freeze active."` | Hold for pending release | Skip, report |
 | rhdh-operator #99 | `gh pr close 99 --repo redhat-developer/rhdh-operator --comment "Closing — RHDH 1.8 is end of life."` | Close EOL PR | Skip, report |
 | rhdh-operator #50 | `gh pr comment 50 --repo redhat-developer/rhdh-operator --body "/hold — still waiting on 1.10.4 tag."` | Hold PR pending tag | Skip, report |

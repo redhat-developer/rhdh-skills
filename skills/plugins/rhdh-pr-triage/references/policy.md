@@ -12,6 +12,31 @@ section; the first matching rule wins.
 | PR has conflicts, author is `dependabot[bot]` | recreate | `@dependabot recreate` |
 | Same dependency from both bots | merge Renovate, close Dependabot | Renovate title includes `[security]`, preserving the reason in commit history |
 
+### Addressing the bot
+
+Send the command to the app that opened the PR, and to the other one never:
+`@renovatebot rebase` on a Renovate PR, `@dependabot recreate` on a Dependabot
+PR. Read the author from the PR itself, not from the dependency or from a
+sibling PR — both apps raise the same updates routinely, and the one that just
+merged says nothing about the one in front of you. A command addressed to the
+wrong app accomplishes nothing and reports nothing: no rebase, no error, no
+signal, and the PR stays conflicted until a human notices.
+
+Put the command on its own line, as the last line of the comment, after the
+justification. The reason is written for the person reading the thread; the
+command is written for the bot:
+
+```
+go.mod conflicts after #4100 merged; this PR is approved and will merge once
+CI is green again.
+
+@dependabot recreate
+```
+
+Justification first, command last, one command per comment. Trailing the command
+after the reason on the same line turns the request into prose a reader skims
+past, and a command buried mid-sentence is easy to miss.
+
 ## Main branch
 
 Main is a development branch — major version bumps are allowed.
