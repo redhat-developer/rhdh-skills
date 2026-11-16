@@ -159,7 +159,7 @@
         "versions": [],
         "assignee": {"displayName": "Taylor Example"},
         "reporter": {"displayName": "Riley Example"},
-        "comment": {"comments": []},
+        "comment": {"comments": [], "total": 0},
         "issuelinks": []
       }
     },
@@ -236,8 +236,8 @@
         "description": "Selecting a catalog filter moves focus away from the search bar; the next typed character is lost.",
         "status": {"name": "New", "category": {"name": "To Do"}},
         "resolution": null,
-        "created": "2023-05-01T09:00:00.000+0000",
-        "updated": "2023-05-10T09:00:00.000+0000",
+        "created": "2023-07-01T09:00:00.000+0000",
+        "updated": "2023-07-10T09:00:00.000+0000",
         "priority": {"name": "Normal"},
         "issuetype": {"name": "Bug"},
         "customfield_10001": {"value": {"name": "RHDH Frontend Plugins & UI"}},
@@ -247,7 +247,7 @@
         "versions": [],
         "assignee": {"displayName": "Unassigned"},
         "reporter": {"displayName": "Jamie Example"},
-        "comment": {"comments": []},
+        "comment": {"comments": [], "total": 0},
         "issuelinks": [
           {
             "type": {"name": "Duplicate"},

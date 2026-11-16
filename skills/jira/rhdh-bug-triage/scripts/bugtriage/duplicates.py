@@ -268,6 +268,10 @@ class DuplicateCandidate:
     components: List[str] = field(default_factory=list)
     signals: dict = field(default_factory=dict)
     reasons: List[str] = field(default_factory=list)
+    created: str = ""
+    customer_signals: List[str] = field(default_factory=list)
+    resolution: str = ""
+    duplicate_of: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -278,6 +282,10 @@ class DuplicateCandidate:
             "components": self.components,
             "signals": {name: round(value, 3) for name, value in self.signals.items()},
             "reasons": self.reasons,
+            "created": self.created,
+            "customerSignals": self.customer_signals,
+            "resolution": self.resolution,
+            "duplicateOf": self.duplicate_of,
         }
 
 
@@ -368,6 +376,14 @@ def score_candidate(query: Ticket, candidate: Ticket) -> DuplicateCandidate:
         components=list(candidate.components),
         signals=signals,
         reasons=reasons,
+        created=candidate.created,
+        customer_signals=list(candidate.customer_signals),
+        resolution=candidate.resolution,
+        duplicate_of=[
+            link.key
+            for link in candidate.links
+            if "duplicate" in link.type.lower() and link.direction == "outward"
+        ],
     )
 
 

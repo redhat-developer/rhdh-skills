@@ -18,6 +18,7 @@ from .duplicates import (
     DUPLICATE_CLOSE_THRESHOLD,
     DUPLICATE_HINT_THRESHOLD,
     rank_candidates,
+    score_candidate,
 )
 from .model import (
     DEFAULT_CURRENT_RELEASE,
@@ -28,7 +29,6 @@ from .model import (
 )
 from .policy import (
     FIXED_CLOSE_THRESHOLD,
-    OBSOLETE_CLOSE_THRESHOLD,
     POLICY_VERSION,
     Assessment,
     Packet,
@@ -42,6 +42,7 @@ from .report import (
     render_packet,
     render_report,
     render_summary_csv,
+    surfaced,
     write_json,
     write_text,
 )
@@ -152,6 +153,8 @@ def load_assessments(directory: str) -> Dict[str, Assessment]:
             assessment = load_assessment(str(path))
         except (OSError, ValueError, json.JSONDecodeError) as error:
             raise RunError(f"invalid assessment {path}: {error}") from error
+        if path.stem != assessment.key:
+            raise RunError(f"assessment {path} names a different issue: {assessment.key}")
         assessments[assessment.key] = assessment
     return assessments
 
@@ -159,6 +162,11 @@ def load_assessments(directory: str) -> Dict[str, Assessment]:
 def run(config: RunConfig) -> RunResult:
     if config.comment_cooldown_days < 0:
         raise RunError("--comment-cooldown-days must be nonnegative")
+    output_dir = Path(config.output_dir)
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise RunError(
+            "output directory is not empty; use a fresh directory to avoid stale proposals"
+        )
     as_of = parse_as_of(config.as_of)
     tickets = load_export(config.input_path)
     if not tickets:
@@ -194,42 +202,64 @@ def run(config: RunConfig) -> RunResult:
     corpus_has_closed = any(ticket.is_done for ticket in corpus)
 
     assessments = load_assessments(config.assessments_dir)
+    corpus_by_key = {item.key: item for item in corpus}
     packets: List[Packet] = []
     for key in selection:
         ticket = tickets_by_key[key]
         candidates = rank_candidates(ticket, corpus, limit=3)
+        assessment = assessments.get(key)
+        # An explicitly investigated target may lie outside the top lexical hits.
+        if (
+            assessment
+            and assessment.duplicate_of in corpus_by_key
+            and all(c.key != assessment.duplicate_of for c in candidates)
+        ):
+            candidates.append(score_candidate(ticket, corpus_by_key[assessment.duplicate_of]))
         packet = evaluate(
             ticket,
             candidates,
-            assessments.get(key),
+            assessment,
             current_release=config.current_release,
         )
         for gap in data_gaps(ticket):
             if gap not in packet.gaps:
                 packet.gaps.append(gap)
-        packet.verification_errors = verify_packet(packet, ticket)
-        if packet.verification_errors and packet.action in (
+        errors = verify_packet(packet, ticket)
+        if errors and packet.action in (
             "propose_close_duplicate",
             "propose_close_fixed",
-            "propose_close_obsolete",
         ):
-            packet.action = "comment_only"
-            packet.recommended_step = (
-                "Verifier rejected the close proposal; keep open and review the evidence."
-            )
+            packet.verification_errors = errors
+            packet.gaps.extend(errors)
+            packet.action = "abstain"
+            packet.recommended_step = ""
+            packet.proposed_comment = ""
         attach_comment_plan(
             ticket, packet, assessments.get(key), as_of, config.comment_cooldown_days
         )
         packets.append(packet)
 
+    redundant = {packet.key for packet in packets if packet.action == "propose_close_duplicate"}
+    for packet in packets:
+        if packet.action == "propose_close_duplicate" and packet.target in redundant:
+            packet.action, packet.recommended_step, packet.proposed_comment = "abstain", "", ""
+            packet.gaps.append(
+                "canonical tracker is also proposed as a duplicate; re-adjudicate against the final tracker"
+            )
+            attach_comment_plan(
+                tickets_by_key[packet.key],
+                packet,
+                assessments.get(packet.key),
+                as_of,
+                config.comment_cooldown_days,
+            )
+
     generated_at = now_iso()
-    output_dir = Path(config.output_dir)
     proposals_dir = output_dir / "proposed"
     thresholds = {
         "duplicate": DUPLICATE_CLOSE_THRESHOLD,
         "duplicateHint": DUPLICATE_HINT_THRESHOLD,
         "fixed": FIXED_CLOSE_THRESHOLD,
-        "obsolete": OBSOLETE_CLOSE_THRESHOLD,
     }
 
     report = render_report(
@@ -252,7 +282,7 @@ def run(config: RunConfig) -> RunResult:
     write_json(
         output_dir / "packets.json",
         {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "dryRun": True,
             "generatedAt": generated_at,
             "currentRelease": config.current_release,
@@ -260,6 +290,8 @@ def run(config: RunConfig) -> RunResult:
         },
     )
     for packet in packets:
+        if not surfaced(packet):
+            continue
         ticket = tickets_by_key[packet.key]
         entry = selection.get(packet.key, {})
         write_text(

@@ -30,10 +30,11 @@ CUSTOMER_FIELD_NAMES = (
     "Case Link",
     "Support Case Reference",
     "SFDC cases",
+    "Customer Cloud Subscription (CCS)",
 )
 # A support key anywhere in the ticket is a customer signal. It is deliberately
 # narrow: a word such as "case" is ordinary English, but this key shape is not.
-SUPPORT_KEY_RE = re.compile(r"\bRHDHSUPP-\d+\b")
+SUPPORT_KEY_RE = re.compile(r"\b(?:RHDHSUPP|ACCOUNT)-\d+\b")
 PR_URL_RE = re.compile(r"https://github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+/pull/\d+")
 COMMIT_URL_RE = re.compile(
     r"https://github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+/commit/([0-9a-fA-F]{7,40})"
@@ -57,7 +58,21 @@ def as_text(value: Any) -> str:
     if isinstance(value, dict):
         # Atlassian Document Format: text nodes carry the sentence.
         if isinstance(value.get("text"), str):
-            return value["text"]
+            links = [
+                mark.get("attrs", {}).get("href", "")
+                for mark in value.get("marks") or []
+                if isinstance(mark, dict) and isinstance(mark.get("attrs"), dict)
+            ]
+            return " ".join(
+                [value["text"], *[link for link in links if isinstance(link, str) and link]]
+            )
+        if value.get("type") in ("inlineCard", "blockCard", "embedCard"):
+            attrs = value.get("attrs", {})
+            return (
+                attrs.get("url", "")
+                if isinstance(attrs, dict) and isinstance(attrs.get("url", ""), str)
+                else ""
+            )
         parts = []
         for key in ("content", "body", "value", "description", "comments"):
             if key in value:
@@ -202,11 +217,16 @@ def _customer_signals(
         field_name = ""
         if field_names and field_id in field_names:
             field_name = field_names[field_id]
-        elif field_id in CUSTOMER_FIELD_NAMES:
+        elif field_id.casefold() in {
+            name.casefold() for name in CUSTOMER_FIELD_NAMES
+        } or field_id.casefold().startswith("sfdc cases"):
             field_name = field_id
-        if not field_name or field_name not in CUSTOMER_FIELD_NAMES:
+        if not field_name or (
+            field_name.casefold() not in {name.casefold() for name in CUSTOMER_FIELD_NAMES}
+            and not field_name.casefold().startswith("sfdc cases")
+        ):
             continue
-        if as_text(value).strip():
+        if value not in (0, False, "0") and as_text(value).strip():
             signals.append(f"field:{field_name}")
 
     text = json.dumps(payload, default=str)

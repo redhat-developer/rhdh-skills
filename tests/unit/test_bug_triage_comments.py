@@ -13,7 +13,13 @@ if str(SCRIPTS) not in sys.path:
 
 from bugtriage.comments import MARKER_PREFIX, attach_comment_plan, plan_comment  # noqa: E402
 from bugtriage.model import Comment, normalize_issue  # noqa: E402
-from bugtriage.policy import Assessment, Evidence, evaluate, parse_assessment  # noqa: E402
+from bugtriage.policy import (  # noqa: E402
+    Assessment,
+    Evidence,
+    evaluate,
+    load_assessment,
+    parse_assessment,
+)
 from bugtriage.report import render_packet  # noqa: E402
 
 NOW = datetime(2026, 11, 13, tzinfo=timezone.utc)
@@ -23,22 +29,14 @@ NOW = datetime(2026, 11, 13, tzinfo=timezone.utc)
 def case():
     ticket = normalize_issue(
         {
-            "key": "RHDHBUGS-200",
+            "key": "RHDHBUGS-1006",
+            "summary": "External S3 endpoint lookup fails",
             "description": "Existing reproduction steps.",
             "comment": {"comments": [], "total": 0},
         }
     )
-    assessment = Assessment(
-        key=ticket.key,
-        disposition="still_valid",
-        evidence=[
-            Evidence(
-                "code",
-                "https://example.test/code",
-                "The loop still queries once per role.",
-                "direct",
-            )
-        ],
+    assessment = load_assessment(
+        str(Path(__file__).parent / "fixtures/bug_triage/assessments/RHDHBUGS-1006.json")
     )
     return ticket, evaluate(ticket, [], assessment, "2.1.0"), assessment
 
@@ -100,7 +98,9 @@ def test_fingerprint_ignores_prose_changes_and_evidence_order(case):
     changed = replace(
         packet,
         recommended_step="A rephrased request",
-        evidence=[replace(packet.evidence[0], why="Same observation, rephrased")],
+        evidence=[
+            replace(item, why="Same observation, rephrased") for item in reversed(packet.evidence)
+        ],
     )
     assert plan_comment(ticket, changed, assessment, NOW)["reference"] == first
 
@@ -154,7 +154,9 @@ def test_incomplete_history_requires_review(case, history):
 
 def test_flat_adapter_must_attest_comment_completeness(case):
     _, packet, assessment = case
-    ticket = normalize_issue({"key": packet.key, "comments": [], "commentsComplete": True})
+    ticket = normalize_issue(
+        {"key": packet.key, "summary": packet.summary, "comments": [], "commentsComplete": True}
+    )
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
 
 
@@ -211,10 +213,10 @@ def test_unsafe_or_unlinked_comment_requires_review(case, body):
 def test_source_inspection_does_not_claim_a_runtime_reproduction(case):
     _, packet, _ = case
     assert "reproducible" not in packet.proposed_comment.lower()
-    assert "https://example.test/code" in packet.proposed_comment
+    assert "https://github.com/redhat-developer/rhdh/pull/999" in packet.proposed_comment
 
 
-def test_default_close_is_a_recommendation_not_a_completed_action(case):
+def test_obsolete_findings_do_not_leak_into_closure_recommendations(case):
     ticket, _, _ = case
     assessment = Assessment(
         key=ticket.key,
@@ -231,13 +233,12 @@ def test_default_close_is_a_recommendation_not_a_completed_action(case):
         agreement=True,
     )
     packet = evaluate(ticket, [], assessment)
-    assert packet.action == "propose_close_obsolete"
-    assert "Recommendation: close" in packet.proposed_comment
-    assert "Closing as" not in packet.proposed_comment
-    assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
+    assert packet.action == "abstain"
+    assert packet.proposed_comment == ""
+    assert plan_comment(ticket, packet, assessment, NOW)["status"] == "suppress"
 
 
-def test_targeted_next_step_is_used_in_both_report_data_and_default_comment(case):
+def test_unclear_next_step_cannot_create_a_reproduction_or_comment_request(case):
     ticket, _, _ = case
     assessment = parse_assessment(
         {
@@ -247,7 +248,6 @@ def test_targeted_next_step_is_used_in_both_report_data_and_default_comment(case
         }
     )
     packet = evaluate(ticket, [], assessment)
-    assert packet.recommended_step == assessment.recommended_step
-    assert packet.recommended_step in packet.proposed_comment
-    assert "reproduction" not in packet.proposed_comment
-    assert f"https://redhat.atlassian.net/browse/{ticket.key}" in packet.proposed_comment
+    assert packet.action == "abstain"
+    assert packet.recommended_step == ""
+    assert packet.proposed_comment == ""

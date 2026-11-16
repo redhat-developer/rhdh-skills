@@ -22,7 +22,9 @@
       "invocation": "model",
       "requiresSkills": [
         "rhdh-jira-api",
-        "rhdh-jira-refine",
+        "rhdh-jira-authoring",
+        "rhdh-context",
+        "rhdh-forge",
         "prose-editing"
       ],
       "optionalSkills": [

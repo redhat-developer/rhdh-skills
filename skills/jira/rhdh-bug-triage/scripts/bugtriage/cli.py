@@ -21,12 +21,11 @@ from .forge import ForgeAdapterError
 from .jira import JiraAdapterError, load_tickets_from_acli, write_acli_probe
 from .model import (
     DEFAULT_AGED_DAYS,
-    DEFAULT_CURRENT_RELEASE,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
     load_export,
 )
-from .report import write_json
+from .report import surfaced, write_json
 from .run import (
     RunConfig,
     RunError,
@@ -131,14 +130,15 @@ def command_run(args: argparse.Namespace) -> int:
         "withEvidence": counts["withEvidence"],
         "closeProposals": counts["closeProposals"],
         "customerLinked": counts["customerLinked"],
+        "surfacedRecommendations": counts["surfacedRecommendations"],
+        "abstained": counts["abstained"],
         "dispositions": _count(result.packets, "disposition"),
         "actions": _count(result.packets, "action"),
     }
     if args.json:
         print(json.dumps(summary, indent=2))
     else:
-        actionable = sum(1 for packet in result.packets if packet.action != "unclear")
-        close = [packet for packet in result.packets if packet.action.startswith("propose_close")]
+        close = [packet for packet in result.packets if surfaced(packet)]
         print(f"DRY RUN complete: {counts['packets']} ticket(s) in {result.output_dir}")
         print("Nothing was posted, transitioned, linked, or written to Jira.")
         print("")
@@ -150,13 +150,14 @@ def command_run(args: argparse.Namespace) -> int:
             print("No close proposals. Nothing is waiting for a close decision.")
         print("")
         print(
-            f"Ready to review: {actionable}/{counts['packets']} · "
+            f"Recommendations: {len(close)}/{counts['packets']} · "
+            f"left unchanged: {counts['abstained']} · "
             f"cited evidence: {counts['withEvidence']}/{counts['packets']} · "
             f"customer-linked: {counts['customerLinked']}"
         )
         print(
-            "Everything is in report.md: the numbers, one section per ticket, the "
-            "evidence, the next step, and the exact comment that would be posted."
+            "Everything needed for approval is in report.md: qualifying recommendations and their proof. "
+            "Abstentions stay in the local audit, without a comment or reproduction request."
         )
         print("Nothing else needs opening to review this run.")
     return 0
@@ -182,7 +183,7 @@ def command_evaluate(args: argparse.Namespace) -> int:
     else:
         print(rendered)
     if args.strict:
-        hard_fail = bool(evaluation.false_closes) or evaluation.decision_ready_rate < 0.8
+        hard_fail = bool(evaluation.false_closes)
         return 1 if hard_fail else 0
     return 0
 
@@ -206,7 +207,8 @@ def command_template(args: argparse.Namespace) -> int:
             {
                 "key": key,
                 "_instructions": (
-                    "Fill disposition and evidence. Every evidence item needs type, ref, "
+                    "Recommend only duplicate/already_fixed with complete cited proof; otherwise abstain. "
+                    "Every evidence item needs type, ref, "
                     "why, and strength (direct|strong|supporting). Do not invent a "
                     "confidence; the policy computes it. A close also needs two agreeing "
                     "independent passes under review."
@@ -214,7 +216,17 @@ def command_template(args: argparse.Namespace) -> int:
                 "disposition": "",
                 "duplicateOf": "",
                 "evidence": [],
-                "fix": {"pr": "", "commit": "", "release": "", "released": False},
+                "proof": {},
+                "fix": {
+                    "pr": "",
+                    "commit": "",
+                    "release": "",
+                    "released": False,
+                    "merged": False,
+                    "coversWholeIssue": False,
+                    "reviewRelease": "",
+                    "containedInReviewRelease": False,
+                },
                 "repro": {"result": "not_run", "release": "", "notes": ""},
                 "review": {"independentPasses": 0, "agree": False},
                 "notes": "",
@@ -264,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="run_poc",
         description="Read-only aged RHDHBUGS triage: select, collect, assess, report.",
     )
-    parser.add_argument("--version", action="version", version="rhdh-bug-triage 1")
+    parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 2")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     select_parser = subparsers.add_parser("select", help="build a stratified sample manifest")
@@ -302,7 +314,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--sample", help="sample manifest; omit to select in memory")
     run_parser.add_argument("--assessments", help="directory of KEY.json assessments")
     run_parser.add_argument("--out", required=True, help="output directory")
-    run_parser.add_argument("--current-release", default=DEFAULT_CURRENT_RELEASE)
+    run_parser.add_argument(
+        "--current-release", required=True, help="verified released product version under review"
+    )
     run_parser.add_argument(
         "--comment-cooldown-days",
         type=int,

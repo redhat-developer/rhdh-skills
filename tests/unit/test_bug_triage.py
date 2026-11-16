@@ -307,26 +307,28 @@ class TestDuplicates:
 
 
 class TestPolicy:
-    def test_missing_assessment_is_unclear_and_asks_for_repro(self):
+    def test_missing_assessment_abstains_without_requesting_repro(self):
         packet = evaluate_packet(by_key()["RHDHBUGS-1007"], [], None)
         assert packet.disposition == "unclear"
-        assert packet.action == "needs_repro"
-        assert "reproduction" in packet.proposed_comment.lower()
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
+        assert packet.recommended_step == ""
 
-    def test_still_valid_keeps_open_with_direct_evidence(self):
+    def test_still_valid_is_internal_evidence_not_a_recommendation(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1001.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1001"], [], assessment)
         assert packet.disposition == "still_valid"
-        assert packet.action == "keep_open"
-        assert packet.confidence >= 0.9
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
+        assert packet.recommended_step == ""
 
-    def test_duplicate_below_lexical_floor_only_comments(self):
+    def test_duplicate_below_lexical_floor_abstains(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1002.json"))
         candidates = rank_candidates(by_key()["RHDHBUGS-1002"], fixture_tickets(), limit=3)
         packet = evaluate_packet(by_key()["RHDHBUGS-1002"], candidates, assessment)
         assert packet.disposition == "duplicate"
-        assert packet.action == "comment_only"
-        assert "not a close proposal" in packet.proposed_comment
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
 
     def test_explicit_duplicate_link_clears_close_gate(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
@@ -347,7 +349,7 @@ class TestPolicy:
         candidates = rank_candidates(ticket, fixture_tickets(), limit=3)
         packet = evaluate_packet(ticket, candidates, assessment)
         assert packet.explicit_duplicate_link is False
-        assert packet.action == "comment_only"
+        assert packet.action == "abstain"
 
     def test_customer_ticket_never_gets_a_close_action(self):
         ticket = by_key()["RHDHBUGS-1003"]
@@ -377,7 +379,7 @@ class TestPolicy:
         assessment.independent_passes = 1
         candidates = rank_candidates(by_key()["RHDHBUGS-1010"], fixture_tickets(), limit=3)
         packet = evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment)
-        assert packet.action == "comment_only"
+        assert packet.action == "abstain"
 
     def test_released_fix_with_pr_closes(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
@@ -389,19 +391,17 @@ class TestPolicy:
     def test_fix_release_ahead_of_review_blocks_close(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, current_release="2.0.0")
-        assert packet.action == "comment_only"
+        assert packet.action == "abstain"
         assert any("newer than the release under review" in gap for gap in packet.gaps)
 
-    def test_unclear_assessment_still_gets_a_comment(self):
+    def test_unclear_assessment_is_silent(self):
         ticket = by_key()["RHDHBUGS-1007"]
         assessment = Assessment(key=ticket.key, disposition="unclear", evidence=[])
         packet = evaluate_packet(ticket, [], assessment)
-        assert packet.action == "unclear"
-        assert packet.proposed_comment
-        assert "unclear" in packet.proposed_comment
-        assert "Re-checked against" not in packet.proposed_comment
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
 
-    def test_still_valid_without_direct_evidence_asks_for_repro(self):
+    def test_still_valid_without_direct_evidence_is_silent(self):
         ticket = by_key()["RHDHBUGS-1001"]
         assessment = Assessment(
             key=ticket.key,
@@ -416,26 +416,22 @@ class TestPolicy:
             ],
         )
         packet = evaluate_packet(ticket, [], assessment)
-        assert packet.action == "needs_repro"
-        assert any("no direct" in gap for gap in packet.gaps)
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
 
     def test_done_ticket_never_gets_a_close_action(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1012"], [], assessment)
         assert packet.disposition == "already_fixed"
-        assert packet.action == "comment_only"
-        assert any("already Done" in gap for gap in packet.gaps)
+        assert packet.action == "abstain"
+        assert any("does not match" in gap for gap in packet.gaps)
 
-    def test_unreleased_fix_only_comments(self):
+    def test_unreleased_fix_abstains_without_a_draft(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
         assessment.fix_released = False
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
-        assert packet.action == "comment_only"
-        assert "Do not close" in packet.proposed_comment
-        assert (
-            "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)"
-            in packet.proposed_comment
-        )
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
 
     def test_invalid_evidence_is_dropped_and_fails_closed(self):
         document = json.loads(
@@ -448,7 +444,7 @@ class TestPolicy:
         assert assessment.invalid_evidence
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
         assert packet.action != "propose_close_fixed"
-        assert any("lacked a citation" in gap for gap in packet.gaps)
+        assert any("invalid evidence" in gap for gap in packet.gaps)
 
     def test_verifier_rejects_close_without_direct_evidence(self):
         packet = Packet(
@@ -482,7 +478,9 @@ class TestReport:
         assert "Dry run" in rendered
         assert rendered.startswith(self._packet().proposed_comment)
         assert "## Review details" in rendered
-        assert "Closing as a duplicate of [RHDHBUGS-1009]" in rendered
+        assert "Closing as" not in rendered
+        assert "Recommendation:" in rendered
+        assert "Proof:" in rendered
         assert "https://redhat.atlassian.net/browse/RHDHBUGS-1009" in rendered
         assert "propose_close_duplicate" in rendered
         assert "```" not in rendered
@@ -493,10 +491,7 @@ class TestReport:
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
         rendered = render_packet(packet, by_key()["RHDHBUGS-1006"])
         assert "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)" in rendered
-        assert (
-            "[2.1.0 release](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0)"
-            in rendered
-        )
+        assert "https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0" in rendered
         assert rendered.startswith(packet.proposed_comment)
 
     def test_batch_report_has_method_and_controls(self):
@@ -524,7 +519,7 @@ class TestReport:
         assert "Dry run" in rendered
         assert "Control" in rendered
         assert "0.85" in rendered
-        assert "nothing in this artifact was posted" in rendered.lower()
+        assert "nothing was posted" in rendered.lower()
 
     def test_csv_has_one_row_per_packet(self):
         packet = self._packet()
@@ -574,7 +569,7 @@ class TestRun:
         assert result.manifest["commentPolicy"]["cooldownDays"] == 14
         for name in ("report.md", "packets.json", "summary.csv", "manifest.json"):
             assert (out / name).is_file()
-        assert (out / "proposed" / "RHDHBUGS-1001.md").is_file()
+        assert not (out / "proposed" / "RHDHBUGS-1001.md").exists()
         proposal = (out / "proposed" / "RHDHBUGS-1006.md").read_text(encoding="utf-8")
         assert proposal.startswith(
             next(p.proposed_comment for p in result.packets if p.key == "RHDHBUGS-1006")
@@ -655,7 +650,8 @@ class TestEvaluate:
         assert result.precision["duplicate"] == 1.0
         assert result.precision["already_fixed"] == 1.0
         assert result.coverage == 1.0
-        assert result.decision_ready_rate >= 0.8
+        assert result.abstained == 5
+        assert result.decision_ready == 2
 
     def test_unsupported_disposition_is_not_rendered_as_zero_percent(self):
         packet = Packet(

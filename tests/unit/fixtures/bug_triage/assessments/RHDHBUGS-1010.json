@@ -5,11 +5,23 @@
   "evidence": [
     {
       "type": "jira",
+      "ref": "RHDHBUGS-1010",
+      "why": "Selecting a catalog filter moves focus off the search input and drops the next character.",
+      "strength": "direct"
+    },
+    {
+      "type": "jira",
       "ref": "RHDHBUGS-1009",
       "why": "Same focus-loss behavior, same component, and the ticket already carries a Duplicate link to RHDHBUGS-1009.",
       "strength": "direct"
     }
   ],
+  "proof": {
+    "sameFailure": {"summary": "Both reports lose search focus and drop the next keystroke.", "refs": ["RHDHBUGS-1010", "RHDHBUGS-1009"]},
+    "sameTrigger": {"summary": "Both reproduce when selecting a catalog-table filter, not during a different navigation action.", "refs": ["RHDHBUGS-1010", "RHDHBUGS-1009"]},
+    "sameFix": {"summary": "Restoring search-input focus after the filter update addresses both reports; no separate failure is described.", "refs": ["RHDHBUGS-1009"]},
+    "canonical": {"summary": "Retain the earlier June report as the implementation tracker rather than the redundant July report.", "refs": ["RHDHBUGS-1009"]}
+  },
   "review": {
     "independentPasses": 2,
     "agree": true

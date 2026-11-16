@@ -1,11 +1,56 @@
-# Report schema
+# Policy 2 input and artifact contract
 
-The CLI reads one assessment per sampled ticket and writes a deterministic set of
-artifacts. Paths are relative to the output directory unless stated otherwise.
+## Breaking change from policy 1
+
+The default output is recommendation-only, not a comment for every issue.
+`still_valid`, `no_longer_valid`, `needs_repro`, `unclear`, missing assessments,
+and failed close gates produce `action: abstain`, empty `proposedComment` and
+`recommendedStep`. No `comment_only`, reproduction-request, obsolete-close,
+or keep-open action is emitted. Legacy free-form `comment` and `recommendedStep`
+inputs cannot override the generated recommendation.
+
+Old duplicate/fixed assessments without structured proof now abstain. Add and
+independently verify the required proof; do not fill flags merely to restore an
+old close count. Packets and manifests use `schemaVersion: 2`, `policyVersion: 2`.
+Sample manifests remain version 1. Consumers must tolerate absent `proposed/`
+files/directories and must not interpret old artifacts as new recommendations.
+Nonempty output directories are refused without modification.
 
 ## Assessment input
 
-One JSON file per ticket, named `KEY.json`. The minimal shape:
+One `KEY.json` object per sampled ticket. Its `key` must match the issue under
+review. Valid internal dispositions: `duplicate`, `already_fixed`, `still_valid`,
+`no_longer_valid`, `needs_repro`, `unclear`. Unknown dispositions or malformed
+input abort; missing assessments abstain. Customer-linked issues never close.
+
+Every evidence item needs:
+
+```json
+{"type": "jira", "ref": "RHDHBUGS-1100", "why": "Describe what this artifact proves.", "strength": "direct"}
+```
+
+Types: `jira`, `pr`, `commit`, `release_note`, `code`, `doc`, `repro`, `comment`.
+References must be actual HTTPS links or Jira keys; bare commit SHAs and local
+pseudo-references are not reviewable closure citations. Strength is `direct`,
+`strong`, or `supporting`. Invalid items are retained in `invalidEvidence` and
+block closure. An input confidence is ignored.
+
+`proof` is an object of named claims, each with plain-text `summary` and nonempty
+`refs` listing exact references from `evidence`. Each claim needs direct evidence.
+Use real artifact facts, not assertions that a score or a Boolean is high enough.
+
+Required proof claims:
+
+- Duplicate: `sameFailure`, `sameTrigger`, `sameFix`, `canonical`. The first two
+  must directly cite both compared reports. Canonical selection directly cites
+  the retained tracker. `duplicateOf` names exactly one retrieved, older tracker.
+- Already fixed: `fixMatches`, `releaseContains`, `validation`. Matching proof
+  directly cites the named PR/commit. Release inclusion directly cites
+  `release_note` evidence (a release record or verified tag/ancestry comparison).
+  Validation directly cites regression coverage/code analysis or a real result;
+  a Jira fixVersion alone does not qualify.
+
+Illustrative duplicate structure, not evidence about real issues:
 
 ```json
 {
@@ -13,201 +58,104 @@ One JSON file per ticket, named `KEY.json`. The minimal shape:
   "disposition": "duplicate",
   "duplicateOf": "RHDHBUGS-1100",
   "evidence": [
-    {
-      "type": "jira",
-      "ref": "RHDHBUGS-1100",
-      "why": "Both reports show the same release: not found error during the Helm post-install hook.",
-      "strength": "direct"
-    }
+    {"type": "jira", "ref": "RHDHBUGS-1234", "why": "Selecting a filter drops the next search keystroke.", "strength": "direct"},
+    {"type": "jira", "ref": "RHDHBUGS-1100", "why": "The older report describes the identical filter-update focus path.", "strength": "direct"}
   ],
-  "fix": {"pr": "", "commit": "", "release": "", "released": false},
-  "repro": {"result": "not_run", "release": "", "notes": ""},
-  "review": {"independentPasses": 2, "agree": true},
-  "notes": "",
-  "comment": ""
+  "proof": {
+    "sameFailure": {"summary": "Both lose focus and drop the next character.", "refs": ["RHDHBUGS-1234", "RHDHBUGS-1100"]},
+    "sameTrigger": {"summary": "Both start when selecting a catalog-table filter.", "refs": ["RHDHBUGS-1234", "RHDHBUGS-1100"]},
+    "sameFix": {"summary": "Restoring focus after that filter update addresses both reports.", "refs": ["RHDHBUGS-1100"]},
+    "canonical": {"summary": "Retain the older established implementation tracker.", "refs": ["RHDHBUGS-1100"]}
+  },
+  "review": {"independentPasses": 2, "agree": true}
 }
 ```
 
-| Field | Required | Notes |
-|---|---|---|
-| `key` | yes | Must match the sampled ticket key |
-| `disposition` | yes | `duplicate`, `already_fixed`, `still_valid`, `no_longer_valid`, `needs_repro`, `unclear` |
-| `duplicateOf` | for duplicate | The target Jira key |
-| `evidence` | for any non-abstention | Each item needs `type`, `ref`, `why`, and `strength` |
-| `fix.pr` / `fix.commit` | for fixed | A URL or SHA; at least one |
-| `fix.release` | for fixed | The release that carries the fix |
-| `fix.released` | for fixed | `true` only when the release is confirmed |
-| `repro.result` | for still/no-longer-valid | `fails`, `passes`, `not_run`, or a short phrase |
-| `repro.release` | for still/no-longer-valid | The release the reproduction used |
-| `review.independentPasses` | for a close | Integer; a close needs at least 2 |
-| `review.agree` | for a close | `true` only when the passes agree |
-| `notes` | optional | Reviewer context, including a recorded disagreement |
-| `comment` | optional | A ready-to-post comment; otherwise the policy drafts one. Jira keys and URLs should be Markdown links |
-| `recommendedStep` | optional | Specific next step for an unclear, needs-repro, or supported still-valid finding. It cannot override a failed close gate. Use the same next step in the comment |
-| `followUp` | for repeat proposals | Latest posted `priorCommentId`, `state` (`completed` or `superseded`), and direct cited `evidence` showing the previous action's result or supersession |
+The actual corpus must substantiate chronology and target facts, and the lexical
+or verified outward-link gate still applies. Canonical issue numbers do not
+prove chronology. An explicit link does not bypass a newer/undated target.
 
-An unknown disposition, a missing key, or a malformed file aborts the run with a
-non-zero exit code. Invalid evidence items are dropped and counted as gaps; they
-do not abort the run.
+For already fixed, also supply this `fix` object using verified values:
 
-Confidence is not an input. If a file contains one, it is ignored.
+```json
+{
+  "pr": "https://github.com/example/repository/pull/123",
+  "commit": "",
+  "merged": true,
+  "coversWholeIssue": true,
+  "release": "2.1.0",
+  "released": true,
+  "reviewRelease": "2.1.0",
+  "containedInReviewRelease": true
+}
+```
 
-Example follow-up (a claim to verify, not proof by itself):
+The URL is illustrative. `pr` or `commit` must name a directly cited linked
+artifact; if both are supplied both must be links. Boolean fields require JSON
+`true`, not strings or truthy numbers. `release` must be numerically comparable
+and no newer than the review target. `reviewRelease` must equal that target and
+`containedInReviewRelease` attests separately verified target inclusion. These
+are audited reviewer claims; the offline CLI does not independently query their
+truth. Attach direct release-inclusion evidence in `proof.releaseContains`.
+
+Two independent agreeing reviews are mandatory:
+
+```json
+"review": {"independentPasses": 2, "agree": true}
+```
+
+Optional `notes` retain conflicts and provenance. Retain disagreements honestly;
+do not set agreement to true just because one pass later adopted another result.
+
+## Delivery and follow-up
+
+Complete Jira comments are the posting history, not local runs or `updated`.
+Flattened adapters must attest `commentsComplete: true` only after actual full
+pagination. Missing/truncated history, malformed markers/timestamps and unmarked
+discussion yield `review_required`. Equivalent legacy advice and owner holds need
+human review; the planner does not infer their meaning.
+
+`commentPlan` has `status` (`propose`, `suppress`, `review_required`), `reason`,
+`reference`, `cooldownDays`, and applicable prior-comment metadata. Abstentions
+always suppress and have no comment/footer. Identical posted advice suppresses
+indefinitely, even after completion. Changed advice needs cooldown expiry plus:
 
 ```json
 "followUp": {
   "priorCommentId": "12345",
-  "state": "completed",
-  "evidence": [{
-    "type": "comment",
-    "ref": "https://redhat.atlassian.net/browse/RHDHBUGS-1234?focusedCommentId=12346",
-    "why": "The owner supplied the requested versioned retest and logs.",
-    "strength": "direct"
-  }]
+  "state": "superseded",
+  "evidence": [{"type": "comment", "ref": "https://redhat.atlassian.net/browse/RHDHBUGS-1234?focusedCommentId=12346", "why": "Describe the actual result/supersession.", "strength": "direct"}]
 }
 ```
 
-Every packet also carries `commentPlan`: `status` (`propose`, `suppress`, or
-`review_required`), `reason`, stable `reference`, and `cooldownDays`. A recognized
-previous post adds `priorCommentId` and, when available, `lastPostedAt` and
-`earliestReconsiderAt`. This is independent of the bug's disposition: a valid
-close recommendation can still be suppressed as already posted. It is not write
-authorization, a durable posting receipt, or proof of exactly-once delivery.
+Check the follow-up's truth independently. The planner checks structure, not
+external truth. Preserve the stable `Triage reference` footer through any approved
+handoff/ADF conversion/readback. Prose/evidence ordering alone does not create a
+new identity. A plan is not authorization, a write lock, or a posting receipt.
 
-The comment ends with a visible `Triage reference: rhdh-bug-triage:v1:<hash>`
-footer (the token is inline code in Markdown). Preserve it unchanged in ADF and
-readback. Dry runs do not insert posting history. Changes to prose or evidence
-ordering do not create a new identity. Missing/truncated comment history, invalid
-citations, and comments claiming a closure instead of recommending it require
-review. `report.md` shows the delivery reason beside the draft and counts all
-three delivery states. No extra file is required for a reviewer.
+## Artifacts and metrics
 
-## Packets
+- `report.md` is the single reviewer-facing file. It surfaces only qualifying
+  duplicate/fixed recommendations and full Re / verdict / Recommendation / Proof
+  / Confidence payloads, plus ownership when known and delivery restrictions.
+  No per-ticket abstention comments or investigation queue is presented.
+- `proposed/KEY.md` starts with the exact same payload/reference, followed by
+  local review details. Only surfaced recommendations get a file. Suppressed
+  repeats and abstentions do not; there may be no `proposed/` directory at all.
+- `packets.json` retains every sampled issue, internal disposition, proof,
+  evidence, canonical candidates and creation dates/customer signals/resolution,
+  fix metadata, review state, gaps, verifier failures and delivery plan. This is
+  audit data, not a list of commands or permissions to act.
+- `summary.csv` has one audit row per packet; `action` is the authoritative
+  decision, not the internal disposition or raw score.
+- `manifest.json` records inputs, target/corpus, thresholds, counts, delivery
+  policy and `writes: []`. `closeProposals` counts proof-qualified findings;
+  `surfacedRecommendations` excludes suppressed delivery. `abstained` is explicit.
 
-`packets.json` is the structured result:
+Evaluation counts predictions from proposed actions, not unqualified internal
+guesses. A wrong canonical target is a false duplicate close. `--strict` fails
+on false closures, not on abstention rate. Coverage/recall remain visible: a
+run that abstains on everything has not proved backlog cleanup or accuracy.
 
-```json
-{
-  "schemaVersion": 1,
-  "dryRun": true,
-  "generatedAt": "2026-11-09T10:00:00+00:00",
-  "currentRelease": "2.1.0",
-  "packets": [
-    {
-      "key": "RHDHBUGS-1234",
-      "summary": "...",
-      "status": "Backlog",
-      "disposition": "duplicate",
-      "confidence": 0.94,
-      "confidenceBasis": ["best evidence: direct", "Jira Duplicate link present"],
-      "action": "propose_close_duplicate",
-      "recommendedStep": "Close as duplicate of RHDHBUGS-1100.",
-      "target": "RHDHBUGS-1100",
-      "explicitDuplicateLink": true,
-      "evidence": [],
-      "duplicateCandidates": [],
-      "gaps": [],
-      "notes": "",
-      "customerSignals": [],
-      "currentRelease": "2.1.0",
-      "review": {"independentPasses": 2, "agree": true},
-      "proposedComment": "...",
-      "verificationErrors": [],
-      "invalidEvidence": [],
-      "policyVersion": 1
-    }
-  ]
-}
-```
-
-Every packet carries the ticket facts, the evidence table, the ranked duplicate
-candidates, the gaps, the review state, and the proposed comment. A close that
-the verifier rejected has `verificationErrors` populated and an action of
-`comment_only`.
-
-## Markdown report
-
-`report.md` is for a human reviewer, not a machine. It is the single file a
-reviewer needs: it carries the numbers, every ticket's verdict, the evidence, the
-next step, and the exact comment that would be posted. It contains no tables; each
-ticket is its own section, one below the other, so it reads top to bottom.
-
-1. **Title and dry-run banner** — one sentence stating that nothing was posted.
-2. **Framing** — states explicitly that everything a reviewer needs is in this
-   file and what the file contains.
-3. **Bottom line** — one sentence: how many can close, stay open, need a
-   reproduction, or are unclear.
-4. **The numbers** — bullet metrics: sampled, controls, corpus, release under
-   review, can close, keep open, need reproduction, comment only, unclear,
-   decision-ready, tickets with cited evidence, and the evidence-gap count.
-5. **Close proposals** — one short paragraph per closeable ticket; when none
-   passed the gates, the section says so instead of going missing.
-6. **Customer-linked** — only when a customer-linked ticket reached a packet;
-   states the close-disabled count.
-7. **The tickets** — one `### KEY — summary` section per ticket in sample order.
-   Each section carries a plain-language verdict headline with confidence and
-   context, one paragraph explaining why, a **Do this next** line, the exact
-   proposed comment as a blockquote, the evidence list, any duplicate candidates,
-   and the gaps. No table.
-8. **How this was decided** — the selection JQL, what selection excludes, whether
-   the duplicate corpus contained closed tickets, the retrieval signals, the
-   close thresholds, the confidence model, and the write boundary.
-9. **Not in the sample** — the first ten exclusions with reasons, pointing to
-   `manifest.json` for the rest.
-10. **Limits** — what the report cannot claim.
-
-If the corpus had no closed tickets, the method section says duplicate search
-could not reach a closed canonical report and tells the reader to export a
-broader corpus and rerun.
-
-`proposed/KEY.md` remains the per-ticket handoff artifact: it leads with the exact
-comment that would be posted, then compact review details. The same comment is
-embedded in `report.md`, so a reviewer never has to open `proposed/` to decide.
-The comment is never posted, and every ticket gets one, including `unclear` and
-`needs_repro`.
-[disposition-rubric.md](disposition-rubric.md) owns the comment shape.
-
-## CSV
-
-`summary.csv` has one row per packet and these columns:
-
-```
-key,kind,controlLabel,stratum,status,disposition,confidence,action,target,
-recommendedStep,evidenceCount,gapCount,customerLinked
-```
-
-`kind` is `aged` or `control`; `customerLinked` is `yes` or `no`. The CSV is for
-sorting and filtering, not for pasting into Jira.
-
-## Manifest
-
-`manifest.json` records provenance and the write boundary:
-
-```json
-{
-  "schemaVersion": 1,
-  "dryRun": true,
-  "policyVersion": 1,
-  "inputs": {"export": "...", "sample": "...", "assessments": "..."},
-  "jql": "...",
-  "corpusSize": 250,
-  "corpusHasClosed": true,
-  "sampleSize": 12,
-  "controlCount": 3,
-  "thresholds": {"duplicate": 0.85, "fixed": 0.8, "obsolete": 0.8},
-  "counts": {"packets": 15, "withEvidence": 12, "closeProposals": 3, "customerLinked": 0},
-  "writes": [],
-  "writePolicy": "read-only; proposed actions live under proposed/ and are never posted"
-}
-```
-
-`writes` is always an empty list. If any future change adds a write, that field
-and the dry-run banner must change together, and the change needs its own review.
-
-## Exit codes
-
-| Code | Meaning |
-|---|---|
-| `0` | The command completed; `evaluate --strict` also requires no false closes and a decision-ready rate of at least 0.8 |
-| `1` | `check` found no readable Jira session and `--allow-missing` was not set, or `evaluate --strict` hit a hard failure |
-| `2` | Invalid input, missing sample key, malformed assessment, or adapter failure |
+Exit codes: 0 completed; 1 failed capability check or strict false-close failure;
+2 invalid input, missing sample key, occupied output directory or adapter failure.

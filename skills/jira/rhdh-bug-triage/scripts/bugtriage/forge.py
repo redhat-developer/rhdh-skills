@@ -7,6 +7,7 @@ merge, label, or push. A cache file makes the same evidence reproducible offline
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from typing import Any, Dict, List, Optional
 
@@ -135,13 +136,18 @@ def search_prs_for_key(
     use_gh: bool,
     repos: Optional[List[str]] = None,
     limit: int = 10,
+    search_log: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Return PRs that mention a Jira key, or an empty list when live search is off."""
     if not use_gh:
         return [
             item
             for item in cache.values()
-            if isinstance(item, dict) and key in json.dumps(item, default=str)
+            if isinstance(item, dict)
+            and re.search(
+                r"(?<![A-Z0-9_-])" + re.escape(key) + r"(?![A-Z0-9_-])",
+                json.dumps(item, default=str),
+            )
         ]
     results: List[Dict[str, Any]] = []
     seen = set()
@@ -155,13 +161,30 @@ def search_prs_for_key(
             "--limit",
             str(limit),
             "--json",
-            "number,title,state,url,repository,closedAt",
+            "number,title,body,state,url,repository,closedAt",
         ]
         try:
             payload = json.loads(_run_gh(args))
-        except (ForgeAdapterError, json.JSONDecodeError):
+        except (ForgeAdapterError, json.JSONDecodeError) as error:
+            if search_log is not None:
+                search_log.append(
+                    {"key": key, "repository": repo, "status": "error", "error": str(error)}
+                )
             continue
+        if search_log is not None:
+            search_log.append(
+                {
+                    "key": key,
+                    "repository": repo,
+                    "status": "success" if isinstance(payload, list) else "invalid_response",
+                }
+            )
         for item in payload if isinstance(payload, list) else []:
+            if not isinstance(item, dict) or not re.search(
+                r"(?<![A-Z0-9_-])" + re.escape(key) + r"(?![A-Z0-9_-])",
+                str(item.get("title", "")) + " " + str(item.get("body", "")),
+            ):
+                continue
             url = item.get("url") or ""
             if not url or url in seen:
                 continue
@@ -178,6 +201,7 @@ def collect_for_ticket(
     use_gh: bool,
 ) -> Dict[str, Any]:
     pulls = [lookup_pr(url, cache, use_gh) for url in ticket.pr_urls]
+    search_log: List[Dict[str, Any]] = []
     jira_keys = sorted(
         {match for match in JIRA_KEY_RE.findall(ticket.search_text) if match != ticket.key}
         | {link.key for link in ticket.links if link.key and link.key != ticket.key}
@@ -192,15 +216,18 @@ def collect_for_ticket(
             known.add(url)
             pulls.append({**pull, "foundVia": via})
 
-    add(search_prs_for_key(ticket.key, cache, use_gh), ticket.key)
+    add(search_prs_for_key(ticket.key, cache, use_gh, search_log=search_log), ticket.key)
     # A fix can land under another bug's key while this ticket stays open. The
     # linked keys are where that shows up, so search them too.
     for linked_key in jira_keys[:MAX_LINKED_KEYS]:
-        add(search_prs_for_key(linked_key, cache, use_gh), linked_key)
+        add(search_prs_for_key(linked_key, cache, use_gh, search_log=search_log), linked_key)
     return {
         "key": ticket.key,
         "summary": ticket.summary,
         "pullRequests": pulls,
+        "searches": search_log,
+        "searchMode": "live" if use_gh else "cache-only; absence is not a negative search result",
+        "unsearchedLinkedKeys": jira_keys[MAX_LINKED_KEYS:],
         "linkedJiraKeys": jira_keys,
         "searchPhrases": distinctive_phrases(ticket),
         "fixVersionFields": ticket.fix_versions,

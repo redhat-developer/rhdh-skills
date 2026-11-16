@@ -27,7 +27,6 @@ DISPOSITION_ALIASES = {
 CLOSE_FOR_DISPOSITION = {
     "duplicate": "propose_close_duplicate",
     "already_fixed": "propose_close_fixed",
-    "no_longer_valid": "propose_close_obsolete",
 }
 
 
@@ -143,7 +142,7 @@ def evaluate(packets: Iterable[Packet], truth: Dict[str, Dict[str, str]]) -> Eva
         packet = by_key[key]
         expected = truth[key]
         gaps += len(packet.gaps)
-        if packet.action != "unclear":
+        if packet.action in CLOSE_ACTIONS:
             decision_ready += 1
         if packet.disposition not in ("unclear", "needs_repro"):
             classified += 1
@@ -166,18 +165,24 @@ def evaluate(packets: Iterable[Packet], truth: Dict[str, Dict[str, str]]) -> Eva
                     "expected": expected["disposition"],
                 }
             )
-        if packet.disposition in ("unclear", "needs_repro"):
+        if packet.action not in CLOSE_ACTIONS:
             abstained += 1
         for label in CLOSE_FOR_DISPOSITION:
             if expected["disposition"] == label:
                 support[label] += 1
-            if packet.disposition == label:
+            proposes_label = packet.action == CLOSE_FOR_DISPOSITION[label]
+            if proposes_label:
                 predicted[label] += 1
-            if expected["disposition"] == label and packet.disposition == label:
+            correct_target = label != "duplicate" or packet.target == expected.get(
+                "duplicateOf", ""
+            )
+            if expected["disposition"] == label and proposes_label and correct_target:
                 true_positive[label] += 1
-            elif expected["disposition"] == label and packet.disposition != label:
+            elif expected["disposition"] == label:
                 false_negative[label] += 1
-            elif expected["disposition"] != label and packet.disposition == label:
+                if proposes_label:
+                    false_positive[label] += 1
+            elif proposes_label:
                 false_positive[label] += 1
 
     precision = {

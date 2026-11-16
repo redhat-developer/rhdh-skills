@@ -8,7 +8,15 @@ import re
 from datetime import datetime, timedelta
 
 from .model import Ticket, parse_datetime
-from .policy import CLOSE_ACTIONS, EVIDENCE_TYPES, Assessment, Packet
+from .policy import (
+    CLOSE_ACTIONS,
+    EVIDENCE_TYPES,
+    Assessment,
+    Packet,
+    recommendation_comment,
+    valid_ref,
+    verify_packet,
+)
 
 DEFAULT_COOLDOWN_DAYS = 14
 MARKER_PREFIX = "rhdh-bug-triage:v1:"
@@ -50,6 +58,12 @@ def plan_comment(
             **details,
         }
 
+    if packet.action not in CLOSE_ACTIONS:
+        return decision(
+            "suppress", "Abstained: no qualifying duplicate or already-fixed recommendation."
+        )
+    if verify_packet(packet, ticket):
+        return decision("suppress", "Closure proof failed re-verification; no comment proposed.")
     if ticket.customer_signals or ticket.is_done:
         return decision("suppress", "Customer-linked or completed issue; no comment proposed.")
     if not ticket.comments_complete:
@@ -57,12 +71,13 @@ def plan_comment(
             "review_required", "Comment history is missing or truncated; fetch it in full."
         )
     body = packet.proposed_comment
+    expected = recommendation_comment(packet, ticket)
+    if body.split("\n\nTriage reference:", 1)[0] != expected:
+        return decision(
+            "review_required", "Draft does not match the verified recommendation and proof."
+        )
     if re.search(r"\bclosing as\b", body, re.I):
         return decision("review_required", "Comment claims a closure instead of recommending one.")
-    if packet.action not in CLOSE_ACTIONS and re.search(
-        r"\b(?:recommend(?:ation:|ed)?\s+(?:to\s+)?)close\b", body, re.I
-    ):
-        return decision("review_required", "Comment recommends a close that policy did not permit.")
     citations = re.findall(r"\[[^\]]+\]\((https?://[^\s)]+)\)", body)
     allowed = {item.ref for item in packet.evidence if item.ref.startswith(("http://", "https://"))}
     allowed.update(
@@ -101,6 +116,11 @@ def plan_comment(
                 "review_required", "Prior triage comment has no reliable ID or posting time."
             )
         prior.append((created, comment))
+    if not prior and any("rhdh-bug-triage:" not in comment.body for comment in ticket.comments):
+        return decision(
+            "review_required",
+            "Unmarked discussion may contain equivalent advice or a pending owner action; human review required.",
+        )
     if not prior:
         return decision(
             "propose",
@@ -127,7 +147,7 @@ def plan_comment(
             isinstance(item, dict)
             and str(item.get("type")) in EVIDENCE_TYPES
             and isinstance(item.get("ref"), str)
-            and item["ref"].strip()
+            and valid_ref(item["ref"])
             and isinstance(item.get("why"), str)
             and item["why"].strip()
             and item.get("strength") == "direct"
@@ -138,6 +158,12 @@ def plan_comment(
         return decision(
             "suppress",
             "Previous requested action is pending or unverified; time alone is not a reason to comment again.",
+            **details,
+        )
+    if any("rhdh-bug-triage:" not in comment.body for comment in ticket.comments):
+        return decision(
+            "review_required",
+            "Review unmarked discussion before a changed recommendation.",
             **details,
         )
     return decision(
@@ -158,4 +184,6 @@ def attach_comment_plan(
     packet.comment_plan = plan_comment(ticket, packet, assessment, as_of, cooldown_days)
     # The reference travels in the exact body a human may approve. A future
     # writer must preserve it through Markdown-to-ADF conversion and readback.
-    packet.proposed_comment += f"\n\nTriage reference: `{packet.comment_plan['reference']}`."
+    if packet.proposed_comment:
+        packet.proposed_comment = packet.proposed_comment.split("\n\nTriage reference:", 1)[0]
+        packet.proposed_comment += f"\n\nTriage reference: `{packet.comment_plan['reference']}`."

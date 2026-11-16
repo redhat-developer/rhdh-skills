@@ -1,271 +1,130 @@
-# Triage aged RHDH bugs
+# Triage aged bugs for closure opportunities
 
-Run one read-only pass over an aged RHDHBUGS sample. The output is a local report
-a reviewer can act on; nothing is posted to Jira.
+One entry point, two outward results: duplicate or already fixed. Follow the
+[rubric](../references/disposition-rubric.md) for proof, confidence, canonical
+selection and delivery gates. Insufficient proof means silent abstention, not a
+new Jira investigation request. This workflow and its CLI never mutate Jira.
 
-## 1. Check capability
+## 1. Resolve scope and capability
+
+Invoke `/rhdh-context` to resolve the actual released product under review.
+Development `package.json`, planned fixVersions, or a CLI default are not release
+evidence. Invoke `/rhdh-jira-api` for authenticated read mechanics and field IDs.
 
 ```bash
 python3 scripts/run_poc.py check --json
 ```
 
-Three inputs are possible:
+Use an authenticated host export if acli cannot read. Do not retrieve credentials,
+repair login here, or invent missing fields. Search and view support different
+field sets in some acli versions: if search rejects `*all`, use supported search
+fields followed by complete issue views through `/rhdh-jira-api`. Do not silently
+proceed with missing customer fields, descriptions or truncated comment history.
 
-| Input | When to use | What to say |
-|---|---|---|
-| `acli` | A Jira session is available | Use `--source acli` for `select` |
-| JSON export | A host adapter, MCP tool, or saved search produced a file | Use `--source export --input FILE` |
-| `gh` cache | PR state was saved for repeatable runs | Pass `--forge-cache FILE` to `collect` |
+## 2. Select and retain the broad duplicate corpus
 
-The **sample export** and the **duplicate corpus** can come from the same broad
-export, or from two files when you already have a narrow one. Either way, the
-corpus must contain closed bugs, because the canonical ticket for a duplicate is
-often already closed:
+Select 12–15 open, non-customer reports at least 90 days old, stratified by team
+or component. Require comparable affects versions older than the release under
+review; the age-only selector does not enforce version comparison. Enrich and
+filter first, recording all exclusions. Unknown versions do not prove eligibility.
+Any previous-local-review coverage exclusion is run-local bookkeeping, never
+evidence that a Jira comment was posted.
 
-```bash
-# Broad export: everything in the project, or open plus recently resolved.
-# Selection removes Done, young, and customer-linked tickets by itself.
-acli jira workitem search --jql 'project = RHDHBUGS' \
-  --fields '*all' --paginate --json > export.json
-```
-
-If you must keep a saved open-only export for the sample, pass the broad file
-separately: `run --input open-export.json --corpus broad-export.json`. Without
-closed tickets in the corpus, the report says duplicate search could not reach a
-closed canonical report and tells you to rerun.
-
-`check` never prints a credential. If `acli` is unreadable, do not ask this skill
-to repair it: tell the user to authenticate, or continue with an export through
-the offline adapter. `/rhdh-jira-api` owns the read mechanics and the fallback
-order.
-
-## 2. Build the sample
+Keep a separate corpus containing open **and closed** reports; a canonical issue
+can be closed. Record retrieval coverage and missing fields. Fetch full candidate
+records before choosing a tracker, including creation date, resolution, customer
+signals, links, description and discussion. Resolve duplicate chains.
 
 ```bash
-python3 scripts/run_poc.py select \
-  --input export.json \
-  --aged-days 90 \
-  --size 12 \
-  --control RHDHBUGS-4102=known-fixed \
-  --control RHDHBUGS-4477=known-duplicate \
-  --out sample.json
+python3 scripts/run_poc.py select --input eligible-export.json --size 12 --out sample.json
 ```
 
-The selector:
+Optional controls must have genuine known answers. Do not invent controls or
+ground truth to claim accuracy. No minimum close/recommendation rate is required.
 
-- excludes anything younger than `--aged-days`;
-- excludes customer-linked tickets and anything already Done;
-- stratifies by Team, then by the first component, then `Unowned`;
-- orders each stratum by a stable hash of `seed:key`, so the same export and seed
-  give the same list on any machine;
-- appends the controls after the aged sample and labels them.
-
-Use 12–15 aged tickets. Add controls only when a reviewer already knows the
-answer; a control that is itself uncertain teaches nothing. If the export is
-missing fields the selector needs, stop and fix the export rather than guessing.
-
-Resolve the release under review through `/rhdh-context` before selection and
-check the affects versions: an aged validation candidate should affect a release
-older than that target. The age-only CLI selector does not enforce that version
-comparison. A missing affects version is a gap, not evidence of an old release.
-Keep newer/equal-version reports out of an aged validation sample, or explicitly
-mark their release scope unresolved. Do not assess a new feature on a release
-that predates it and call the issue obsolete. Do not silently substitute the
-CLI's example/default release for the current product target.
-
-## 3. Collect evidence
+## 3. Search for duplicate and existing-fix evidence
 
 ```bash
-python3 scripts/run_poc.py collect \
-  --input export.json \
-  --sample sample.json \
-  --out evidence
+python3 scripts/run_poc.py collect --input eligible-export.json --sample sample.json \
+  --out evidence --forge-cache forge-cache.json
 ```
 
-For each ticket the collector records:
+Follow [evidence sources](../references/evidence-sources.md). Read ADF inline cards
+and link marks as well as visible text; hidden Jira references often lead to the
+actual fix. Inspect candidate meaning, not just titles. Search the sampled key,
+linked/mentioned keys and relevant corpus candidates. The collector searches at
+most five linked keys; investigate its recorded `unsearchedLinkedKeys` when
+needed rather than claiming complete coverage.
 
-- the ticket facts, customer signals, links, and fix/affects versions;
-- every PR URL found in the ticket text and links;
-- PR state from the cache, or from read-only `gh` calls when `--gh` is set;
-- PRs found by searching the ticket key **and** the Jira keys it mentions or
-  links to, each tagged with the key that found it (`foundVia`);
-- other Jira keys mentioned in the text;
-- up to three distinctive search phrases for a live duplicate search.
+Use `/rhdh-forge` for exact PR/commit state, diff, regression coverage and tag
+ancestry. Read linked PRs even if key search fails. Record failed/rate-limited
+searches separately from successful zero-match results. Cache-only collection
+does not search GitHub. Neither case proves that no fix exists.
 
-Use [../references/evidence-sources.md](../references/evidence-sources.md) to
-extend this with code inspection, release notes, and a current-release
-reproduction. `/rhdh-forge` owns the PR and commit read mechanics, and
-`/rhdh-backport` owns backport rules; this skill only records what they return as
-evidence.
+For fixed candidates, verify the matching change is incorporated, the fix shipped,
+and the exact target release contains it. For duplicate candidates, compare the
+same failure/trigger/fix and select one authoritative tracker. If source or
+history contradicts the hypothesis, abstain rather than stretching the evidence.
 
-## 4. Adjudicate each ticket twice
-
-Create one assessment per ticket:
+## 4. Adjudicate independently twice and write cited proof
 
 ```bash
 python3 scripts/run_poc.py template --sample sample.json --out assessments
 ```
 
-Fill the template with a disposition, evidence, and notes. Then run the
-adjudication again in a fresh context — a new session or a second reviewer — and
-record both results under `review`:
+Fill [structured assessments](../references/report-schema.md). Run the second
+review in a fresh context without the first conclusion. Record real agreement
+or disagreement; never turn reconciliation into invented independent agreement.
+Evidence strengths are inputs; confidence is computed. Proof summaries must
+explain the causal comparison, not merely say "same bug" or "fixed".
 
-```json
-"review": {"independentPasses": 2, "agree": true}
-```
+Do not create outward `unclear`, `still_valid`, obsolete or reproduction comments.
+Those may be internal evidence states only. No fix implementation, build/cluster
+operation, backport, reassignment, or PR creation is authorized by this workflow.
 
-Fill `recommendedStep` with one evidence-specific action and a team/owner when
-known. Write `comment` as a recommendation, its linked basis, and that action.
-For example (replace these illustrative links): "Based on [the older report](https://example.invalid/older-report), both tickets describe the same
-error after the same trigger and require the same fix. Recommendation: close
-this issue as a duplicate of [KEY](https://example.invalid/older-report), subject to human confirmation."
-Do not claim a close has happened, ask for details the ticket already contains,
-or describe code inspection as a runtime reproduction. Source evidence can
-justify keeping work open without claiming the shipped image was tested.
-
-### Decide whether a comment should be proposed
-
-The dry run models the future comment behavior; it still posts nothing:
-
-- Fetch complete comments, IDs and posting timestamps. Missing/truncated history
-  produces `review_required`, not permission to comment. A flattened export with
-  only a `comments` list must include `commentsComplete: true` from an adapter
-  that actually fetched every page; do not add this flag to bypass a failed read.
-- An approved posted body retains its `Triage reference` footer. This stable
-  identity covers ticket, release, disposition, action, target and evidence
-  references, not wording or evidence order. Recognized Jira comments are the
-  history, never a local proposal file or the issue's `updated` timestamp.
-- The same identity already posted means `suppress`, regardless of age.
-- A changed recommendation must first wait `--comment-cooldown-days` (14 by
-  default). After that, suppress it while the previous requested action is
-  pending or its outcome is unknown. An unrelated reply, label edit or newer
-  release does not by itself clear the pending action.
-- A later proposal needs a `followUp` assessment naming the latest triage
-  `priorCommentId`, `state: completed` or `superseded`, and direct cited evidence
-  explaining the result or why the previous request is no longer appropriate.
-  Check that evidence independently. Do not infer completion from silence or
-  from a model's uncited statement. Identical advice stays suppressed even then.
-- Unknown/malformed references or unreliable timestamps require review. Existing
-  unmarked human/legacy triage must be reviewed for equivalent advice before a
-  first marked comment is approved; marker detection cannot infer its meaning.
-- Every ticket still has a draft in `report.md`, including suppressed drafts.
-  The delivery status explains why it must not be posted. A suppression is a
-  successful no-op, not a reason to send another reminder or a Slack notification.
-
-Before a future approved handoff, `/rhdh-jira-update` must freshly read the issue
-and complete comments, recheck customer signals, re-evaluate the comment plan,
-preserve the approved body/reference, and read back the created comment ID.
-Serialize writes per issue: a check then a post is not atomic, and this planner
-does not supply a concurrency lock. After a timeout or uncertain delivery, stop
-and reconcile Jira history before retrying. No automatic write or retry path is
-implemented by this skill, and `/mutation-gate` still applies to every write.
-
-The second pass must not copy the first. It re-reads the ticket and the evidence
-and reaches its own disposition. If the passes disagree, set `agree` to `false`
-and record the disagreement in `notes`; the policy will refuse a close.
-
-Rules the adjudicator follows:
-
-1. Every evidence item names a type, a reference, why it matters, and a strength
-   (`direct`, `strong`, or `supporting`). A claim without a reference is dropped.
-2. `duplicate` names the target key. `/rhdh-jira-authoring` owns what counts as
-   the same bug; this skill applies that definition and adds the close gates
-   below. The duplicate candidate list is a retrieval aid; a reviewer still
-   decides whether the failures are the same. The target is the older report and
-   may already be closed. Only an outward Jira Duplicate link ("this ticket
-   duplicates the target") supports a close; an inward "is duplicated by" link
-   means the other ticket is the duplicate. A candidate newer than this ticket is
-   a hint, never a close target.
-3. `already_fixed` names the PR or commit, the release that carries it, and that
-   the fix is released. Merged but unreleased is a comment, not a close. The fix
-   release must be no newer than the release under review; a fix that first ships
-   later keeps the ticket open. A fix recorded under a linked bug's key still
-   counts when the citation is direct.
-4. `still_valid` names the reproduction or the code path that proves it.
-5. `no_longer_valid` names the removal, the changed behavior, or the failed
-   reproduction on a supported release.
-6. If the evidence cannot support any of these, use `needs_repro` or `unclear`.
-7. Do not invent a confidence number. The policy computes it.
-
-Read [../references/disposition-rubric.md](../references/disposition-rubric.md)
-before the first pass.
-
-## 5. Run the policy and render the report
+## 5. Run policy in a fresh output directory
 
 ```bash
-python3 scripts/run_poc.py run \
-  --input export.json \
-  --sample sample.json \
-  --assessments assessments \
-  --out report \
-  --current-release 2.1.0
+python3 scripts/run_poc.py run --input eligible-export.json --sample sample.json \
+  --corpus broad-export.json --assessments assessments --out new-review \
+  --current-release 2.1.0 --comment-cooldown-days 14
 ```
 
-The run writes:
+Replace the example release with the verified target. The policy and verifier
+both fail closed. Any unsupported finding or failed gate becomes `abstain` with
+no draft or reproduction request. Output directories must be fresh so a rerun
+cannot leave an old close proposal masquerading as a new recommendation.
 
-```
-report/
-  report.md            one file: numbers, close proposals, then one section per
-                       ticket (verdict, evidence, next step, proposed comment)
-  packets.json         structured packets used by evaluation and tooling
-  summary.csv          one row per ticket for a spreadsheet
-  manifest.json        inputs, counts, thresholds, and `writes: []`
-  proposed/KEY.md      the exact comment that would be posted, then review details
-```
+- `report.md`: the one reviewer-facing file, only qualifying recommendations,
+  proof, confidence, ownership when known and approval/delivery status.
+- `proposed/KEY.md`: exact surfaced payload plus local review details; no files
+  for abstentions or suppressed repeats. Zero recommendations can produce no
+  `proposed/` directory.
+- `packets.json`, `summary.csv`, `manifest.json`: full local audit, including
+  reasons for abstention, rejected claims, search/selection provenance where
+  supplied, and `writes: []`. A local run is not posted-comment history.
 
-The policy downgrades, never upgrades. A close that misses a gate becomes
-`comment_only`; a weak packet becomes `needs_repro`; a customer-linked ticket
-cannot close at all. The verifier re-checks each close and fails closed. Every
-ticket gets a proposed comment, including `unclear` and `needs_repro`, so no
-triaged ticket leaves without a written trace.
+## 6. Review and hand off only approved recommendations
 
-Each `proposed/KEY.md` opens with the comment exactly as it would appear in Jira:
-terse, with Jira keys and the cited PRs, commits, or releases as Markdown links,
-and one recommendation. The review details below the rule justify that comment;
-they are not meant to be posted.
+Review the exact Re / verdict / Recommendation / Proof body in `report.md`.
+Reject any recommendation stronger than its citations. A `review_required`
+delivery state is not permission to post; resolve history/legacy-comment concerns
+first. Suppression is a successful no-op, not a trigger to remind anyone.
 
-## 6. Review before anyone acts
+If the human approves an external action, invoke `/prose-editing` once for Jira
+prose and hand the exact preserved recommendation and intended operations to
+`/rhdh-jira-update` under `/mutation-gate`. Approval to post a rationale is not
+approval to close; closure needs its own stated approved operation. No mutation
+is performed by this skill. Report nothing awaiting approval when the result
+contains no recommendations.
 
-Read `report.md` in this order:
-
-1. **Bottom line** — how many tickets can close, stay open, need a reproduction,
-   or are unclear.
-2. **The tickets** — one section per ticket, in sample order. Does each verdict
-   match the evidence under it, and is "Do this next" the action you would take?
-3. **Close proposals to review** — open `proposed/KEY.md` and read the comment
-   first. Confirm that every Jira key and URL resolves, that the recommendation
-   matches the action, and that the review details cite the same evidence. Then
-   check the gaps for anything the comment overstates.
-4. **Method and limits** — confirm the corpus reached closed tickets, and that the
-   report's caveats match what the evidence can support.
-
-Reject any packet whose recommendation is stronger than its citations. Record the
-reason in the review notes; do not silently edit the disposition.
-
-## 7. Hand off
-
-Present the report and the close proposals to the human who owns the queue. For
-each approved proposal, hand the exact comment from `proposed/KEY.md` and its
-target to `/rhdh-jira-update`; that skill states the operation, preview, and
-failure behavior under `/mutation-gate` and executes only after approval. The
-review details are for the human, not for Jira. For a still-valid bug, hand the
-packet to `/rhdh-plugin-bug-fix`. For an unclear or needs-repro ticket, send the
-proposed comment through `/prose-editing` and stop. Any comment a human intends
-to post goes through `/prose-editing` once before approval; nothing is posted
-without an explicit gate.
-
-## Optional: score the pass
-
-If the sample includes controls or a reviewer supplied ground truth, write a
-truth file and evaluate:
+## Optional evaluation
 
 ```bash
-python3 scripts/run_poc.py evaluate \
-  --packets report/packets.json \
-  --truth truth.json \
-  --out report/evaluation.md \
-  --strict
+python3 scripts/run_poc.py evaluate --packets new-review/packets.json \
+  --truth truth.json --out new-review/evaluation.md --strict
 ```
 
-A false close is the hard failure. Decision-ready rate is a quality signal, not a
-target to game: an honest abstention is better than a confident wrong close.
+Use actual reviewer ground truth. False closures fail strict evaluation; a high
+abstention rate does not. Coverage, precision and recall remain visible so silent
+abstention cannot masquerade as a successful comprehensive backlog cleanup.
