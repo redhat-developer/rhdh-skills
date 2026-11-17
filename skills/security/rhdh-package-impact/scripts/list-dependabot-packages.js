@@ -26,7 +26,15 @@
  */
 
 import { loadDependabotAlerts } from './dependabot-alerts.js';
-import { filterAlertsForLayout, resolveRepoLayout } from './repo-layout.js';
+import {
+  filterAlertsForLayout,
+  filterAlertsForPackageDiscovery,
+  resolveRepoLayout,
+} from './repo-layout.js';
+import {
+  resolveBumpBase,
+  wantsDualLockfileBump,
+} from './release-1.10-dual-lockfile.js';
 
 function usage() {
   console.error(`Usage: list-dependabot-packages.js [options] <workspace-or-manifest>
@@ -46,12 +54,17 @@ environment or a .env file near cwd. --alerts-json skips REST and token.
   rhdh            (redhat-developer/rhdh product lockfile)
   yarn.lock       (rhdh core exact manifest)
 
+On rhdh-core release-1.10 only, package discovery also includes alerts
+under dynamic-plugins/ so one list covers both lockfiles (REMOVE WHEN EOL).
+
 Options:
   --repo <owner/name>            Remote GitHub repo for REST alerts
                                  (default: detect from GITHUB_REPOSITORY or git origin)
   --repo-root <path>             Local checkout (detects plugins vs rhdh-core)
   --alerts-json <file>           Snapshot of GitHub Dependabot alert objects
                                  (array, or { "alerts": [...] }). No REST.
+  --base <branch>                Release train for dual-lockfile discovery
+                                 (else CVE_BASE_BRANCH, else infer from git)
   --state <open|dismissed|fixed|auto_dismissed|all>
                                  Alert state filter (default: open)
   --scope <runtime|development>  Optional dependency scope filter
@@ -76,6 +89,7 @@ function parseArgs(argv) {
     repo: undefined,
     repoRoot: undefined,
     alertsJson: undefined,
+    base: undefined,
   };
   const positional = [];
 
@@ -104,6 +118,11 @@ function parseArgs(argv) {
       options.alertsJson = argv[++i];
       if (!options.alertsJson) {
         throw new Error('--alerts-json requires a file path');
+      }
+    } else if (arg === '--base') {
+      options.base = argv[++i];
+      if (!options.base) {
+        throw new Error('--base requires a branch name');
       }
     } else if (arg === '--token') {
       throw new Error(
@@ -145,14 +164,11 @@ function summarizeAlert(alert) {
   };
 }
 
-function filterAlerts(alerts, { layout, scope }) {
-  return filterAlertsForLayout(alerts, layout).filter(alert => {
-    const dep = alert.dependency ?? {};
-    if (scope && dep.scope !== scope) {
-      return false;
-    }
-    return true;
-  });
+function filterByScope(alerts, scope) {
+  if (!scope) {
+    return alerts;
+  }
+  return alerts.filter(alert => (alert.dependency ?? {}).scope === scope);
 }
 
 function compilePackages(filtered) {
@@ -215,17 +231,33 @@ async function main() {
     requireCheckout: false,
   });
   const { workspace, exactManifest, lockfileRel, kind } = layout;
-  const { alerts: allAlerts, repo: repoFull, fromSnapshot } = await loadDependabotAlerts({
-    alertsJson: options.alertsJson,
-    explicitRepo: options.repo || layout.defaultDependabotRepo,
-    cwd: layout.repoRoot || process.cwd(),
-    state: options.state,
+  const base = await resolveBumpBase({
+    repoRoot: layout.repoRoot,
+    explicitBase: options.base,
+  });
+  const dualLockfile = wantsDualLockfileBump({
+    layoutKind: kind,
+    scope: layout.scope,
+    base,
   });
 
-  const filtered = filterAlerts(allAlerts, {
-    layout,
-    scope: options.scope,
-  });
+  const { alerts: allAlerts, repo: repoFull, fromSnapshot } =
+    await loadDependabotAlerts({
+      alertsJson: options.alertsJson,
+      explicitRepo: options.repo || layout.defaultDependabotRepo,
+      cwd: layout.repoRoot || process.cwd(),
+      state: options.state,
+    });
+
+  const filtered = filterByScope(
+    filterAlertsForPackageDiscovery(allAlerts, layout, { dualLockfile }),
+    options.scope,
+  );
+  // Product-only count for comparison in JSON (excludes dynamic-plugins/).
+  const productOnly = filterByScope(
+    filterAlertsForLayout(allAlerts, layout),
+    options.scope,
+  );
 
   const packages = compilePackages(filtered);
   const packageNames = packages.map(p => p.package);
@@ -242,8 +274,11 @@ async function main() {
           exactManifest,
           state: options.state,
           scope: options.scope ?? null,
+          base,
+          dualLockfile,
           source: fromSnapshot ? 'alerts-json' : 'github-rest',
           alertCount: filtered.length,
+          productAlertCount: productOnly.length,
           packageCount: packageNames.length,
           packages: packageNames,
           packageDetails: packages.map(
@@ -263,7 +298,6 @@ async function main() {
     return;
   }
 
-  // Default: one package per line for piping into classify
   for (const name of packageNames) {
     console.log(name);
   }
@@ -274,7 +308,7 @@ async function main() {
     );
   } else {
     console.error(
-      `# ${packageNames.length} package(s) from ${filtered.length} alert(s) under ${exactManifest || lockfileRel}`,
+      `# ${packageNames.length} package(s) from ${filtered.length} alert(s) under ${exactManifest || lockfileRel}${dualLockfile ? ' (+ dynamic-plugins/ on release-1.10)' : ''}`,
     );
   }
 }

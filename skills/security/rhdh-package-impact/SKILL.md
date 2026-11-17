@@ -145,10 +145,11 @@ node "$SKILL_DIR/scripts/list-dependabot-packages.js" <workspace> --alerts-json 
 
 | Flag | Effect |
 |------|--------|
-| (default) | Plugins: all open alerts under `workspaces/<name>/`. RHDH core (`rhdh`): product `yarn.lock` + `packages/` + `plugins/` (not e2e/.ci) |
+| (default) | Plugins: all open alerts under `workspaces/<name>/`. RHDH core (`rhdh`): product `yarn.lock` + `packages/` + `plugins/` (not e2e/.ci). On **release-1.10 only**, package discovery also includes `dynamic-plugins/` alerts into that same list |
 | `--exact-manifest` | Only the exact yarn.lock (or given file) path |
+| `--base <branch>` | Release train for dual-lockfile discovery (else `CVE_BASE_BRANCH`, else infer from git HEAD) |
 | `--json` | Packages + alert details |
-| `--alerts-json <file>` | Use a runner snapshot; skip REST and token |
+| `--alerts-json <file>` | Use a runner snapshot; skip REST and token (required under Fullsend) |
 | (default stdout) | One package name per line (pipe-friendly); summary on stderr |
 
 When the user names a workspace but does **not** supply a package list, **always start here** — do not invent packages.
@@ -261,8 +262,8 @@ node "$SKILL_DIR/scripts/prepare-workspace-bump.js" --repo-root /path/to/plugins
 |------|---------|--------|
 | `--repo-root <path>` | cwd walk-up / `RHDH_PLUGINS_ROOT` / `RHDH_CORE_ROOT` | Plugins monorepo or rhdh core checkout |
 | `--upstream <remote>` | `upstream` | Remote that tracks `redhat-developer/rhdh-plugins` |
-| `--base <branch>` | `main` | Branch to `git fetch` / reset onto |
-| `--branch <name>` | `chore/<workspace>-cve-bumps` | Local branch created with `checkout -B` |
+| `--base <branch>` | `main` | Branch to `git fetch` / reset onto. Use `release-X.Y` for release trains (prefer a worktree) |
+| `--branch <name>` | `chore/<workspace>-cve-bumps` (or `…-release-X.Y` when `--base` is a release) | Local branch created with `checkout -B` |
 | `--verify-only` | auto on Fullsend | Verify lockfile + report HEAD; no `git fetch` / `checkout` |
 | `--reset-branch` | off | Force interactive reset even when `FULLSEND_OUTPUT_DIR` is set |
 | `--dry-run` | off | Print plan only; no `git fetch` / `checkout` |
@@ -320,6 +321,7 @@ node "$SKILL_DIR/scripts/bump-workspace-packages.js" --repo-root /path/to/plugin
 | `--repo-root <path>` | cwd walk-up / `RHDH_PLUGINS_ROOT` / `RHDH_CORE_ROOT` | Plugins monorepo or rhdh core checkout |
 | `--repo <owner/name>` | auto-detect | GitHub repo for Dependabot CVE metadata |
 | `--alerts-json <file>` | — | Use a runner snapshot; skip REST and token |
+| `--base <branch>` | — | Recorded in JSON for `format-bump-pr` titles (`release-X.Y` → `[release-X.Y] fix(deps): …`) |
 | `--dry-run` | off | Report only; no `yarn up` / `install` / `dedupe` |
 | `--dedupe` | off | Force `yarn dedupe` after install (overrides rhdh-core default skip) |
 | `--no-dedupe` | off | Skip `yarn dedupe` after install (overrides plugins default) |
@@ -328,7 +330,12 @@ node "$SKILL_DIR/scripts/bump-workspace-packages.js" --repo-root /path/to/plugin
 
 Behavior:
 
-1. Resolves package list from argv or open Dependabot alerts under `workspaces/<workspace>/`.
+1. Resolves package list from argv or open Dependabot alerts under the workspace
+   (plugins: `workspaces/<name>/`; rhdh product). On **rhdh-core release-1.10
+   only**, the product / main Dependabot package set is assumed to also apply
+   to wrapped plugins under `dynamic-plugins/` (intentional gap-closer; not
+   always exact) — see `release-1.10-dual-lockfile.js` (**REMOVE WHEN EOL**).
+   `main` / `release-2.1+` stay root-only.
 2. Records lockfile versions **before** each bump.
 3. Skips `@backstage/*` and `@backstage-community/*`. For each remaining package,
    runs bare `yarn up -R <package>` (Yarn forbids ranges with `-R`). For **known
@@ -354,10 +361,14 @@ Behavior:
    Qodo / review findings from version skew).
 6. Classifies each package and compares before/after versions against open advisory ranges.
 7. Prints a table: `package`, `classification`, `status`, `versions_before`, `versions_after`, `first_patched`, `open_cves`, `cves_fixed`.
+8. **release-1.10 only:** for packages still vulnerable in
+   `dynamic-plugins/yarn.lock`, also `yarn up -R` + `yarn install` there (no
+   dedupe) and emit `dualLockfile` on JSON. Gate is `--base` / git branch
+   containing `release-1.10`.
 
 `status` values: `fixed` (all vulnerable resolved versions cleared), `partial`, `unchanged`, `updated`, `skipped` (`@backstage/*` / `@backstage-community/*` denylist), `dry-run`, `error` (lockfile still vulnerable after the full bump pipeline — a non-zero `yarn up -R` exit alone does not set `error` when install/dedupe/ancestors already fixed the lockfile).
 
-`--json` also includes `remaining` (after versions still in an open advisory range), compact `alerts` (`ghsa`, `cve`, `vulnerableRange`, `firstPatched`) per package, and hygiene fields `installError`, `installRetried`, `dedupeError`, `ancestorsDespiteInstallFailure`. Use that JSON for PR body tables — do not paste the bump script’s combined `status` table into the PR.
+`--json` also includes `remaining` (after versions still in an open advisory range), compact `alerts` (`ghsa`, `cve`, `vulnerableRange`, `firstPatched`) per package, hygiene fields `installError`, `installRetried`, `dedupeError`, `ancestorsDespiteInstallFailure`, optional `base`, and on release-1.10 `dualLockfile`. Use that JSON for PR body tables — do not paste the bump script’s combined `status` table into the PR.
 
 ### 5b. PR body tables (`format-bump-pr.js`)
 
@@ -375,8 +386,9 @@ node "$SKILL_DIR/scripts/format-bump-pr.js" --title bump.json
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `--title` | off | Print only `fix(<workspace>): bump yarn.lock packages for Dependabot CVEs` |
+| `--title` | off | Print only the PR title |
 | `--with-title` | off | Print that title, then the PR body |
+| `--base <branch>` | bump JSON `base` | `release-X.Y` → `[release-X.Y] fix(deps): …`; main stays unprefixed |
 
 `partial` rows go in Partial leftovers. `unchanged` rows (including `status: error`
 when the lockfile did not move) go in Unchanged. The `remaining` cell always
@@ -434,7 +446,9 @@ Task progress:
 - [ ] Ensure GITHUB_TOKEN / GH_TOKEN via .env or env — NOT gh, --token, or git credential
 - [ ] If bumping interactively: `prepare-workspace-bump.js <workspace>`
       (fetch upstream/main, checkout -B chore/<workspace>-cve-bumps).
-      On Fullsend: `prepare-workspace-bump.js --verify-only` (or omit reset;
+      Release trains: `--base release-X.Y` from a worktree of
+      `upstream/release-X.Y` (not a merged PR branch). On Fullsend:
+      `prepare-workspace-bump.js --verify-only` (or omit reset;
       auto-selected when FULLSEND_OUTPUT_DIR is set). Use `--dry-run` to preview.
 - [ ] Run list-dependabot-packages.js <workspace> [--json] → package list
       (REST, or `--alerts-json` when a runner snapshot is staged)
@@ -457,12 +471,14 @@ Task progress:
 - [ ] Complex bumps (e.g. `fast-xml-parser`): handle manually — do not use the script for
       dual-major, `yarn set resolution`, or targeted non-`-R` parent updates.
       Never bump `@backstage/*` or `@backstage-community/*`.
-- [ ] If opening a PR: `bump-workspace-packages.js --json | format-bump-pr.js` for
-      Fully fixed / Partial leftovers / Unchanged tables. Preview the body before
-      `gh pr create`.
+- [ ] If opening a PR: `bump-workspace-packages.js --json | format-bump-pr.js`
+      (`--base release-X.Y` when on a release train; Fullsend may omit and
+      infer from HEAD) for Fully fixed / Partial leftovers / Unchanged tables.
+      Preview the body before `gh pr create`.
       Title: `fix(<workspace>): bump yarn.lock packages for Dependabot CVEs`
-      (rhdh core: `fix(deps): bump yarn.lock packages for Dependabot CVEs`).
+      (rhdh core: `fix(deps): …`; release: `[release-X.Y] fix(deps): …`).
       No Test plan, no skipped-packages section.
+      On release-1.10, confirm `dualLockfile` ran for the same package list.
 - [ ] If user asks to dismiss (interactive Cursor only — never under Fullsend):
   dry-run close script, then --close without --yes (runner package.json only
   for PATCHED_EXCEPT_RUNNER; note SBOM bump for PLUGIN_DEV / WORKSPACE_DEV).

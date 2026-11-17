@@ -19,6 +19,7 @@ import { createRequire } from 'module';
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { resolve as resolvePath } from 'path';
+import { fileURLToPath } from 'url';
 
 import {
   compactAlerts,
@@ -36,26 +37,36 @@ markdown: Fully fixed / Partial leftovers / Unchanged tables.
 Skipped denylist packages (@backstage/* / @backstage-community/*) are omitted.
 
 Options:
-  --title        Print only the PR title
-  --with-title   Print title, then the PR body
-  -h, --help     Show this help
+  --title              Print only the PR title
+  --with-title         Print title, then the PR body
+  --base <branch>      Base branch for the PR title prefix
+                       (release-X.Y → "[release-X.Y] fix(deps): …";
+                        also read from bump JSON \`base\` when omitted)
+  -h, --help           Show this help
 
 Examples:
   node bump-workspace-packages.js --repo-root /path/to/plugins-repo <ws> --json \\
     | node format-bump-pr.js
-  node format-bump-pr.js --with-title bump.json
+  node format-bump-pr.js --with-title --base release-1.10 bump.json
 `);
 }
 
 function parseArgs(argv) {
   const flags = new Set();
+  const options = { base: undefined };
   const positional = [];
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--title') {
       flags.add('title');
     } else if (arg === '--with-title') {
       flags.add('with-title');
+    } else if (arg === '--base') {
+      options.base = argv[++i];
+      if (!options.base) {
+        throw new Error('--base requires a branch name');
+      }
     } else if (arg === '-h' || arg === '--help') {
       flags.add('help');
     } else if (arg.startsWith('-')) {
@@ -65,7 +76,7 @@ function parseArgs(argv) {
     }
   }
 
-  return { flags, positional };
+  return { flags, options, positional };
 }
 
 function loadSemver(repoRoot) {
@@ -119,11 +130,20 @@ function versionsCell(versions) {
   return (versions || []).join(', ') || '-';
 }
 
-function prTitle(workspace, layoutKind) {
+/**
+ * PR titles for main stay conventional-commit style. Release bases get a
+ * "[release-X.Y] " prefix (release-1.10 Dependabot bump convention).
+ */
+export function prTitle(workspace, layoutKind, base) {
+  const release =
+    base && /^release-\d+\.\d+/.test(base)
+      ? base.match(/^release-\d+\.\d+/)[0]
+      : null;
+  const releasePrefix = release ? `[${release}] ` : '';
   if (layoutKind === 'rhdh-core' || workspace === 'rhdh' || workspace === '.') {
-    return 'fix(deps): bump yarn.lock packages for Dependabot CVEs';
+    return `${releasePrefix}fix(deps): bump yarn.lock packages for Dependabot CVEs`;
   }
-  return `fix(${workspace}): bump yarn.lock packages for Dependabot CVEs`;
+  return `${releasePrefix}fix(${workspace}): bump yarn.lock packages for Dependabot CVEs`;
 }
 
 function remainingForRow(row, semver) {
@@ -213,7 +233,7 @@ function printSection(heading, headers, rows) {
 }
 
 async function main() {
-  const { flags, positional } = parseArgs(process.argv.slice(2));
+  const { flags, options, positional } = parseArgs(process.argv.slice(2));
   if (flags.has('help')) {
     usage();
     process.exit(0);
@@ -239,7 +259,8 @@ async function main() {
   const lockfileRel =
     output.lockfileRel ||
     (layoutKind === 'rhdh-core' ? 'yarn.lock' : `workspaces/${workspace}`);
-  const title = prTitle(workspace, layoutKind);
+  const base = options.base || output.base || null;
+  const title = prTitle(workspace, layoutKind, base);
 
   if (flags.has('title')) {
     console.log(title);
@@ -278,6 +299,14 @@ async function main() {
       ? `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` (no \`yarn dedupe\`; rhdh-core default).`
       : `- \`yarn up -R\` on \`${lockfileRel}\` for open Dependabot alert packages, then \`yarn install\` and \`yarn dedupe\`.`,
   );
+  if (output.dualLockfile?.enabled) {
+    const attempted = output.dualLockfile.bump?.attempted || [];
+    console.log(
+      `- release-1.10 dual lockfile: also \`yarn up -R\` under \`dynamic-plugins/yarn.lock\` for the same Dependabot package list` +
+        (attempted.length ? ` (${attempted.join(', ')})` : '') +
+        ' (no dedupe; REMOVE WHEN release-1.10 EOL).',
+    );
+  }
   const pairAdded = Array.isArray(output.reactRouterPairAdded)
     ? output.reactRouterPairAdded
     : [];
@@ -317,7 +346,13 @@ async function main() {
   );
 }
 
-main().catch(error => {
-  console.error(`Error: ${error.message}`);
-  process.exit(1);
-});
+const isMain =
+  process.argv[1] &&
+  resolvePath(fileURLToPath(import.meta.url)) === resolvePath(process.argv[1]);
+
+if (isMain) {
+  main().catch(error => {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  });
+}

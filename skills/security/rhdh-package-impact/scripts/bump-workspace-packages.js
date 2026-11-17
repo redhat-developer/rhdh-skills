@@ -43,12 +43,21 @@ import { isNoMajorBumpPackage, pinMajorJumps } from './same-major-yarn-up.js';
 import {
   LAYOUT_RHDH_CORE,
   resolveDedupe,
-  filterAlertsForLayout,
+  filterAlertsForPackageDiscovery,
   findCheckout,
   inferKindFromRepo,
   resolveRepoLayout,
   splitWorkspaceArgs,
 } from './repo-layout.js';
+import {
+  dualLockfilePaths,
+  resolveBumpBase,
+  wantsDualLockfileBump,
+} from './release-1.10-dual-lockfile.js';
+import {
+  auditSiblingLockfiles,
+  formatSiblingGapTable,
+} from './sibling-lockfiles.js';
 
 /**
  * Bare yarn up -R is required (Yarn forbids ranges with --recursive).
@@ -80,11 +89,20 @@ under the workspace (plugins: workspaces/<name>/; rhdh: product lockfile
 yarn.lock + packages/ + plugins/), except @backstage/* and
 @backstage-community/* (denylist; never yarn up those).
 
+On rhdh-core release-1.10 only (REMOVE WHEN EOL): the same Dependabot
+package list also drives yarn up -R under dynamic-plugins/yarn.lock when
+that sibling still has vulnerable resolved versions. main / release-2.1+
+stay root-only.
+
 Options:
   --repo-root <path>   Plugins monorepo or rhdh core checkout
   --repo <owner/name>  GitHub repo for Dependabot alerts (default: auto-detect;
                        rhdh-core defaults to redhat-developer/rhdh)
-  --alerts-json <file> Snapshot of GitHub Dependabot alert objects (no token)
+  --alerts-json <file> Snapshot of GitHub Dependabot alert objects (no token;
+                       required under Fullsend instead of REST)
+  --base <branch>      Base branch for PR titles + release-1.10 dual-lockfile
+                       gate (else CVE_BASE_BRANCH, else infer release-* from
+                       current git branch)
   --json               Machine-readable JSON on stdout
   --dry-run            Report only; do not run yarn up, install, or dedupe
   --dedupe             Force yarn dedupe after yarn install (overrides core default)
@@ -95,6 +113,7 @@ Options:
 Examples:
   node bump-workspace-packages.js --repo-root /path/to/plugins-repo boost
   node bump-workspace-packages.js --repo-root /path/to/rhdh --repo redhat-developer/rhdh rhdh --json
+  node bump-workspace-packages.js --repo-root /path/to/rhdh --base release-1.10 --alerts-json alerts.json rhdh --json
   node bump-workspace-packages.js boost adm-zip ws --json
 `);
 }
@@ -105,6 +124,7 @@ function parseArgs(argv) {
     repoRoot: undefined,
     repo: undefined,
     alertsJson: undefined,
+    base: undefined,
   };
   const positional = [];
 
@@ -136,6 +156,11 @@ function parseArgs(argv) {
       options.alertsJson = argv[++i];
       if (!options.alertsJson) {
         throw new Error('--alerts-json requires a file path');
+      }
+    } else if (arg === '--base') {
+      options.base = argv[++i];
+      if (!options.base) {
+        throw new Error('--base requires a branch name');
       }
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
@@ -594,14 +619,27 @@ async function main() {
   });
   const semver = loadSemver(repoRoot);
   const dryRun = flags.has('dry-run');
+  const base = await resolveBumpBase({
+    repoRoot,
+    explicitBase: options.base,
+  });
+  const dualLockfile = wantsDualLockfileBump({
+    layoutKind: layout.kind,
+    scope: layout.scope,
+    base,
+  });
 
-  const workspaceAlerts = filterAlertsForLayout(allAlerts, layout);
+  // Discovery may also include dynamic-plugins/ manifests on release-1.10
+  // only (same Dependabot package list; no separate token).
+  const discoveryAlerts = filterAlertsForPackageDiscovery(allAlerts, layout, {
+    dualLockfile,
+  });
 
   let packageNames = requestedPackages.length
     ? [...new Set(requestedPackages)].sort()
     : [
         ...new Set(
-          workspaceAlerts
+          discoveryAlerts
             .map(a => a.dependency?.package?.name)
             .filter(Boolean),
         ),
@@ -613,6 +651,10 @@ async function main() {
       workspace,
       layout: layout.kind,
       lockfileRel: layout.lockfileRel,
+      base,
+      dualLockfile: dualLockfile
+        ? { enabled: true, release: 'release-1.10', gaps: [], needsBump: [] }
+        : null,
       repoRoot,
       dryRun,
       packageCount: 0,
@@ -716,7 +758,7 @@ async function main() {
         lockAfterUp,
         packageName,
       );
-      const pkgAlerts = workspaceAlerts
+      const pkgAlerts = discoveryAlerts
         .filter(a => a.dependency?.package?.name === packageName)
         .map(summarizeAlert);
       // Single patched line is done. Single unpatched pin or extra
@@ -801,7 +843,7 @@ async function main() {
     const versionsAfter = dryRun || skipped
       ? versionsBefore
       : resolvedVersionsFromLockfile(lockfileAfter, packageName);
-    const pkgAlerts = workspaceAlerts
+    const pkgAlerts = discoveryAlerts
       .filter(a => a.dependency?.package?.name === packageName)
       .map(summarizeAlert);
     const classification = await runClassify(repoRoot, workspace, packageName);
@@ -836,12 +878,89 @@ async function main() {
   const ancestorsDespiteInstallFailure =
     installFailed && Object.keys(ancestorAuto).length > 0;
 
+  // release-1.10 only: same Dependabot package list → also bump sibling lockfile.
+  // REMOVE WHEN release-1.10 is EOL (release-1.10-dual-lockfile.js).
+  let dualLockfileResult = null;
+  if (dualLockfile && packageNames.length) {
+    const alertsByPackage = Object.fromEntries(
+      packageNames.map(name => [
+        name,
+        compactAlerts(
+          discoveryAlerts
+            .filter(a => a.dependency?.package?.name === name)
+            .map(summarizeAlert),
+        ),
+      ]),
+    );
+    const productVersionsByPackage = Object.fromEntries(
+      results.map(r => [r.package, r.versionsAfter]),
+    );
+    let audit = await auditSiblingLockfiles({
+      repoRoot,
+      packageNames,
+      alertsByPackage,
+      productVersionsByPackage,
+      semver,
+    });
+    const sibling = dualLockfilePaths(repoRoot);
+    const siblingBump = {
+      attempted: [],
+      errors: {},
+      skipped: [],
+    };
+    if (sibling && audit.needsBump.length) {
+      for (const gap of audit.needsBump) {
+        const packageName = gap.package;
+        if (isSkippedBumpPackage(packageName)) {
+          siblingBump.skipped.push(packageName);
+          continue;
+        }
+        siblingBump.attempted.push(packageName);
+        if (dryRun) {
+          continue;
+        }
+        try {
+          await runYarn(repoRoot, sibling.yarnCwd, ['up', '-R', packageName]);
+        } catch (error) {
+          siblingBump.errors[packageName] = yarnFailureMessage(error);
+        }
+      }
+      if (!dryRun && siblingBump.attempted.some(name => !siblingBump.errors[name])) {
+        const installResult = await runWorkspaceInstall(
+          repoRoot,
+          sibling.yarnCwd,
+        );
+        if (!installResult.ok) {
+          siblingBump.errors.__install = installResult.error;
+        }
+        // Never dedupe the sibling lockfile (same core default).
+      }
+      audit = await auditSiblingLockfiles({
+        repoRoot,
+        packageNames,
+        alertsByPackage,
+        productVersionsByPackage,
+        semver,
+      });
+    }
+    dualLockfileResult = {
+      enabled: true,
+      release: 'release-1.10',
+      lockfileRel: sibling?.lockfileRel || null,
+      ...audit,
+      bump: siblingBump,
+    };
+  }
+
   const output = {
     repo: repoFull,
     source: fromSnapshot ? 'alerts-json' : 'github-rest',
     workspace,
     layout: layout.kind,
+    scope: layout.scope,
     lockfileRel: layout.lockfileRel,
+    base,
+    dualLockfile: dualLockfileResult,
     repoRoot,
     dryRun,
     installed:
@@ -878,6 +997,14 @@ async function main() {
 
   console.log(`Workspace: ${workspace}`);
   console.log(`Repo:      ${repoFull}`);
+  if (base) {
+    console.log(`Base:      ${base}`);
+  }
+  if (dualLockfile) {
+    console.log(
+      'Dual lockfile: release-1.10 (root + dynamic-plugins/; REMOVE WHEN EOL)',
+    );
+  }
   if (dryRun) {
     console.log('Mode:      dry-run (no yarn changes)');
   }
@@ -989,6 +1116,29 @@ async function main() {
     );
     for (const r of recoveredUp) {
       console.log(`  • ${r.package}: ${yarnErrors[r.package]}`);
+    }
+  }
+
+  if (dualLockfileResult?.gaps?.length) {
+    console.log('');
+    console.log('## release-1.10 dynamic-plugins/yarn.lock (same Dependabot list)');
+    console.log('');
+    console.log(formatSiblingGapTable(dualLockfileResult.gaps));
+    if (dualLockfileResult.bump?.attempted?.length) {
+      console.log('');
+      console.log(
+        dryRun
+          ? `Would yarn up -R in dynamic-plugins/: ${dualLockfileResult.bump.attempted.join(', ')}`
+          : `Also yarn up -R in dynamic-plugins/: ${dualLockfileResult.bump.attempted.join(', ')}`,
+      );
+    }
+    if (Object.keys(dualLockfileResult.bump?.errors || {}).length) {
+      console.log('Sibling yarn errors:');
+      for (const [name, message] of Object.entries(
+        dualLockfileResult.bump.errors,
+      )) {
+        console.log(`  • ${name}: ${message}`);
+      }
     }
   }
 }

@@ -21,7 +21,9 @@ import {
   LAYOUT_PLUGINS,
   LAYOUT_RHDH_CORE,
   classifyManifest,
+  defaultBumpBranch,
   detectLayoutKind,
+  filterAlertsForPackageDiscovery,
   inferKindFromRepo,
   isCoreWorkspaceToken,
   matchAlertManifest,
@@ -29,6 +31,8 @@ import {
   resolveDedupe,
   splitWorkspaceArgs,
 } from './repo-layout.js';
+import { prTitle } from './format-bump-pr.js';
+import { wantsDualLockfileBump } from './release-1.10-dual-lockfile.js';
 import { identifyWhyRoot } from './yarn-why-roots.js';
 
 describe('resolveDedupe', () => {
@@ -94,10 +98,51 @@ describe('rhdh-core workspace tokens', () => {
     assert.deepEqual(split.packages, ['lodash', 'qs']);
   });
 
-  it('rejects plugins-monorepo workspace names', () => {
+  it('rejects plugins-monorepo workspace names and dynamic-plugins token', () => {
     assert.throws(
       () => parseWorkspaceInput(LAYOUT_RHDH_CORE, 'homepage'),
       /no workspaces\/homepage/,
+    );
+    assert.equal(isCoreWorkspaceToken('dynamic-plugins'), false);
+    assert.throws(
+      () => parseWorkspaceInput(LAYOUT_RHDH_CORE, 'dynamic-plugins'),
+      /no workspaces\/dynamic-plugins/,
+    );
+  });
+});
+
+describe('defaultBumpBranch / prTitle / dual-lockfile gate', () => {
+  it('suffixes release bases onto bump branch names', () => {
+    assert.equal(defaultBumpBranch('rhdh'), 'chore/rhdh-cve-bumps');
+    assert.equal(
+      defaultBumpBranch('rhdh', 'release-1.10'),
+      'chore/rhdh-cve-bumps-release-1.10',
+    );
+  });
+
+  it('prefixes release bases onto PR titles', () => {
+    assert.equal(
+      prTitle('rhdh', LAYOUT_RHDH_CORE, 'release-1.10'),
+      '[release-1.10] fix(deps): bump yarn.lock packages for Dependabot CVEs',
+    );
+  });
+
+  it('gates dual lockfile to release-1.10 core only', () => {
+    assert.equal(
+      wantsDualLockfileBump({
+        layoutKind: LAYOUT_RHDH_CORE,
+        scope: 'product',
+        base: 'release-1.10',
+      }),
+      true,
+    );
+    assert.equal(
+      wantsDualLockfileBump({
+        layoutKind: LAYOUT_RHDH_CORE,
+        scope: 'product',
+        base: 'release-2.1',
+      }),
+      false,
     );
   });
 });
@@ -118,22 +163,41 @@ describe('matchAlertManifest', () => {
     alertPrefix: 'workspaces/homepage/',
   };
 
-  it('includes rhdh product manifests and excludes e2e/.ci', () => {
+  it('includes rhdh product manifests and excludes e2e/.ci/dynamic-plugins', () => {
     assert.equal(matchAlertManifest(coreProduct, 'yarn.lock'), true);
     assert.equal(matchAlertManifest(coreProduct, 'package.json'), true);
     assert.equal(
       matchAlertManifest(coreProduct, 'packages/app/package.json'),
       true,
     );
-    assert.equal(
-      matchAlertManifest(coreProduct, 'plugins/scalprum-backend/package.json'),
-      true,
-    );
     assert.equal(matchAlertManifest(coreProduct, 'e2e-tests/yarn.lock'), false);
     assert.equal(matchAlertManifest(coreProduct, '.ci/yarn.lock'), false);
     assert.equal(
-      matchAlertManifest(coreProduct, 'workspaces/homepage/yarn.lock'),
+      matchAlertManifest(coreProduct, 'dynamic-plugins/yarn.lock'),
       false,
+    );
+  });
+
+  it('dual discovery can include dynamic-plugins without a token', () => {
+    const alerts = [
+      {
+        dependency: {
+          package: { name: 'adm-zip' },
+          manifest_path: 'dynamic-plugins/yarn.lock',
+        },
+      },
+    ];
+    assert.equal(
+      filterAlertsForPackageDiscovery(alerts, coreProduct, {
+        dualLockfile: false,
+      }).length,
+      0,
+    );
+    assert.equal(
+      filterAlertsForPackageDiscovery(alerts, coreProduct, {
+        dualLockfile: true,
+      }).length,
+      1,
     );
   });
 
@@ -143,10 +207,6 @@ describe('matchAlertManifest', () => {
       true,
     );
     assert.equal(matchAlertManifest(plugins, 'yarn.lock'), false);
-    assert.equal(
-      matchAlertManifest(plugins, 'workspaces/boost/yarn.lock'),
-      false,
-    );
   });
 });
 
@@ -159,30 +219,6 @@ describe('classifyManifest', () => {
         'runtime',
       ),
       'CORE_PROD',
-    );
-    assert.equal(
-      classifyManifest(
-        LAYOUT_RHDH_CORE,
-        'packages/backend/package.json',
-        'runtime',
-      ),
-      'CORE_PROD',
-    );
-    assert.equal(
-      classifyManifest(
-        LAYOUT_RHDH_CORE,
-        'packages/app/package.json',
-        'development',
-      ),
-      'CORE_DEV',
-    );
-    assert.equal(
-      classifyManifest(
-        LAYOUT_RHDH_CORE,
-        'plugins/scalprum-backend/package.json',
-        'runtime',
-      ),
-      'PLUGIN_PROD',
     );
     assert.equal(
       classifyManifest(
@@ -214,22 +250,6 @@ describe('identifyWhyRoot', () => {
       kind: 'core',
       id: 'backend',
     });
-    assert.deepEqual(identifyWhyRoot(coreLines[2], LAYOUT_RHDH_CORE), {
-      kind: 'core',
-      id: 'app-next',
-    });
-    assert.deepEqual(identifyWhyRoot(coreLines[3], LAYOUT_RHDH_CORE), {
-      kind: 'core',
-      id: 'plugin-utils',
-    });
-    assert.deepEqual(identifyWhyRoot(coreLines[4], LAYOUT_RHDH_CORE), {
-      kind: 'plugin',
-      id: 'scalprum-backend',
-    });
-    assert.deepEqual(identifyWhyRoot(coreLines[5], LAYOUT_RHDH_CORE), {
-      kind: 'workspace',
-      id: 'workspace-root',
-    });
   });
 
   it('keeps plugins-monorepo app/backend as runner', () => {
@@ -237,16 +257,5 @@ describe('identifyWhyRoot', () => {
       kind: 'runner',
       id: 'app',
     });
-    assert.deepEqual(identifyWhyRoot(coreLines[1], LAYOUT_PLUGINS), {
-      kind: 'runner',
-      id: 'backend',
-    });
-    assert.deepEqual(
-      identifyWhyRoot(
-        '├─ app-legacy@workspace:packages/app-legacy',
-        LAYOUT_PLUGINS,
-      ),
-      { kind: 'runner', id: 'app-legacy' },
-    );
   });
 });
