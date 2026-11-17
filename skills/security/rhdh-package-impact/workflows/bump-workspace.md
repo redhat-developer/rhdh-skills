@@ -23,8 +23,9 @@ Fullsend notes:
 - Pass `--alerts-json` (staged snapshot). Do not REST-fetch alerts in the sandbox.
 - `prepare-workspace-bump.js` auto `--verify-only` when `FULLSEND_OUTPUT_DIR` is set.
 - Plugins-monorepo CVE schedule: omit `--base` (defaults / stays on `main`).
-- rhdh-core release schedule only: pass `--base release-1.10` (or
-  `CVE_BASE_BRANCH`) from that repo’s workflow — not from rhdh-plugins.
+- rhdh-core release schedule only: pass `--base release-1.10` or set
+  `CVE_BASE_BRANCH=release-1.10` (read when `--base` is omitted) from
+  that repo’s workflow — not from rhdh-plugins.
 - Never call `close-dependabot-alerts.js` under Fullsend.
 
 Exit codes: `0` ok / fully fixed, `2` partial leftovers or needs human

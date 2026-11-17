@@ -147,7 +147,7 @@ node "$SKILL_DIR/scripts/list-dependabot-packages.js" <workspace> --alerts-json 
 |------|--------|
 | (default) | Plugins: all open alerts under `workspaces/<name>/`. RHDH core (`rhdh`): product `yarn.lock` + `packages/` + `plugins/` (not e2e/.ci). On **release-1.10 only**, package discovery also includes `dynamic-plugins/` alerts into that same list |
 | `--exact-manifest` | Only the exact yarn.lock (or given file) path |
-| `--base <branch>` | Release train for dual-lockfile discovery (or infer from git HEAD) |
+| `--base <branch>` | Release train for dual-lockfile discovery (else `CVE_BASE_BRANCH`, else infer from git HEAD) |
 | `--json` | Packages + alert details |
 | `--alerts-json <file>` | Use a runner snapshot; skip REST and token (required under Fullsend) |
 | (default stdout) | One package name per line (pipe-friendly); summary on stderr |

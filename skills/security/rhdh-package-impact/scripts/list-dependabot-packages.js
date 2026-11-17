@@ -64,7 +64,7 @@ Options:
   --alerts-json <file>           Snapshot of GitHub Dependabot alert objects
                                  (array, or { "alerts": [...] }). No REST.
   --base <branch>                Release train for dual-lockfile discovery
-                                 (default: infer from current git branch)
+                                 (else CVE_BASE_BRANCH, else infer from git)
   --state <open|dismissed|fixed|auto_dismissed|all>
                                  Alert state filter (default: open)
   --scope <runtime|development>  Optional dependency scope filter

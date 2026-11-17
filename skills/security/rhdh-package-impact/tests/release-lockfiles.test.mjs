@@ -17,6 +17,8 @@ const { prTitle } = await import(resolve(scripts, 'format-bump-pr.js'));
 const {
   DUAL_LOCKFILE_RELEASE,
   extractReleaseBase,
+  isDualLockfileAlertManifest,
+  resolveBumpBase,
   wantsDualLockfileBump,
 } = await import(resolve(scripts, 'release-1.10-dual-lockfile.js'));
 const { leftoverVersions, versionIsPatched } = await import(
@@ -105,6 +107,35 @@ describe('release-1.10 dual-lockfile gate (REMOVE WHEN EOL)', () => {
       'release-1.10',
     );
     assert.equal(extractReleaseBase('main'), null);
+  });
+
+  it('matches dynamic-plugins alert manifests via helper', () => {
+    assert.equal(isDualLockfileAlertManifest('dynamic-plugins/yarn.lock'), true);
+    assert.equal(isDualLockfileAlertManifest('yarn.lock'), false);
+  });
+
+  it('resolveBumpBase prefers --base, then CVE_BASE_BRANCH', async () => {
+    const prev = process.env.CVE_BASE_BRANCH;
+    try {
+      process.env.CVE_BASE_BRANCH = 'release-1.10';
+      assert.equal(
+        await resolveBumpBase({
+          repoRoot: null,
+          explicitBase: 'release-2.1',
+        }),
+        'release-2.1',
+      );
+      assert.equal(
+        await resolveBumpBase({ repoRoot: null, explicitBase: null }),
+        'release-1.10',
+      );
+    } finally {
+      if (prev === undefined) {
+        delete process.env.CVE_BASE_BRANCH;
+      } else {
+        process.env.CVE_BASE_BRANCH = prev;
+      }
+    }
   });
 
   it('has no dynamic-plugins workspace token', () => {

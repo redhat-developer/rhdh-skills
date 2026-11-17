@@ -101,7 +101,8 @@ Options:
   --alerts-json <file> Snapshot of GitHub Dependabot alert objects (no token;
                        required under Fullsend instead of REST)
   --base <branch>      Base branch for PR titles + release-1.10 dual-lockfile
-                       gate (default: infer release-* from current git branch)
+                       gate (else CVE_BASE_BRANCH, else infer release-* from
+                       current git branch)
   --json               Machine-readable JSON on stdout
   --dry-run            Report only; do not run yarn up, install, or dedupe
   --dedupe             Force yarn dedupe after yarn install (overrides core default)

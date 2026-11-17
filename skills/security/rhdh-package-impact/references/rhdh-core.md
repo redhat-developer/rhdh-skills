@@ -77,10 +77,11 @@ when `FULLSEND_OUTPUT_DIR` is set.
 `release-2.1+`, and plugins monorepos stay **root `yarn.lock` only**.
 
 Any GitHub Actions / Fullsend CVE **schedule** that passes `--base
-release-1.10` (or sets `CVE_BASE_BRANCH`) belongs in the **rhdh core**
-repo, not in `rhdh-plugins` / `community-plugins`. The plugins Fullsend
-CVE schedule (`fullsend-cve-schedule.yml`) stays workspace×`main` and
-can omit release-branch / dual-lockfile wiring entirely.
+release-1.10` (or sets `CVE_BASE_BRANCH`, read by `resolveBumpBase` when
+`--base` is omitted) belongs in the **rhdh core** repo, not in
+`rhdh-plugins` / `community-plugins`. The plugins Fullsend CVE schedule
+(`fullsend-cve-schedule.yml`) stays workspace×`main` and can omit
+release-branch / dual-lockfile wiring entirely.
 
 On release-1.10 the same Dependabot package list may also need
 `yarn up -R` under `dynamic-plugins/yarn.lock` (independent resolved
@@ -100,8 +101,9 @@ product-only bump would leave open. After candidates are chosen, scoring
 still uses **resolved version + advisory range** per lockfile (a sibling line
 already outside the range stays `ok` / `n/a`, not a blind bump).
 
-Behavior when `--base release-1.10` is set **or** the current branch
-resolves to `release-1.10` (Fullsend chore branches included):
+Behavior when `--base release-1.10` is set, `CVE_BASE_BRANCH=release-1.10`
+is set, **or** the current branch resolves to `release-1.10` (Fullsend
+chore branches included):
 
 1. Discover packages from the product Dependabot list (and any
    `dynamic-plugins/` alerts present) — one list; no separate workspace token.

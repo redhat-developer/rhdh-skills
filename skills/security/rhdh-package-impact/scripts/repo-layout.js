@@ -18,6 +18,7 @@ import { existsSync, statSync } from 'fs';
 import { dirname, resolve as resolvePath } from 'path';
 
 import { parseOwnerRepo } from './github-repo.js';
+import { isDualLockfileAlertManifest } from './release-1.10-dual-lockfile.js';
 
 export const LAYOUT_PLUGINS = 'plugins-monorepo';
 export const LAYOUT_RHDH_CORE = 'rhdh-core';
@@ -442,7 +443,7 @@ export function filterAlertsForPackageDiscovery(
       layout.kind === LAYOUT_RHDH_CORE &&
       layout.scope === 'product'
     ) {
-      return String(path || '').startsWith('dynamic-plugins/');
+      return isDualLockfileAlertManifest(path);
     }
     return false;
   });
@@ -463,7 +464,7 @@ export function classifyManifest(layoutKind, manifestPath, scope) {
     if (manifestPath.startsWith('.ci/')) {
       return 'CI';
     }
-    if (manifestPath.startsWith('dynamic-plugins/')) {
+    if (isDualLockfileAlertManifest(manifestPath)) {
       // Not a product dismiss path; release-1.10 dual-lockfile bumps only.
       return 'LOCKFILE';
     }

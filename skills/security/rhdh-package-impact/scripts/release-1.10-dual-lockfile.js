@@ -111,12 +111,18 @@ export function isDualLockfileAlertManifest(manifestPath) {
 }
 
 /**
- * Resolve --base, else infer release train from the current git branch
- * (Fullsend already checks out release-1.10 / chore/…-release-1.10).
+ * Resolve release-train base for dual-lockfile gating, in order:
+ * 1. explicit `--base` (CLI)
+ * 2. `CVE_BASE_BRANCH` env (Fullsend / GHA schedule without repeating --base)
+ * 3. infer from current git branch (release-1.10 / chore/…-release-1.10)
  */
 export async function resolveBumpBase({ repoRoot, explicitBase } = {}) {
   if (explicitBase) {
     return explicitBase;
+  }
+  const envBase = String(process.env.CVE_BASE_BRANCH || '').trim();
+  if (envBase) {
+    return envBase;
   }
   if (!repoRoot || !existsSync(resolvePath(repoRoot, '.git'))) {
     return null;
