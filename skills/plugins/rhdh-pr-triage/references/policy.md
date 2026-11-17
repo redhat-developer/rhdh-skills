@@ -22,20 +22,47 @@ merged says nothing about the one in front of you. A command addressed to the
 wrong app accomplishes nothing and reports nothing: no rebase, no error, no
 signal, and the PR stays conflicted until a human notices.
 
-Put the command on its own line, as the last line of the comment, after the
-justification. The reason is written for the person reading the thread; the
-command is written for the bot:
+Put the command on its own line, after the justification, as the last
+instruction the bot reads — only the attribution trailer follows it. The reason
+is written for the person reading the thread; the command is written for the bot:
 
 ```
 go.mod conflicts after #4100 merged; this PR is approved and will merge once
 CI is green again.
 
 @dependabot recreate
+
+_Assisted by AI, using the rhdh-pr-triage skill._
 ```
 
-Justification first, command last, one command per comment. Trailing the command
-after the reason on the same line turns the request into prose a reader skims
-past, and a command buried mid-sentence is easy to miss.
+Justification first, command last of the instructions, one command per comment.
+Trailing the command after the reason on the same line turns the request into
+prose a reader skims past, and a command buried mid-sentence is easy to miss.
+
+### Attribution trailer
+
+Every comment this skill posts ends with the same italic line, verbatim:
+
+```
+_Assisted by AI, using the rhdh-pr-triage skill._
+```
+
+On its own line, separated by a blank line, as the last line of the body. It is a
+signature, not part of the reason: it never joins the justification sentence, and
+it never sits between the reason and a bot command. Approve, close, hold, unhold,
+bump, rebase, and flag comments all carry it — a reviewer should be able to see at
+a glance which comments a skill wrote and which a person did.
+
+Without a bot command it is simply the last line — the flag comment is the
+common case:
+
+```
+Triage flag: golang.org/x/net v0.62.0 also bumps the go directive 1.25.0 to
+1.26.0 on release-1.10. Security fix plus a frozen go directive — needs human
+review, not auto-merge.
+
+_Assisted by AI, using the rhdh-pr-triage skill._
+```
 
 ## Main branch
 

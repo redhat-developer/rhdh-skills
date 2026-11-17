@@ -40,6 +40,11 @@ dry-run mode.
 Each operation states its target repository and PR, the exact `gh` command,
 a one-line preview of what it does, and recovery on failure.
 
+Every comment the skill posts — approve, close, hold, unhold, bump, rebase, or
+flag — ends with the italic attribution line `_Assisted by AI, using the
+rhdh-pr-triage skill._`. See "Attribution trailer" in `references/policy.md` for
+where it sits relative to a bot command.
+
 ## Completion
 
 Complete when every open bot PR across the target repositories has been

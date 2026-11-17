@@ -128,9 +128,14 @@ Every action must include a comment on the PR stating the reason briefly. For
 approve+merge, comment the reason before approving. For close, hold, unhold,
 and bump, include the reason in the comment body. When the action is a rebase or
 recreate, the command belongs to the app that opened the PR — `@renovatebot
-rebase` or `@dependabot recreate` — and goes on its own line as the last line of
-the comment, after the reason (see "Addressing the bot" in
+rebase` or `@dependabot recreate` — and goes on its own line as the last
+instruction line of the comment, after the reason (see "Addressing the bot" in
 `references/policy.md`).
+
+Every comment body ends with the fixed italic attribution line from "Attribution
+trailer" in `references/policy.md` — `_Assisted by AI, using the rhdh-pr-triage
+skill._` — as its last line, after a blank line. The examples below include it.
+Do not post a comment without it, whatever the action.
 
 When the decision is "skip" because a release tag is not yet pushed, also
 comment `/hold` with the reason if `do-not-merge/hold` is not already on the PR.
@@ -140,13 +145,13 @@ Example operations:
 
 | Target | Command | Preview | Failure |
 |--------|---------|---------|---------|
-| rhdh-operator #42 | `gh pr comment 42 --repo redhat-developer/rhdh-operator --body "Approved by triage: CI green, patch toolchain bump on main."` | Comment reason | Skip, report |
+| rhdh-operator #42 | `gh pr comment 42 --repo redhat-developer/rhdh-operator --body $'Approved by triage: CI green, patch toolchain bump on main.\n\n_Assisted by AI, using the rhdh-pr-triage skill._'` | Comment reason | Skip, report |
 | rhdh-operator #42 | `gh pr review 42 --repo redhat-developer/rhdh-operator --approve` | Approve | Skip, report |
 | rhdh-operator #42 | `gh pr merge 42 --repo redhat-developer/rhdh-operator --squash` | Squash-merge | Skip, report |
-| rhdh-operator #43 | `gh pr comment 43 --repo redhat-developer/rhdh-operator --body $'go.mod conflicts after #42 merged; approved, will merge once CI is green.\n\n@renovatebot rebase'` | Request rebase from the PR's own bot | Skip, report |
-| rhdh-chart #18 | `gh pr comment 18 --repo redhat-developer/rhdh-chart --body "/hold until 1.10.5 is out — code freeze active."` | Hold for pending release | Skip, report |
-| rhdh-operator #99 | `gh pr close 99 --repo redhat-developer/rhdh-operator --comment "Closing — RHDH 1.8 is end of life."` | Close EOL PR | Skip, report |
-| rhdh-operator #50 | `gh pr comment 50 --repo redhat-developer/rhdh-operator --body "/hold — still waiting on 1.10.4 tag."` | Hold PR pending tag | Skip, report |
+| rhdh-operator #43 | `gh pr comment 43 --repo redhat-developer/rhdh-operator --body $'go.mod conflicts after #42 merged; approved, will merge once CI is green.\n\n@renovatebot rebase\n\n_Assisted by AI, using the rhdh-pr-triage skill._'` | Request rebase from the PR's own bot | Skip, report |
+| rhdh-chart #18 | `gh pr comment 18 --repo redhat-developer/rhdh-chart --body $'/hold until 1.10.5 is out — code freeze active.\n\n_Assisted by AI, using the rhdh-pr-triage skill._'` | Hold for pending release | Skip, report |
+| rhdh-operator #99 | `gh pr close 99 --repo redhat-developer/rhdh-operator --comment $'Closing — RHDH 1.8 is end of life.\n\n_Assisted by AI, using the rhdh-pr-triage skill._'` | Close EOL PR | Skip, report |
+| rhdh-operator #50 | `gh pr comment 50 --repo redhat-developer/rhdh-operator --body $'/hold — still waiting on 1.10.4 tag.\n\n_Assisted by AI, using the rhdh-pr-triage skill._'` | Hold PR pending tag | Skip, report |
 
 ## Step 6 — Execute
 
