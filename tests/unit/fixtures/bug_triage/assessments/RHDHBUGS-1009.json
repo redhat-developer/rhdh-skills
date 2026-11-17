@@ -4,7 +4,7 @@
   "evidence": [
     {
       "type": "repro",
-      "ref": "repro:2.1.0/chrome-129",
+      "ref": "https://example.test/triage/2.1.0/chrome-129/catalog-focus",
       "why": "Selecting a catalog filter still moves focus away from the search input on 2.1.0.",
       "strength": "direct"
     }
@@ -13,6 +13,13 @@
     "result": "fails",
     "release": "2.1.0",
     "notes": "Keyboard-only flow in the catalog table."
+  },
+  "validation": {
+    "release": "2.1.0",
+    "method": "runtime",
+    "result": "persists",
+    "summary": "Synthetic known-answer run: selecting a catalog-table filter on 2.1.0 moves focus from the input and drops the next typed character.",
+    "refs": ["https://example.test/triage/2.1.0/chrome-129/catalog-focus"]
   },
   "review": {
     "independentPasses": 2,

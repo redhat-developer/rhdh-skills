@@ -18,14 +18,14 @@ from .collect import CollectConfig, collect
 from .comments import DEFAULT_COOLDOWN_DAYS
 from .evaluate import write_evaluation
 from .forge import ForgeAdapterError
-from .jira import JiraAdapterError, load_tickets_from_acli, write_acli_probe
+from .jira import JiraAdapterError, export_from_acli, load_tickets_from_acli, write_acli_probe
 from .model import (
     DEFAULT_AGED_DAYS,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
     load_export,
 )
-from .report import surfaced, write_json
+from .report import write_json
 from .run import (
     RunConfig,
     RunError,
@@ -48,21 +48,50 @@ def _controls(values: Optional[List[str]]) -> List[Control]:
 
 def _load_tickets(args: argparse.Namespace):
     if args.source == "acli":
-        return load_tickets_from_acli(args.jql or default_jql(args.aged_days))
+        return load_tickets_from_acli(
+            args.jql or default_jql(args.aged_days, args.scope),
+            field_names=_field_names(args.field_names),
+        )
     if not args.input:
         raise RunError("--input is required when --source=export")
     return load_export(args.input)
 
 
+def _field_names(path: Optional[str]) -> Optional[dict]:
+    if not path:
+        return None
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    if (
+        not isinstance(document, dict)
+        or not document
+        or not all(isinstance(k, str) and isinstance(v, str) and v for k, v in document.items())
+    ):
+        raise RunError("--field-names must contain the tenant-resolved field-ID to name mapping")
+    return document
+
+
+def command_fetch(args: argparse.Namespace) -> int:
+    path = Path(args.out)
+    if path.exists():
+        raise RunError(f"refusing to overwrite export: {path}")
+    document = export_from_acli(args.jql, field_names=_field_names(args.field_names))
+    write_json(path, document)
+    print(f"Fetched {len(document['issues'])} complete issue record(s) into {path}")
+    return 0
+
+
 def command_select(args: argparse.Namespace) -> int:
     as_of = parse_as_of(args.as_of)
     tickets = _load_tickets(args)
-    jql = args.jql or default_jql(args.aged_days)
+    jql = args.jql or default_jql(args.aged_days, args.scope)
     config = SelectionConfig(
         size=args.size,
         aged_days=args.aged_days,
         seed=args.seed,
         controls=_controls(args.control),
+        current_release=args.current_release,
+        scope=args.scope,
+        all_tickets=args.all,
     )
     sample = build_sample_manifest(tickets, config, as_of, jql)
     if args.out:
@@ -92,6 +121,7 @@ def command_collect(args: argparse.Namespace) -> int:
             output_dir=args.out,
             forge_cache=args.forge_cache,
             use_gh=args.gh,
+            repos=args.repo,
         )
     )
     if args.json:
@@ -119,6 +149,10 @@ def command_run(args: argparse.Namespace) -> int:
             corpus_path=args.corpus or "",
             jql=args.jql or "",
             comment_cooldown_days=args.comment_cooldown_days,
+            scope=args.scope,
+            all_tickets=args.all,
+            release_evidence=args.release_evidence,
+            evidence_dir=args.evidence or "",
         )
     )
     counts = result.manifest["counts"]
@@ -134,32 +168,23 @@ def command_run(args: argparse.Namespace) -> int:
         "abstained": counts["abstained"],
         "dispositions": _count(result.packets, "disposition"),
         "actions": _count(result.packets, "action"),
+        "draftComments": counts["draftComments"],
+        "delivery": result.manifest["commentPolicy"]["counts"],
     }
     if args.json:
         print(json.dumps(summary, indent=2))
     else:
-        close = [packet for packet in result.packets if surfaced(packet)]
         print(f"DRY RUN complete: {counts['packets']} ticket(s) in {result.output_dir}")
-        print("Nothing was posted, transitioned, linked, or written to Jira.")
-        print("")
-        if close:
-            print(f"{len(close)} close proposal(s) need your review:")
-            for packet in close:
-                print(f"  {packet.key}  {packet.disposition}  {packet.recommended_step}")
-        else:
-            print("No close proposals. Nothing is waiting for a close decision.")
-        print("")
+        print("Nothing was posted to Jira; no bugs were closed and no PRs were created.")
+        for packet in result.packets:
+            print(
+                f"  {packet.key}  {packet.disposition}  delivery={packet.comment_plan.get('status', 'unknown')}"
+            )
         print(
-            f"Recommendations: {len(close)}/{counts['packets']} · "
-            f"left unchanged: {counts['abstained']} · "
-            f"cited evidence: {counts['withEvidence']}/{counts['packets']} · "
-            f"customer-linked: {counts['customerLinked']}"
+            f"Draft comments: {counts['draftComments']} · advisory closure recommendations: {counts['closeProposals']}"
         )
-        print(
-            "Everything needed for approval is in report.md: qualifying recommendations and their proof. "
-            "Abstentions stay in the local audit, without a comment or reproduction request."
-        )
-        print("Nothing else needs opening to review this run.")
+        print(f"Comment delivery: {result.manifest['commentPolicy']['counts']}")
+        print("Review report.md for every exact draft, source, and delivery restriction.")
     return 0
 
 
@@ -183,8 +208,7 @@ def command_evaluate(args: argparse.Namespace) -> int:
     else:
         print(rendered)
     if args.strict:
-        hard_fail = bool(evaluation.false_closes)
-        return 1 if hard_fail else 0
+        return 0 if evaluation.strict_passed else 1
     return 0
 
 
@@ -207,7 +231,8 @@ def command_template(args: argparse.Namespace) -> int:
             {
                 "key": key,
                 "_instructions": (
-                    "Recommend only duplicate/already_fixed with complete cited proof; otherwise abstain. "
+                    "Triage every selected issue. Unknown is a result, not silence. "
+                    "Still-valid/obsolete require validation on the exact release under review. "
                     "Every evidence item needs type, ref, "
                     "why, and strength (direct|strong|supporting). Do not invent a "
                     "confidence; the policy computes it. A close also needs two agreeing "
@@ -217,6 +242,13 @@ def command_template(args: argparse.Namespace) -> int:
                 "duplicateOf": "",
                 "evidence": [],
                 "proof": {},
+                "validation": {
+                    "release": "",
+                    "method": "",
+                    "result": "unknown",
+                    "summary": "",
+                    "refs": [],
+                },
                 "fix": {
                     "pr": "",
                     "commit": "",
@@ -273,19 +305,38 @@ def command_check(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="run_poc",
+        prog="triage",
         description="Read-only aged RHDHBUGS triage: select, collect, assess, report.",
     )
-    parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 2")
+    parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 3")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    fetch_parser = subparsers.add_parser(
+        "fetch", help="export full Jira records using read-only authenticated reads"
+    )
+    fetch_parser.add_argument("--jql", required=True)
+    fetch_parser.add_argument("--out", required=True)
+    fetch_parser.add_argument(
+        "--field-names",
+        help="JSON field-ID to name mapping returned by the authenticated Jira adapter",
+    )
+    fetch_parser.set_defaults(func=command_fetch)
 
     select_parser = subparsers.add_parser("select", help="build a stratified sample manifest")
     select_parser.add_argument("--source", choices=("export", "acli"), default="export")
     select_parser.add_argument("--input", help="Jira JSON export")
+    select_parser.add_argument(
+        "--field-names", help="tenant field-ID map for live acli reads; exports carry fieldNames"
+    )
     select_parser.add_argument("--jql", help="JQL for acli or for the manifest record")
     select_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
     select_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)
     select_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    select_parser.add_argument("--current-release", required=True)
+    select_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")
+    select_parser.add_argument(
+        "--all", action="store_true", help="select every eligible issue, not a sample"
+    )
     select_parser.add_argument(
         "--control",
         action="append",
@@ -302,6 +353,11 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--out", required=True, help="evidence directory")
     collect_parser.add_argument("--forge-cache", default="", help="offline gh PR cache")
     collect_parser.add_argument(
+        "--repo",
+        action="append",
+        help="repository to search; repeat for the resolved product, docs and plugin repositories",
+    )
+    collect_parser.add_argument(
         "--gh",
         action="store_true",
         help="allow read-only gh calls for PR state (default: cache only)",
@@ -312,10 +368,22 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="evaluate assessments and render a report")
     run_parser.add_argument("--input", required=True, help="Jira JSON export")
     run_parser.add_argument("--sample", help="sample manifest; omit to select in memory")
-    run_parser.add_argument("--assessments", help="directory of KEY.json assessments")
+    run_parser.add_argument(
+        "--assessments", required=True, help="directory of reviewed KEY.json assessments"
+    )
     run_parser.add_argument("--out", required=True, help="output directory")
     run_parser.add_argument(
         "--current-release", required=True, help="verified released product version under review"
+    )
+    run_parser.add_argument(
+        "--release-evidence",
+        required=True,
+        help="HTTPS product release record (verified by the agent)",
+    )
+    run_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")
+    run_parser.add_argument("--all", action="store_true")
+    run_parser.add_argument(
+        "--evidence", help="collection directory, retained in the audit with search failures"
     )
     run_parser.add_argument(
         "--comment-cooldown-days",

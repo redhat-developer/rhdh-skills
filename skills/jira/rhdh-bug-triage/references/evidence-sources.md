@@ -1,144 +1,115 @@
-# Evidence sources
+# Evidence collection and validation
 
-Collect the cheapest evidence first, then stop when the question is settled. A
-citation is useful only when another reviewer can open it and see the same thing.
+A source supports only the claim another reviewer can actually verify from it.
+Collect cheap leads first, then open the decisive artifacts. The agent owns that
+inspection; flags and the offline policy checker cannot establish external truth.
 
-## Jira
+## Jira report and corpus
 
-The authoritative record for the report, its comments, links, versions, and
-status.
+Invoke `/rhdh-jira-api` for field IDs, authenticated reads, search/view support
+and pagination. Supported search fields followed by full issue views are the
+fallback when `*all` search is unavailable. Exports may be REST issue envelopes,
+bare issue lists or flattened records. Missing fields remain unknown, not empty.
+Partial issue-list exports must not masquerade as complete results.
 
-| Fact | Where |
-|---|---|
-| Summary, description, comments | The issue itself |
-| Fix and affects versions | `fixVersions`, `versions` |
-| Duplicate, relates, blocks | `issuelinks` with the link type |
-| Customer signals | `RHDH-Customer` label, customer fields, support links |
-| Team and component | Team field and `components` |
+Read summary, description, full discussion, creation date, resolution/status,
+affects/fix versions, assignee/team/components and link direction. Inspect ADF
+inline cards and link marks, not just visible text: they can hide the only Jira,
+PR or support reference. Complete comments require actual pagination or verified
+totals; flattened `commentsComplete: true` is an adapter attestation, not a guess.
 
-Use `/rhdh-jira-api` for `acli` syntax, field IDs, JQL, and the REST/GraphQL
-fallbacks. A read is safe; do not transition, comment, or link from this skill.
+Customer checks include `RHDH-Customer`, RHDHSUPP/ACCOUNT links or text references,
+and populated customer, case, impact or SFDC fields. Resolve deployment-specific
+field names through the read adapter. A short familiar field list or absence of
+a label is not proof of complete coverage. Record mappings, fields actually read
+and any uncertainty. Never omit customer/Done exclusions in `all-open` scope.
+The read CLI accepts adapter-resolved mapping JSON via `--field-names` on `fetch`
+and live `select`; exported `fieldNames` retain that metadata. Never substitute
+invented tenant IDs or infer completeness from the mapping alone.
 
-A JSON export is acceptable when `acli` is unavailable. The loader accepts the
-REST envelope (`{"issues": [...]}`), a bare issue list, and the flatter records
-`acli` emits. When the export omits descriptions or comments, the packet records
-an evidence gap; absence in an export is not absence in Jira.
+Use a separate corpus of open **and closed** related reports. A canonical may
+already be closed. Retrieve full candidates, verify chronology and follow
+duplicate chains. Record query, retrieval date, counts and missing fields; do not
+call the selected sample or an open-only export a complete duplicate search.
+Lexical similarity ranks retrieval leads only; it is not the 0.85 confidence
+threshold or an eligibility gate. Inspect low-similarity linked/semantic candidates
+too. An explicit Duplicate link never replaces same-failure/trigger/fix proof.
 
-Inspect ADF inline cards and link marks too: their URLs can contain the only
-reference to a canonical issue, fix, or customer case. Enrich candidate records
-with creation dates, resolution, customer signals and full discussion before
-canonical selection. Follow a tracker resolved as duplicate to its real target.
+## Forge leads and incorporated fixes
 
-## GitHub forge
+Invoke `/rhdh-forge` read-only to inspect product, docs, plugin and dependency
+repositories resolved by `/rhdh-context`. Search issue keys, linked/mentioned keys,
+failure signatures and code paths; fixes may land under another issue's key.
+Inspect linked PRs even if key search returns nothing. Record which query found
+each artifact, actual merge state/date/commit, base branch, matching diff and tests.
+A closed-unmerged PR is not a fix, and a merged main-branch change is not a release.
 
-A merged pull request is the strongest affordable fix evidence. `/rhdh-forge` owns
-the read mechanics and payload construction; this section states what a merged
-change proves.
+`collect --gh` permits read-only `gh` searches/views. `--repo owner/repo` is
+repeatable; include relevant repositories rather than assuming a single product
+repo covers every plugin/doc issue. Without `--gh`, collection is cache-only.
+Preserve per-query failures, rate limits, permission errors, cache misses and
+`unsearchedLinkedKeys` separately from successful zero matches. The bounded
+collector searches at most five linked keys; investigate omitted leads when
+material. Neither an empty result nor an incomplete search proves no fix exists.
 
-- Search by the Jira key in PR titles and bodies across the RHDH repositories, and
-  also by the Jira keys this ticket links to or mentions: a fix can land under
-  another bug's key while this ticket stays open. Record which key found the PR.
-- Prefer the merge commit and the base branch over the PR description.
-- Record the PR URL, merge state, merge date, and merge commit.
-- A closed-but-unmerged PR is not a fix.
-- A merged PR on `main` is not proof of a released fix. It becomes direct fix
-  evidence only with a release that carries it.
+## Actual release and exact ancestry
 
-`collect` reads a cache by default and uses read-only `gh pr view` and
-`gh search prs` only when `--gh` is set. Neither path writes.
+Invoke `/rhdh-context` to resolve the actual released product, its release source,
+repository tags and stream context. Its cached compatibility matrix is a lead,
+not an authoritative current-release lookup. If it conflicts with a newer repo
+tag, resolve the actual shipped release against official product release/lifecycle
+documentation; a tag alone does not prove product shipment. Inspect the matching
+product docs and repository/dependency state. Read the authoritative HTTPS
+release record before setting `--current-release` and `--release-evidence`.
+Record verification date/source; the CLI only records the supplied URL and cannot
+magically verify its contents. Do not hardcode a "current" product release in an
+assessment or command default.
 
-Per-query failures are retained in `searches`; cache-only collection is labeled
-as such and unsearched linked keys are listed. Rate limits, permission failures,
-invalid responses and cache misses are not successful negative searches. A search
-hit is a lead: open the actual PR and verify exact state, diff and coverage.
+For an already-fixed claim, identify the carrying release and prove the exact
+reviewed release contains the matching change, using a specific tag/commit
+ancestry or equivalent release artifact and its dependency mapping. A lower
+version number does not establish ancestry across streams. Planned versions,
+development package versions, a merged but unreleased PR and fixVersions alone
+are insufficient. A later/other-stream fix stays a qualified lead, not a close
+recommendation. This workflow does not propose or create backports.
 
-## Release evidence
+## Current-release validity
 
-Use the release note, tag, or changelog that names the change. Record the exact
-release and whether it is supported. The current release for a pass is supplied
-with `--current-release` (for example `2.1.0`); `/rhdh-context` resolves the
-target version, and `/rhdh-backport` owns backport mechanics and release-branch
-rules. This skill only decides whether a fix is on the stream under review, and a
-fix that exists only on an unsupported stream does not justify closing a report
-against a supported one.
+Choose an appropriate `validation.method` and bind its citations to the exact
+reviewed release, not to moving `main` or an old ticket snapshot:
 
-The fix release must also be no newer than the release under review. A fix that
-first ships in a later release cannot close the ticket yet: record it, keep the
-ticket unchanged, and abstain from an outward recommendation. Also verify the
-exact release under review contains the change; numeric ordering alone cannot
-prove ancestry across streams. No backport is proposed in this workflow;
-separately requested critical customer backports belong to `/rhdh-backport`.
+| Method | Useful evidence | Limit |
+|---|---|---|
+| `code` | Tagged code path, symbol/lines, conditions causing or removing this failure | Unchanged-looking code alone may miss changed configuration/dependencies |
+| `runtime` | Actual result with exact product/platform/install versions, steps and error/output | A reproduction plan is not a result; one non-repro without cause is not resolution |
+| `documentation` | Version-specific product contract/configuration proving the behavior remains required or is removed | A search miss or generic latest page is not current-release validation |
+| `dependency` | Released product's pinned dependency and its relevant implementation/compatibility change | An upstream fix alone does not prove the product incorporates it |
 
-## Code
+Use `/rhdh-plugin-bug-fix` in read-only diagnosis/reproduction-planning mode for
+the relevant path and exact check. Do not follow its implementation/PR path or
+run builds, deploys or cluster mutations. Inspect existing runtime artifacts
+honestly, naming who ran them when known; never claim a run not performed.
+If the required environment/evidence is unavailable, specify the missing check
+and return `unclear`/`needs_repro` with no generic request or invented result.
 
-Open the current code path and check whether the failure can still happen. Cite
-the file, symbol, and what the code does now. Code inspection is direct evidence
-for `still_valid` when the defective path is unchanged, and for
-`no_longer_valid` when the path was removed or replaced. It is not direct evidence
-for `already_fixed` unless a release also carries the change.
+Definitive `still_valid` needs cited `persists` validation. Definitive
+`no_longer_valid` needs cited `resolved` validation and the whole-issue
+scope-removal reason. Open status, age, silence, old affects versions, empty
+fixVersions and no PR match support neither conclusion. Distinguish "not found
+in the searched corpus" from "does not exist". See the
+[rubric](disposition-rubric.md) for decision gates.
 
-These internal code findings do not produce still-valid/obsolete comments in
-this milestone. Even direct proof of removed behavior is not an already-fixed
-recommendation without the matching incorporated change and release evidence.
+## Citation quality and conflicts
 
-## Reproduction
+Each evidence item has `type`, `ref`, `why` and `strength`, as defined in the
+[schema](report-schema.md). References are real HTTPS URLs or Jira keys; bare
+SHAs and local pseudo-links cannot carry definitive proof. Cite immutable
+release-specific file/commit URLs where available, and explain the inference
+in `why`. A link count is not causal validation.
 
-A current-release reproduction is the strongest evidence for `still_valid` and a
-valid basis for `no_longer_valid` when it fails to reproduce for a stated reason.
-Record:
-
-- the exact release and installation method;
-- the platform and version;
-- the steps, with the observed result;
-- the full error text or a link to it.
-
-Use `/rhdh-plugin-bug-fix` when the reproduction needs a build or a cluster. Do
-not claim a reproduction you did not run. Such execution is a separate request,
-not an automatic task for the user or a side effect of an abstention here.
-
-## What is not evidence
-
-- The ticket's age, by itself.
-- An empty affects or fix version.
-- Silence in the comments.
-- A teammate's recollection without a citation.
-- A similar title without the same failure or error signature.
-- A lexical duplicate score alone; it ranks candidates, it does not decide.
-- A closed duplicate that was never confirmed.
-- A merged PR with no release, for an `already_fixed` close.
-
-## Citation format
-
-Each evidence item has four fields:
-
-```json
-{
-  "type": "pr",
-  "ref": "https://github.com/redhat-developer/rhdh/pull/1234",
-  "why": "The merged change resolves the external S3 endpoint before the TechDocs build runs.",
-  "strength": "direct"
-}
-```
-
-`type` is one of `jira`, `pr`, `commit`, `release_note`, `code`, `doc`, `repro`,
-or `comment`. `ref` is an actual HTTPS URL or a Jira issue key. Bare commit SHAs
-and local pseudo-references cannot support outward closure proof. `why` states the inference in one
-sentence. `strength` is `direct`, `strong`, or `supporting`.
-
-An item missing `type`, `ref`, or `why` is dropped and counted as an evidence
-gap and blocks closure until reconciled. That is deliberate: an uncited claim
-cannot support a recommendation. Assessment flags and the offline verifier do
-not independently establish an artifact's truth; reviewers must read it.
-
-## Resolving conflicts
-
-When sources disagree, prefer the more specific and more recent source, then
-record the conflict in `notes`:
-
-1. A current-release reproduction outranks a comment from an older release.
-2. A merged commit outranks a PR description.
-3. A release note outranks a guess about which release carries a fix.
-4. Two independent citations that agree outrank one.
-5. If the conflict cannot be resolved, record it locally and abstain without a
-   comment or reproduction request. Do not hide contradictory evidence to pass
-   a close gate.
+Retain invalid citations, source limitations and contradictions in the audit.
+Prefer evidence specific to the actual reported trigger and exact reviewed
+release over older commentary; inspect the diff over relying on a PR title.
+Multiple copied assertions are not independent corroboration. If a conflict
+cannot be resolved, preserve it and draft the uncertainty instead of selectively
+discarding evidence to obtain a positive conclusion.

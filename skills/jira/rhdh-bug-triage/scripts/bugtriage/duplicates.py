@@ -9,10 +9,9 @@ the score is the auditable floor, not the verdict.
 
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass, field
-from typing import Iterable, List, Sequence, Set
+from typing import Iterable, List, Set
 
 from .model import Ticket, parse_datetime
 
@@ -437,23 +436,3 @@ def distinctive_phrases(ticket: Ticket, limit: int = 3) -> List[str]:
         if len(phrases) >= limit:
             break
     return phrases[:limit]
-
-
-def candidate_threshold(score: float) -> str:
-    if score >= DUPLICATE_CLOSE_THRESHOLD:
-        return "propose-close-eligible"
-    if score >= DUPLICATE_HINT_THRESHOLD:
-        return "comment-only"
-    return "below-threshold"
-
-
-def cosine(left: Sequence[float], right: Sequence[float]) -> float:
-    """Kept for callers that swap in vector scores; no dependency is required."""
-    if not left or not right or len(left) != len(right):
-        return 0.0
-    numerator = sum(a * b for a, b in zip(left, right))
-    left_norm = math.sqrt(sum(a * a for a in left))
-    right_norm = math.sqrt(sum(b * b for b in right))
-    if not left_norm or not right_norm:
-        return 0.0
-    return numerator / (left_norm * right_norm)

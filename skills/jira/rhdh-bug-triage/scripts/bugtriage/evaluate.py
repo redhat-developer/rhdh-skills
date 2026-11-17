@@ -9,7 +9,7 @@ failure even when every other number looks good.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -45,6 +45,8 @@ class Evaluation:
     predicted: Dict[str, int]
     abstained: int
     gaps: int
+    false_conclusions: List[Dict[str, str]] = field(default_factory=list)
+    unlabelled_packets: List[str] = field(default_factory=list)
 
     @property
     def coverage(self) -> float:
@@ -81,7 +83,16 @@ class Evaluation:
             "abstained": self.abstained,
             "abstainRate": round(self.abstain_rate, 3),
             "gaps": self.gaps,
+            "falseConclusions": self.false_conclusions,
+            "unlabelledPackets": self.unlabelled_packets,
+            "strictPassed": self.strict_passed,
         }
+
+    @property
+    def strict_passed(self) -> bool:
+        return bool(self.total and self.matched == self.total) and not (
+            self.false_closes or self.false_conclusions or self.unlabelled_packets
+        )
 
 
 def load_truth(path: str) -> Dict[str, Dict[str, str]]:
@@ -94,9 +105,18 @@ def load_truth(path: str) -> Dict[str, Dict[str, str]]:
     truth: Dict[str, Dict[str, str]] = {}
     for key, value in document.items():
         if not isinstance(value, dict):
-            continue
+            raise ValueError(f"invalid truth label for {key}")
         disposition = str(value.get("disposition") or "").strip().lower()
         disposition = DISPOSITION_ALIASES.get(disposition, disposition)
+        if disposition not in {
+            "duplicate",
+            "already_fixed",
+            "still_valid",
+            "no_longer_valid",
+            "needs_repro",
+            "unclear",
+        }:
+            raise ValueError(f"unknown truth disposition for {key}: {disposition!r}")
         truth[key] = {
             "disposition": disposition,
             "duplicateOf": str(value.get("duplicateOf") or "").strip(),
@@ -212,12 +232,18 @@ def evaluate(packets: Iterable[Packet], truth: Dict[str, Dict[str, str]]) -> Eva
         predicted=predicted,
         abstained=abstained,
         gaps=gaps,
+        false_conclusions=[
+            item for item in mismatches if item["observed"] not in ("unclear", "needs_repro")
+        ],
+        unlabelled_packets=sorted(set(by_key) - set(truth)),
     )
 
 
 def render_evaluation(evaluation: Evaluation, *, strict: bool = False) -> str:
     lines = [
         "# Bug-triage evaluation",
+        "",
+        f"Mode: {'strict acceptance' if strict else 'measurement only'}.",
         "",
         "| Metric | Value |",
         "|---|---|",
@@ -230,6 +256,9 @@ def render_evaluation(evaluation: Evaluation, *, strict: bool = False) -> str:
         f"({evaluation.classified_rate:.0%}) |",
         f"| Close proposals | {evaluation.close_proposals} |",
         f"| False close proposals | {len(evaluation.false_closes)} |",
+        f"| False definite conclusions | {len(evaluation.false_conclusions)} |",
+        f"| Packets without known-answer labels | {len(evaluation.unlabelled_packets)} |",
+        f"| Strict acceptance | {'PASS' if evaluation.strict_passed else 'FAIL'} |",
         f"| Abstain rate | {evaluation.abstain_rate:.0%} |",
         f"| Evidence gaps | {evaluation.gaps} |",
         "",
@@ -261,9 +290,9 @@ def render_evaluation(evaluation: Evaluation, *, strict: bool = False) -> str:
     lines.extend(
         [
             "",
-            "A false close is the only hard-fail metric. Precision below 100% on a "
-            "small control set is informational; a proposed close with the wrong "
-            "ground truth is not.",
+            "Strict evaluation fails on a false close, a false definite conclusion, empty labels, "
+            "missing labelled packets, or unlabelled predictions. Uncertainty is allowed, but recall "
+            "and label coverage remain visible. These are known-answer tests, not proof of universal accuracy.",
             "",
         ]
     )

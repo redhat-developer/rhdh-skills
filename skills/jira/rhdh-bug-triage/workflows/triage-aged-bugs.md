@@ -1,130 +1,186 @@
-# Triage aged bugs for closure opportunities
+# Dry-run, comment-first bug triage
 
-One entry point, two outward results: duplicate or already fixed. Follow the
-[rubric](../references/disposition-rubric.md) for proof, confidence, canonical
-selection and delivery gates. Insufficient proof means silent abstention, not a
-new Jira investigation request. This workflow and its CLI never mutate Jira.
+This is an **agent workflow**, not a CLI classifier. Follow the
+[rubric](../references/disposition-rubric.md) for decisions and the
+[schema](../references/report-schema.md) for assessment fields. Every selected
+bug gets a disposition and an exact local draft. No remote writer is invoked.
 
-## 1. Resolve scope and capability
+Run commands from the installed skill directory, storing exports and outputs in
+a private local working area outside the PR. In the examples, `$CURRENT_RELEASE`
+is the actual release verified below, `$RELEASE_EVIDENCE_URL` its HTTPS release
+record, and `$JQL` the explicitly chosen read query; they are placeholders, not
+defaults, credentials or an automatic lifecycle lookup.
 
-Invoke `/rhdh-context` to resolve the actual released product under review.
-Development `package.json`, planned fixVersions, or a CLI default are not release
-evidence. Invoke `/rhdh-jira-api` for authenticated read mechanics and field IDs.
+## 1. Verify release, repositories and read capability
 
-```bash
-python3 scripts/run_poc.py check --json
-```
+Invoke `/rhdh-context` to verify the actual released product under review and
+resolve its product, docs, plugin and dependency repositories/versions. Read the
+authoritative product release record, not just the context skill's cached
+compatibility matrix or a repository tag. A cached target and a newer tag may
+disagree; neither alone proves which product release actually shipped. Resolve
+that conflict against the official product release/lifecycle documentation and
+inspect the matching repository/dependency state before selecting bugs. Planned
+fixVersions, a development `package.json` and numeric ordering are not release
+evidence. Record the verification source and date. The required
+`--release-evidence` URL is recorded by the CLI; the CLI does not fetch it or
+verify that the product shipped. If the released target cannot be established,
+stop rather than guessing.
 
-Use an authenticated host export if acli cannot read. Do not retrieve credentials,
-repair login here, or invent missing fields. Search and view support different
-field sets in some acli versions: if search rejects `*all`, use supported search
-fields followed by complete issue views through `/rhdh-jira-api`. Do not silently
-proceed with missing customer fields, descriptions or truncated comment history.
-
-## 2. Select and retain the broad duplicate corpus
-
-Select 12–15 open, non-customer reports at least 90 days old, stratified by team
-or component. Require comparable affects versions older than the release under
-review; the age-only selector does not enforce version comparison. Enrich and
-filter first, recording all exclusions. Unknown versions do not prove eligibility.
-Any previous-local-review coverage exclusion is run-local bookkeeping, never
-evidence that a Jira comment was posted.
-
-Keep a separate corpus containing open **and closed** reports; a canonical issue
-can be closed. Record retrieval coverage and missing fields. Fetch full candidate
-records before choosing a tracker, including creation date, resolution, customer
-signals, links, description and discussion. Resolve duplicate chains.
+Invoke `/rhdh-jira-api` for authenticated read mechanics, field mappings and
+pagination. Credentials remain inside its authenticated adapter. Do not repair
+login or retrieve tokens here; missing capability goes to `/setup-rhdh-skills`.
 
 ```bash
-python3 scripts/run_poc.py select --input eligible-export.json --size 12 --out sample.json
+python3 scripts/triage.py check --json
+python3 scripts/triage.py fetch --jql "$JQL" --out export.json
 ```
 
-Optional controls must have genuine known answers. Do not invent controls or
-ground truth to claim accuracy. No minimum close/recommendation rate is required.
+`fetch` uses supported search fields followed by full issue views. If search
+rejects `*all`, that is not permission to omit full views. Check descriptions,
+comments, customer-field mappings and history completeness. If an adapter cannot
+page a history, record that gap instead of claiming the history is complete.
+An existing complete JSON export is also supported; offline work must state its
+snapshot age. A successful search is not proof of complete customer-field coverage.
+When `/rhdh-jira-api` returns tenant-resolved custom-field metadata, save its
+credential-free ID-to-name mapping locally and append
+`--field-names tenant-fields.json` to `fetch` (or `select --source acli`). Exports
+retain `fieldNames` for offline consumers. Do not invent or hardcode custom-field
+IDs, and do not treat the mapping as proof that every customer field was read.
 
-## 3. Search for duplicate and existing-fix evidence
+## 2. Select scope and retain a broader corpus
+
+An example candidate JQL is:
+
+```jql
+project = RHDHBUGS AND statusCategory != Done AND created <= -90d
+AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer"))
+ORDER BY created ASC
+```
+
+The parentheses/`IS EMPTY` preserve unlabelled reports. This query does not check
+all customer signals or affected-version eligibility; local checks still apply.
+Keep a separate `broad-export.json` with open **and closed** possible duplicates
+and fixes. Do not reuse an aged/open-only query and call it a complete duplicate
+corpus. Record its actual query, repositories, retrieval date and missing fields;
+enrich full candidate records and follow duplicate chains before choosing a target.
 
 ```bash
-python3 scripts/run_poc.py collect --input eligible-export.json --sample sample.json \
-  --out evidence --forge-cache forge-cache.json
+python3 scripts/triage.py select --input export.json \
+  --current-release "$CURRENT_RELEASE" --scope aged --out sample.json
 ```
 
-Follow [evidence sources](../references/evidence-sources.md). Read ADF inline cards
-and link marks as well as visible text; hidden Jira references often lead to the
-actual fix. Inspect candidate meaning, not just titles. Search the sampled key,
-linked/mentioned keys and relevant corpus candidates. The collector searches at
-most five linked keys; investigate its recorded `unsearchedLinkedKeys` when
-needed rather than claiming complete coverage.
+- Primary scope: open, non-customer, age **at least 90 days**, and every affects
+  version known/comparable and strictly older than the verified current release.
+  Exclude missing/ambiguous/unparseable, equal or newer versions with a reason;
+  a list containing both older and current versions is not eligible.
+- Default: a bounded stratified sample of 12, not 12 closure candidates.
+  Add `--all` to select every eligible issue in this export.
+- For explicit whole-backlog expansion, fetch a matching broader export and use
+  `--scope all-open` for both `select` and `run`; add `--all` for all eligible
+  records. This bypasses age/affects checks only, never customer or Done checks.
+- Keep selection exclusions and coverage honest. `--all` cannot recover tickets
+  absent from the export. Controls must have real known answers, not invented
+  positives or a target closure rate.
 
-Use `/rhdh-forge` for exact PR/commit state, diff, regression coverage and tag
-ancestry. Read linked PRs even if key search fails. Record failed/rate-limited
-searches separately from successful zero-match results. Cache-only collection
-does not search GitHub. Neither case proves that no fix exists.
-
-For fixed candidates, verify the matching change is incorporated, the fix shipped,
-and the exact target release contains it. For duplicate candidates, compare the
-same failure/trigger/fix and select one authoritative tracker. If source or
-history contradicts the hypothesis, abstain rather than stretching the evidence.
-
-## 4. Adjudicate independently twice and write cited proof
+## 3. Collect leads, then inspect them
 
 ```bash
-python3 scripts/run_poc.py template --sample sample.json --out assessments
+python3 scripts/triage.py collect --input export.json --sample sample.json \
+  --out fresh-evidence --gh --repo owner/product-repo --repo owner/docs-repo
+python3 scripts/triage.py template --sample sample.json --out assessments
 ```
 
-Fill [structured assessments](../references/report-schema.md). Run the second
-review in a fresh context without the first conclusion. Record real agreement
-or disagreement; never turn reconciliation into invented independent agreement.
-Evidence strengths are inputs; confidence is computed. Proof summaries must
-explain the causal comparison, not merely say "same bug" or "fixed".
+Repository names above are placeholders; pass the actual repositories resolved
+by `/rhdh-context`, repeating `--repo` for relevant product/plugin/docs repos.
+Omit `--gh` for cache-only/offline collection. That does **not** search GitHub.
+Keep linked-key search limits, unsearched keys, cache misses, permission errors
+and rate limits; none are a successful zero-result search.
 
-Do not create outward `unclear`, `still_valid`, obsolete or reproduction comments.
-Those may be internal evidence states only. No fix implementation, build/cluster
-operation, backport, reassignment, or PR creation is authorized by this workflow.
+Invoke `/rhdh-forge` read-only to open actual PRs/commits, inspect diffs and
+regression coverage, and verify exact target-release ancestry. Search the issue
+key, linked/mentioned keys, symptoms and relevant corpus candidates. Read ADF
+inline-card and link-mark URLs too. A hit is a lead, not proof; no hit is not
+proof of an unfixed bug. See [evidence sources](../references/evidence-sources.md).
 
-## 5. Run policy in a fresh output directory
+## 4. Agent adjudication is mandatory
+
+For **every** selected bug, read the report and discussion, compare candidates,
+check ownership, and validate the reported failure against the actual release.
+Use current-release code, runtime evidence, documentation or dependency inspection
+as appropriate. Record the method, outcome, precise release and citations in
+`validation`; otherwise state exactly what remains unknown.
+
+Invoke `/rhdh-plugin-bug-fix` in **read-only diagnosis/reproduction-planning mode**
+for the relevant code path and a concrete validation plan. Do not execute its
+implementation, build/deploy, cluster mutation, fix, PR or backport steps. A plan
+is not a completed reproduction. Existing runtime evidence can be inspected;
+do not claim to have run it yourself. Unavailable validation yields `unclear`
+or `needs_repro`, not an automatic task or generic "please reproduce" comment.
+
+Write one investigated `assessments/KEY.json` per selected bug. An open status,
+stale ticket, old affects version, empty fixVersion or missing PR match cannot
+justify `still_valid`. Definitive still-valid/obsolete findings need cited exact
+current-release validation; unsupported claims downgrade to `unclear`.
+
+For duplicate/fixed recommendations, obtain two genuinely independent reviews in
+fresh contexts that receive the source evidence but **not** the other review's
+conclusion. Use the host's fresh-review capability when authorized; otherwise
+request a separate reviewer/session and keep the recommendation unconfirmed.
+Save each review's rationale, citations and context/session provenance locally.
+`independentPasses: 2` and `agree: true` only summarize work actually done; copied
+booleans or a second pass in the same context are not independent review. Save
+disagreement and keep it uncertain; do not erase it during reconciliation.
+
+## 5. Apply policy locally, then preview exact drafts
 
 ```bash
-python3 scripts/run_poc.py run --input eligible-export.json --sample sample.json \
-  --corpus broad-export.json --assessments assessments --out new-review \
-  --current-release 2.1.0 --comment-cooldown-days 14
+python3 scripts/triage.py run --input export.json --sample sample.json \
+  --assessments assessments --corpus broad-export.json --evidence fresh-evidence \
+  --out fresh-review --current-release "$CURRENT_RELEASE" \
+  --release-evidence "$RELEASE_EVIDENCE_URL"
 ```
 
-Replace the example release with the verified target. The policy and verifier
-both fail closed. Any unsupported finding or failed gate becomes `abstain` with
-no draft or reproduction request. Output directories must be fresh so a rerun
-cannot leave an old close proposal masquerading as a new recommendation.
+Add `--scope all-open` only when that was the explicit selection scope. Use a
+fresh output directory: a nonempty one is refused without retaining stale drafts.
+Missing assessment files, untouched/unknown dispositions or invalid input block
+the run; do not manufacture an "unclear" assessment just to obtain exit code 0.
+An investigated inconclusive finding is a useful draft, not silent abstention.
 
-- `report.md`: the one reviewer-facing file, only qualifying recommendations,
-  proof, confidence, ownership when known and approval/delivery status.
-- `proposed/KEY.md`: exact surfaced payload plus local review details; no files
-  for abstentions or suppressed repeats. Zero recommendations can produce no
-  `proposed/` directory.
-- `packets.json`, `summary.csv`, `manifest.json`: full local audit, including
-  reasons for abstention, rejected claims, search/selection provenance where
-  supplied, and `writes: []`. A local run is not posted-comment history.
+The agent, as final composer, invokes `/prose-editing` **exactly once for the
+batch of exact Jira drafts**, in the flavored register, before reviewer preview.
+Use a no-change audit to preserve the generated bodies and delivery checks. If
+the pass finds a defect, correct the source summaries and rerun policy in a new
+directory; do not hand-edit a body into something the policy did not verify.
+Unresolved prose or evidence defects block completion. Do not run a prose pass
+per transport call or invoke a remote writer after the pass.
 
-## 6. Review and hand off only approved recommendations
+Review `report.md`: **all** exact comments, dispositions, validation/unknowns,
+known owner/team, next step, and delivery reasons. `suppress` and
+`review_required` are preview statuses, not missing findings or permission to
+post. `proposed/KEY.md` exists only for non-suppressed drafts; a
+`review_required` file remains restricted. The audit retains evidence, rejected
+claims, disagreement, selection exclusions, input hashes, search failures,
+corpus limits and `writes: []`. Local drafts are not Jira posting history.
 
-Review the exact Re / verdict / Recommendation / Proof body in `report.md`.
-Reject any recommendation stronger than its citations. A `review_required`
-delivery state is not permission to post; resolve history/legacy-comment concerns
-first. Suppression is a successful no-op, not a trigger to remind anyone.
+## 6. Finish the dry run, not an external handoff
 
-If the human approves an external action, invoke `/prose-editing` once for Jira
-prose and hand the exact preserved recommendation and intended operations to
-`/rhdh-jira-update` under `/mutation-gate`. Approval to post a rationale is not
-approval to close; closure needs its own stated approved operation. No mutation
-is performed by this skill. Report nothing awaiting approval when the result
-contains no recommendations.
+Return the report path, selected/disposition/delivery counts and material gaps.
+State that nothing was posted, no bugs were closed, and no fixes, PRs or
+backports were created. Zero closure recommendations is valid; zero investigated
+drafts for a nonempty sample is not. Never invoke `/rhdh-jira-update`,
+`/rhdh-jira-link` or another remote writer during this run, even if the user likes
+the preview. Posting/closing would be a separate, explicitly scoped workflow
+under `/mutation-gate`, not a hidden next command here.
 
-## Optional evaluation
+## Evaluate with real labels
 
 ```bash
-python3 scripts/run_poc.py evaluate --packets new-review/packets.json \
-  --truth truth.json --out new-review/evaluation.md --strict
+python3 scripts/triage.py evaluate --packets fresh-review/packets.json \
+  --truth labels.json --strict
 ```
 
-Use actual reviewer ground truth. False closures fail strict evaluation; a high
-abstention rate does not. Coverage, precision and recall remain visible so silent
-abstention cannot masquerade as a successful comprehensive backlog cleanup.
+Use independently established known answers and the
+[verification criteria](../references/verification.md). Report label gaps and
+false still-valid findings as well as false closure recommendations. A live
+shadow report or fixture pass does not certify universal accuracy, autonomous
+posting, closing or the future fix/backport loop.

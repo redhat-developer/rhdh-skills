@@ -7,6 +7,7 @@ network step is GitHub PR enrichment in ``collect``; ``run`` reads its cache.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ from .duplicates import (
     score_candidate,
 )
 from .model import (
-    DEFAULT_CURRENT_RELEASE,
+    JIRA_KEY_RE,
     Ticket,
     age_days,
     load_export,
@@ -34,7 +35,7 @@ from .policy import (
     Packet,
     evaluate,
     load_assessment,
-    verify_packet,
+    recommendation_comment,
 )
 from .report import (
     now_iso,
@@ -57,9 +58,9 @@ class RunError(RuntimeError):
 class RunConfig:
     input_path: str
     output_dir: str
+    current_release: str
     sample_path: str = ""
     assessments_dir: str = ""
-    current_release: str = DEFAULT_CURRENT_RELEASE
     as_of: str = ""
     aged_days: int = 90
     size: int = 12
@@ -68,6 +69,10 @@ class RunConfig:
     corpus_path: str = ""
     jql: str = ""
     comment_cooldown_days: int = DEFAULT_COOLDOWN_DAYS
+    scope: str = "aged"
+    all_tickets: bool = False
+    release_evidence: str = ""
+    evidence_dir: str = ""
 
 
 @dataclass
@@ -79,11 +84,12 @@ class RunResult:
     output_dir: Path
 
 
-def default_jql(aged_days: int) -> str:
+def default_jql(aged_days: int, scope: str = "aged") -> str:
     return (
         "project = RHDHBUGS AND statusCategory != Done "
-        f'AND created <= -{aged_days}d AND labels != "RHDH-Customer" '
-        "ORDER BY created ASC"
+        + (f"AND created <= -{aged_days}d " if scope == "aged" else "")
+        + 'AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer")) '
+        + "ORDER BY created ASC"
     )
 
 
@@ -104,13 +110,16 @@ def build_sample_manifest(
 ) -> Dict[str, Any]:
     selected, excluded, eligible_count = select_sample(tickets, config, as_of)
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 3,
         "generatedAt": now_iso(),
         "asOf": as_of.date().isoformat(),
         "jql": jql,
         "agedDays": config.aged_days,
         "size": config.size,
         "seed": config.seed,
+        "scope": config.scope,
+        "currentRelease": config.current_release,
+        "allTickets": config.all_tickets,
         "controls": [{"key": control.key, "label": control.label} for control in config.controls],
         "eligibleCount": eligible_count,
         "tickets": [item.manifest_entry() for item in selected],
@@ -123,21 +132,25 @@ def load_sample_manifest(path: str) -> Dict[str, Any]:
         document = json.load(handle)
     if not isinstance(document, dict) or not isinstance(document.get("tickets"), list):
         raise RunError(f"{path} is not a sample manifest with a tickets list")
+    keys = []
+    for entry in document["tickets"]:
+        key = entry.get("key") if isinstance(entry, dict) else None
+        if not isinstance(key, str) or not JIRA_KEY_RE.fullmatch(key):
+            raise RunError(f"{path} contains an invalid issue key")
+        keys.append(key)
+    if len(keys) != len(set(keys)):
+        raise RunError(f"{path} contains duplicate issue keys")
     return document
 
 
 def data_gaps(ticket: Ticket) -> List[str]:
-    gaps: List[str] = []
+    gaps: List[str] = list(ticket.read_gaps)
     if not ticket.affects_versions:
         gaps.append("affects version absent from the export")
-    if not ticket.fix_versions:
-        gaps.append("fix version absent from the export")
     if not ticket.description.strip():
         gaps.append("description empty or absent from the export")
-    if not ticket.comments:
-        gaps.append("no comments present in the export")
-    if not ticket.links:
-        gaps.append("no Jira links present in the export")
+    if not ticket.comments_complete:
+        gaps.append("comment history is incomplete or was not fetched")
     if ticket.created and age_days(ticket.created) is None:
         gaps.append("created date unreadable")
     return gaps
@@ -146,7 +159,7 @@ def data_gaps(ticket: Ticket) -> List[str]:
 def load_assessments(directory: str) -> Dict[str, Assessment]:
     root = Path(directory)
     if not directory or not root.is_dir():
-        return {}
+        raise RunError(f"assessment directory does not exist: {directory!r}")
     assessments: Dict[str, Assessment] = {}
     for path in sorted(root.glob("*.json")):
         try:
@@ -155,6 +168,10 @@ def load_assessments(directory: str) -> Dict[str, Assessment]:
             raise RunError(f"invalid assessment {path}: {error}") from error
         if path.stem != assessment.key:
             raise RunError(f"assessment {path} names a different issue: {assessment.key}")
+        if not assessment.disposition:
+            raise RunError(
+                f"assessment {path} is still an unfilled template; investigate before running"
+            )
         assessments[assessment.key] = assessment
     return assessments
 
@@ -163,35 +180,87 @@ def run(config: RunConfig) -> RunResult:
     if config.comment_cooldown_days < 0:
         raise RunError("--comment-cooldown-days must be nonnegative")
     output_dir = Path(config.output_dir)
-    if output_dir.exists() and any(output_dir.iterdir()):
+    if output_dir.exists():
         raise RunError(
-            "output directory is not empty; use a fresh directory to avoid stale proposals"
+            "output directory already exists; use a fresh directory to avoid stale proposals"
         )
+    from .policy import valid_ref
+
+    if (
+        not config.release_evidence
+        or not config.release_evidence.startswith("https://")
+        or not valid_ref(config.release_evidence)
+    ):
+        raise RunError("--release-evidence must link the verified product release record")
     as_of = parse_as_of(config.as_of)
     tickets = load_export(config.input_path)
     if not tickets:
         raise RunError(f"{config.input_path} contains no issues")
     tickets_by_key = {ticket.key: ticket for ticket in tickets}
-    jql = config.jql or default_jql(config.aged_days)
+    jql = config.jql or default_jql(config.aged_days, config.scope)
 
     if config.sample_path:
         sample = load_sample_manifest(config.sample_path)
+        if (
+            sample.get("currentRelease") != config.current_release
+            or sample.get("scope") != config.scope
+        ):
+            raise RunError("sample release/scope does not match this run; select again")
     else:
         selection_config = SelectionConfig(
             size=config.size,
             aged_days=config.aged_days,
             seed=config.seed,
             controls=config.controls,
+            current_release=config.current_release,
+            scope=config.scope,
+            all_tickets=config.all_tickets,
         )
         sample = build_sample_manifest(tickets, selection_config, as_of, jql)
 
     selection = {entry["key"]: entry for entry in sample.get("tickets", [])}
-    if not selection:
-        raise RunError("the sample manifest is empty; select tickets before running")
 
     missing = sorted(key for key in selection if key not in tickets_by_key)
     if missing:
         raise RunError("the sample names tickets missing from the export: " + ", ".join(missing))
+
+    # Eligibility changes with time and incoming records even when every selected
+    # key is still present. An old zero-item manifest must not hide the backlog.
+    if sample.get("agedDays", config.aged_days) != config.aged_days:
+        raise RunError("sample age threshold does not match this run; select again")
+    _, current_exclusions, current_eligible = select_sample(
+        tickets,
+        SelectionConfig(
+            size=config.size,
+            aged_days=config.aged_days,
+            seed=config.seed,
+            current_release=config.current_release,
+            scope=config.scope,
+            controls=[
+                Control(key=entry["key"], label=entry.get("label", ""))
+                for entry in sample.get("controls", [])
+            ],
+        ),
+        as_of,
+    )
+    if sample.get("eligibleCount") != current_eligible:
+        raise RunError(
+            "sample eligibility count is stale; select again against the current inventory/date"
+        )
+    sample["excluded"] = current_exclusions
+
+    # A supplied manifest is not permission to bypass current eligibility.
+    from .selection import exclusion_reason
+
+    for key, entry in selection.items():
+        ticket = tickets_by_key[key]
+        if entry.get("kind") == "control":
+            continue
+        reason = exclusion_reason(
+            ticket, as_of, config.aged_days, config.current_release, config.scope
+        )
+        if reason:
+            raise RunError(f"sample issue {key} is no longer eligible: {reason}")
 
     corpus = tickets
     if config.corpus_path:
@@ -202,11 +271,24 @@ def run(config: RunConfig) -> RunResult:
     corpus_has_closed = any(ticket.is_done for ticket in corpus)
 
     assessments = load_assessments(config.assessments_dir)
+    absent = sorted(set(selection) - set(assessments))
+    if absent:
+        raise RunError("missing assessments (triage has not completed): " + ", ".join(absent))
+    collection = {}
+    if config.evidence_dir:
+        evidence_root = Path(config.evidence_dir)
+        if not evidence_root.is_dir():
+            raise RunError(f"evidence directory does not exist: {config.evidence_dir}")
+        for key in selection:
+            path = evidence_root / f"{key}.json"
+            if not path.is_file():
+                raise RunError(f"missing collection evidence: {path}")
+            collection[key] = json.loads(path.read_text(encoding="utf-8"))
     corpus_by_key = {item.key: item for item in corpus}
     packets: List[Packet] = []
     for key in selection:
         ticket = tickets_by_key[key]
-        candidates = rank_candidates(ticket, corpus, limit=3)
+        candidates = rank_candidates(ticket, corpus, limit=10)
         assessment = assessments.get(key)
         # An explicitly investigated target may lie outside the top lexical hits.
         if (
@@ -224,16 +306,6 @@ def run(config: RunConfig) -> RunResult:
         for gap in data_gaps(ticket):
             if gap not in packet.gaps:
                 packet.gaps.append(gap)
-        errors = verify_packet(packet, ticket)
-        if errors and packet.action in (
-            "propose_close_duplicate",
-            "propose_close_fixed",
-        ):
-            packet.verification_errors = errors
-            packet.gaps.extend(errors)
-            packet.action = "abstain"
-            packet.recommended_step = ""
-            packet.proposed_comment = ""
         attach_comment_plan(
             ticket, packet, assessments.get(key), as_of, config.comment_cooldown_days
         )
@@ -242,10 +314,14 @@ def run(config: RunConfig) -> RunResult:
     redundant = {packet.key for packet in packets if packet.action == "propose_close_duplicate"}
     for packet in packets:
         if packet.action == "propose_close_duplicate" and packet.target in redundant:
-            packet.action, packet.recommended_step, packet.proposed_comment = "abstain", "", ""
+            packet.action, packet.disposition = "comment_only", "unclear"
+            packet.recommended_step = (
+                "Resolve the duplicate chain to one canonical tracker before recommending closure."
+            )
             packet.gaps.append(
                 "canonical tracker is also proposed as a duplicate; re-adjudicate against the final tracker"
             )
+            packet.proposed_comment = recommendation_comment(packet, tickets_by_key[packet.key])
             attach_comment_plan(
                 tickets_by_key[packet.key],
                 packet,
@@ -262,6 +338,22 @@ def run(config: RunConfig) -> RunResult:
         "fixed": FIXED_CLOSE_THRESHOLD,
     }
 
+    coverage = {
+        "inputIssues": len(tickets),
+        "eligibleIssues": sample.get("eligibleCount", 0),
+        "selectedIssues": len(selection),
+        "assessedIssues": len(packets),
+        "excludedIssues": len(sample.get("excluded", [])),
+        "scope": config.scope,
+        "selectionComplete": len(selection) >= sample.get("eligibleCount", 0),
+        "corpusIssues": len(corpus),
+        "corpusHasClosed": corpus_has_closed,
+        "corpusExhaustive": False,
+        "collection": collection,
+    }
+    # Atomic directory creation: two callers cannot write into the same run.
+    output_dir.mkdir(parents=True, exist_ok=False)
+
     report = render_report(
         packets,
         tickets_by_key,
@@ -276,13 +368,16 @@ def run(config: RunConfig) -> RunResult:
         excluded=sample.get("excluded", []),
         selection=selection,
         thresholds=thresholds,
+        coverage=coverage,
+        release_evidence=config.release_evidence,
     )
     write_text(output_dir / "report.md", report)
+    write_json(output_dir / "sample.json", sample)
     write_text(output_dir / "summary.csv", render_summary_csv(packets, selection))
     write_json(
         output_dir / "packets.json",
         {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "dryRun": True,
             "generatedAt": generated_at,
             "currentRelease": config.current_release,
@@ -290,7 +385,7 @@ def run(config: RunConfig) -> RunResult:
         },
     )
     for packet in packets:
-        if not surfaced(packet):
+        if not surfaced(packet) or packet.comment_plan.get("status") == "suppress":
             continue
         ticket = tickets_by_key[packet.key]
         entry = selection.get(packet.key, {})
@@ -331,6 +426,24 @@ def run(config: RunConfig) -> RunResult:
             status: sum(packet.comment_plan.get("status") == status for packet in packets)
             for status in ("propose", "suppress", "review_required")
         },
+    }
+    manifest["releaseEvidence"] = config.release_evidence
+    manifest["coverage"] = coverage
+    manifest["inputs"]["corpus"] = config.corpus_path or config.input_path
+    manifest["inputSha256"] = {
+        name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        for name, path in {
+            "export": config.input_path,
+            "corpus": config.corpus_path or config.input_path,
+            **{
+                f"assessment:{key}": str(Path(config.assessments_dir) / f"{key}.json")
+                for key in selection
+            },
+        }.items()
+    }
+    manifest["codeSha256"] = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(Path(__file__).parent.glob("*.py"))
     }
     write_json(output_dir / "manifest.json", manifest)
 

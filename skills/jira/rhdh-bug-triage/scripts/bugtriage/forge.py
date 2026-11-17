@@ -19,6 +19,8 @@ DEFAULT_REPOS = (
     "redhat-developer/rhdh-operator",
     "redhat-developer/rhdh-plugins",
     "redhat-developer/community-plugins",
+    "redhat-developer/rhdh-local",
+    "redhat-developer/red-hat-developers-documentation-rhdh",
 )
 
 PR_FIELDS = "number,title,state,mergedAt,mergeCommit,baseRefName,url,closedAt"
@@ -125,6 +127,14 @@ def lookup_pr(url: str, cache: Dict[str, Any], use_gh: bool) -> Dict[str, Any]:
             "source": "error",
             "error": f"invalid gh JSON: {error}",
         }
+    if not isinstance(payload, dict):
+        return {
+            "url": url,
+            "state": "UNKNOWN",
+            "merged": False,
+            "source": "error",
+            "error": "gh returned a non-object PR response",
+        }
     result = normalize_pr(payload, url)
     result["source"] = "gh"
     return result
@@ -177,6 +187,8 @@ def search_prs_for_key(
                     "key": key,
                     "repository": repo,
                     "status": "success" if isinstance(payload, list) else "invalid_response",
+                    "returned": len(payload) if isinstance(payload, list) else 0,
+                    "possiblyTruncated": isinstance(payload, list) and len(payload) == limit,
                 }
             )
         for item in payload if isinstance(payload, list) else []:
@@ -189,8 +201,10 @@ def search_prs_for_key(
             if not url or url in seen:
                 continue
             seen.add(url)
-            normalized = normalize_pr(item, url)
-            normalized["source"] = "gh-search"
+            # Search results omit merge state/commit. A closed search hit may be
+            # unmerged; resolve its actual PR instead of calling it an unfixed hit.
+            normalized = lookup_pr(url, cache, True)
+            normalized["discoveredBy"] = "gh-search"
             results.append(normalized)
     return results
 
@@ -199,6 +213,7 @@ def collect_for_ticket(
     ticket: Ticket,
     cache: Dict[str, Any],
     use_gh: bool,
+    repos: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     pulls = [lookup_pr(url, cache, use_gh) for url in ticket.pr_urls]
     search_log: List[Dict[str, Any]] = []
@@ -216,11 +231,17 @@ def collect_for_ticket(
             known.add(url)
             pulls.append({**pull, "foundVia": via})
 
-    add(search_prs_for_key(ticket.key, cache, use_gh, search_log=search_log), ticket.key)
+    add(
+        search_prs_for_key(ticket.key, cache, use_gh, repos=repos, search_log=search_log),
+        ticket.key,
+    )
     # A fix can land under another bug's key while this ticket stays open. The
     # linked keys are where that shows up, so search them too.
     for linked_key in jira_keys[:MAX_LINKED_KEYS]:
-        add(search_prs_for_key(linked_key, cache, use_gh, search_log=search_log), linked_key)
+        add(
+            search_prs_for_key(linked_key, cache, use_gh, repos=repos, search_log=search_log),
+            linked_key,
+        )
     return {
         "key": ticket.key,
         "summary": ticket.summary,

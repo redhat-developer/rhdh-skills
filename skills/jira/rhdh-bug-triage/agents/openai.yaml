@@ -1,3 +1,3 @@
 interface:
   display_name: "RHDH Bug Triage"
-  short_description: "Prove duplicate or released-fix closures; otherwise abstain"
+  short_description: "Draft evidence-led triage for every selected bug; never post"

@@ -1,4 +1,4 @@
-"""Recommendation-only reports; abstentions stay in the local structured audit."""
+"""Exact dry-run comment previews, with decisions separate from delivery."""
 
 from __future__ import annotations
 
@@ -14,16 +14,12 @@ from .policy import CLOSE_ACTIONS, Packet
 
 DRY_RUN_BANNER = (
     "**Dry run.** Nothing was posted, transitioned, linked, or written to Jira. "
-    "Closure recommendations require human approval."
+    "No bugs were closed and no PRs were created. Comments below are previews, not posting receipts."
 )
 
 
 def surfaced(packet: Packet) -> bool:
-    return (
-        packet.action in CLOSE_ACTIONS
-        and bool(packet.proposed_comment)
-        and packet.comment_plan.get("status") != "suppress"
-    )
+    return bool(packet.proposed_comment)
 
 
 def _delivery(packet: Packet) -> List[str]:
@@ -88,39 +84,42 @@ def render_report(
     selection: Dict[str, Dict[str, Any]],
     thresholds: Dict[str, float],
     corpus_has_closed: bool = True,
+    coverage: Optional[Dict[str, Any]] = None,
+    release_evidence: str = "",
 ) -> str:
-    recommendations = [p for p in packets if surfaced(p)]
-    abstained = sum(p.action == "abstain" for p in packets)
-    suppressed = sum(p.action in CLOSE_ACTIONS and not surfaced(p) for p in packets)
-    duplicates = sum(p.disposition == "duplicate" for p in recommendations)
-    fixed = len(recommendations) - duplicates
+    coverage = coverage or {}
+    drafts = sum(surfaced(p) for p in packets)
+    delivery = {
+        status: sum(p.comment_plan.get("status") == status for p in packets)
+        for status in ("propose", "review_required", "suppress")
+    }
     lines = [
-        f"# RHDH closure recommendations — {as_of.date().isoformat()}",
+        f"# RHDH bug triage — {as_of.date().isoformat()}",
         "",
         DRY_RUN_BANNER,
         "",
-        "**Everything needed to review the recommendations is in this file.** "
-        "Only high-confidence duplicate and already-fixed findings are surfaced; "
-        "other issues are left unchanged without a comment or reproduction request.",
+        "Each triaged issue appears below, including uncertainty. A draft is not permission to post. "
+        "Suppressed drafts are shown for inspection only; they must not be sent again.",
         "",
-        f"**Bottom line:** {duplicates} duplicate and {fixed} already-fixed recommendation(s); "
-        f"{abstained} issue(s) left unchanged; {suppressed} repeat/ineligible recommendation(s) suppressed.",
+        f"**Bottom line:** {len(packets)} triaged; {drafts} comment draft(s); "
+        f"{sum(p.action in CLOSE_ACTIONS for p in packets)} advisory closure recommendation(s).",
         "",
-        f"- Reviewed: {len(packets)} ({sample_size} aged; {control_count} Control tickets).",
+        f"- Delivery: {delivery['propose']} proposed; {delivery['review_required']} require history/proof review; {delivery['suppress']} suppressed.",
+        f"- Reviewed: {len(packets)} ({control_count} Control tickets). Scope: {coverage.get('scope', 'aged')}.",
         f"- Corpus: {corpus_size} tickets; release under review: {current_release}.",
-        "- No proposed comment or handoff file is produced for an abstention.",
+        f"- Product release evidence: {release_evidence or 'not supplied'}.",
+        f"- Selection: {coverage.get('selectedIssues', len(packets))} of {coverage.get('eligibleIssues', 'unknown')} eligible; {len(excluded)} excluded with reasons in sample.json.",
+        "- Corpus retrieval is bounded unless its source proves otherwise; including some closed tickets is not exhaustive coverage.",
         "",
-        "## Recommendations",
+        "## Exact comment previews",
         "",
     ]
-    if not recommendations:
+    if not packets:
         lines += [
-            "No new closure recommendation met the evidence and delivery gates. "
-            "Nothing needs approval; Jira remains unchanged. This is not proof that "
-            "the remaining issues are unique or unfixed.",
+            "No issues matched the eligibility rules. No issues were silently marked triaged.",
             "",
         ]
-    for packet in recommendations:
+    for packet in packets:
         ticket = tickets[packet.key]
         lines += [
             f"### {packet.key} — {packet.summary}",
@@ -129,22 +128,35 @@ def render_report(
             "",
             *_delivery(packet),
         ]
-        lines += [f"> {line}" if line else ">" for line in packet.proposed_comment.splitlines()]
+        if packet.proposed_comment:
+            lines += [f"> {line}" if line else ">" for line in packet.proposed_comment.splitlines()]
+        else:
+            lines += ["No comment draft: customer/completed/ineligible issue or unsafe inputs."]
         lines += [
             "",
-            "**Approval:** review the proof, then hand the exact approved recommendation "
-            "to `/rhdh-jira-update` under `/mutation-gate`; this run executes neither operation.",
+            "**Dry-run restriction:** do not post this preview. Any later approved handoff is comment-only; "
+            "transitions, closures, fixes, PRs, and backports are out of scope.",
             "",
         ]
         if packet.notes:
             lines += [f"**Reviewer context:** {packet.notes}", ""]
+        if packet.gaps:
+            lines += ["**Limits:** " + "; ".join(packet.gaps), ""]
+        collected = coverage.get("collection", {}).get(packet.key, {})
+        if collected:
+            searches = collected.get("searches", [])
+            failures = sum(s.get("status") != "success" for s in searches)
+            lines += [
+                f"**Forge coverage:** {collected.get('searchMode', 'unknown')}; {len(searches)} queries, {failures} failed/invalid. Failed queries are not zero matches.",
+                "",
+            ]
         lines += ["---", ""]
     lines += [
         "## Method and limits",
         "",
         f"- Selection query: `{jql}`.",
         f"- Close thresholds: duplicate {thresholds['duplicate']:.2f}; already fixed {thresholds['fixed']:.2f}.",
-        "- Every recommendation needs cited claim-by-claim proof and two agreeing independent reviews. "
+        "- Closure advice needs cited claim-by-claim proof and two agreeing independent reviews. "
         "Similarity and a high score alone are insufficient.",
         "- Duplicate canonical selection uses actual creation timestamps, not key order or recency. "
         "Newer or undated canonical targets require separate human selection and are not proposed here.",
@@ -152,11 +164,11 @@ def render_report(
         "no newer than the release under review. Partial or unreleased fixes are not recommendations.",
         "- Confidence is a citation-strength policy score, not a calibrated probability or a guarantee. "
         "Reviewers must read the cited artifacts; code inspection is not a runtime reproduction.",
-        "- Customer-linked and completed issues cannot receive closure recommendations.",
+        "- Open status and lack of a fix search hit do not prove a bug still exists. Still-valid/obsolete claims need exact-release validation.",
+        "- Customer-linked and completed issues cannot receive automated comments.",
         "- Suppression is a no-op, not a reminder or a reason to notify anyone.",
-        "- Abstention reasons, internal evidence states, candidates, rejected proof, and suppressed drafts "
-        "are retained only in the local `packets.json` / `summary.csv` audit. "
-        "They are not requests for a human to investigate every issue.",
+        "- Missing data and disagreement are reported as uncertainty, not silently hidden. No generic reproduction pings or reminders.",
+        "- Assessments are agent judgments over cited snapshots. Structural checks and independent reviewers do not guarantee factual correctness or 100% accuracy.",
         f"- Generated {generated_at}; no external writes.",
     ]
     lines.append(
@@ -231,7 +243,7 @@ def render_manifest(
     policy_version: int,
 ) -> Dict[str, Any]:
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "dryRun": True,
         "generatedAt": generated_at,
         "asOf": as_of.date().isoformat(),
@@ -248,13 +260,14 @@ def render_manifest(
         "counts": {
             "packets": len(packets),
             "withEvidence": sum(bool(p.evidence) for p in packets),
+            "draftComments": sum(bool(p.proposed_comment) for p in packets),
             "closeProposals": sum(p.action in CLOSE_ACTIONS for p in packets),
             "surfacedRecommendations": sum(surfaced(p) for p in packets),
             "abstained": sum(p.action == "abstain" for p in packets),
             "customerLinked": sum(bool(p.customer_signals) for p in packets),
         },
         "writes": [],
-        "writePolicy": "read-only; only qualifying recommendations have proposed/ handoff files",
+        "writePolicy": "dry-run comment previews only; no Jira mutations, closures, PRs or backports",
     }
 
 

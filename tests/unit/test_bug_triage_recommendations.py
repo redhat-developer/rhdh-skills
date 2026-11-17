@@ -19,17 +19,39 @@ from bugtriage.duplicates import rank_candidates, score_candidate  # noqa: E402
 from bugtriage.evaluate import evaluate as score_run  # noqa: E402
 from bugtriage.forge import ForgeAdapterError, collect_for_ticket, search_prs_for_key  # noqa: E402
 from bugtriage.model import Comment, load_export, normalize_issue  # noqa: E402
-from bugtriage.policy import evaluate, parse_assessment, verify_packet  # noqa: E402
+from bugtriage.policy import evaluate as evaluate_finding  # noqa: E402
+from bugtriage.policy import parse_assessment, verify_packet  # noqa: E402
 from bugtriage.run import RunConfig, RunError, run  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures/bug_triage"
 NOW = datetime(2026, 11, 14, tzinfo=timezone.utc)
+CURRENT_RELEASE = "2.1.0"
+RELEASE_EVIDENCE = (
+    "https://docs.redhat.com/en/documentation/red_hat_developer_hub/2.1/html/release_notes/"
+)
+
+
+def evaluate(ticket, candidates, assessment):
+    return evaluate_finding(ticket, candidates, assessment, current_release=CURRENT_RELEASE)
+
+
+def assert_unclear_draft(packet):
+    assert packet.action == "comment_only"
+    assert packet.disposition == "unclear"
+    assert "Disposition: unclear" in packet.proposed_comment
+    assert "Recommended next step:" in packet.proposed_comment
+    assert packet.recommended_step
+    assert "close " not in packet.recommended_step.lower()
+    assert "\nProof:" not in packet.proposed_comment
+    assert "The reported failure is resolved by" not in packet.proposed_comment
+    assert "This issue duplicates" not in packet.proposed_comment
 
 
 def case(kind):
     key = "RHDHBUGS-1010" if kind == "duplicate" else "RHDHBUGS-1006"
     tickets = load_export(str(FIXTURES / "issues.json"))
     ticket = next(t for t in tickets if t.key == key)
+    assert ticket.customer_fields_complete is True
     document = json.loads((FIXTURES / "assessments" / f"{key}.json").read_text())
     return ticket, rank_candidates(ticket, tickets), document
 
@@ -43,25 +65,33 @@ def test_positive_controls_have_agreed_shape_and_ignore_legacy_mutation_receipts
     assert packet.action in {"propose_close_duplicate", "propose_close_fixed"}
     assert not packet.verification_errors
     assert packet.proposed_comment.startswith("Re: [" + ticket.key + "]")
-    assert "Recommendation:" in packet.proposed_comment
+    assert "Recommended next step:" in packet.proposed_comment
     assert "Proof:" in packet.proposed_comment
     assert "Confidence:" in packet.proposed_comment
     assert "Closing another" not in packet.proposed_comment
     assert "unrelated issue" not in packet.proposed_comment
 
 
-@pytest.mark.parametrize(
-    "disposition", ["still_valid", "no_longer_valid", "needs_repro", "unclear", ""]
-)
-def test_out_of_scope_findings_are_audit_only_even_with_high_confidence(disposition):
+@pytest.mark.parametrize("disposition", ["still_valid", "no_longer_valid", "unclear", ""])
+def test_validity_claims_without_current_release_validation_produce_unclear_drafts(disposition):
     ticket, candidates, document = case("already_fixed")
     document["disposition"] = disposition
     packet = evaluate(ticket, candidates, parse_assessment(document))
     attach_comment_plan(ticket, packet, parse_assessment(document), NOW, 14)
-    assert packet.action == "abstain"
-    assert packet.proposed_comment == packet.recommended_step == ""
-    assert packet.comment_plan["status"] == "suppress"
-    assert packet.gaps
+    assert_unclear_draft(packet)
+    assert packet.comment_plan["status"] == "propose"
+    if disposition in ("still_valid", "no_longer_valid", ""):
+        assert packet.gaps
+
+
+def test_legacy_needs_repro_without_evidence_is_unclear_not_a_human_reproduction_ping():
+    ticket, candidates, document = case("already_fixed")
+    document["disposition"] = "needs_repro"
+    document["evidence"] = []
+    packet = evaluate(ticket, candidates, parse_assessment(document))
+    assert_unclear_draft(packet)
+    assert "reproduce" not in packet.recommended_step.lower()
+    assert "ask " not in packet.recommended_step.lower()
 
 
 CLAIMS = [
@@ -83,12 +113,11 @@ CLAIMS = [
         {"summary": "Trust me", "refs": ["https://uncited.test/fix"]},
     ],
 )
-def test_each_missing_or_uncited_proof_claim_blocks_output(kind, claim, bad):
+def test_each_missing_or_uncited_proof_claim_downgrades_close_advice_to_unclear(kind, claim, bad):
     ticket, candidates, document = case(kind)
     document["proof"][claim] = bad
     packet = evaluate(ticket, candidates, parse_assessment(document))
-    assert packet.action == "abstain"
-    assert not packet.proposed_comment
+    assert_unclear_draft(packet)
     assert any("proof." + claim in gap for gap in packet.gaps)
 
 
@@ -100,8 +129,7 @@ def test_truthy_or_missing_fix_attestations_never_authorize_closure(field, value
     ticket, candidates, document = case("already_fixed")
     document["fix"][field] = value
     packet = evaluate(ticket, candidates, parse_assessment(document))
-    assert packet.action == "abstain"
-    assert not packet.proposed_comment
+    assert_unclear_draft(packet)
 
 
 @pytest.mark.parametrize(
@@ -120,7 +148,7 @@ def test_truthy_or_missing_fix_attestations_never_authorize_closure(field, value
 def test_release_and_named_artifact_must_match_verified_scope(field, value):
     ticket, candidates, document = case("already_fixed")
     document["fix"][field] = value
-    assert evaluate(ticket, candidates, parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, candidates, parse_assessment(document)))
 
 
 @pytest.mark.parametrize("kind", ["duplicate", "already_fixed"])
@@ -135,7 +163,7 @@ def test_release_and_named_artifact_must_match_verified_scope(field, value):
 def test_independent_review_cannot_be_invented_by_truthy_values(kind, review):
     ticket, candidates, document = case(kind)
     document["review"] = review
-    assert evaluate(ticket, candidates, parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, candidates, parse_assessment(document)))
 
 
 @pytest.mark.parametrize(
@@ -149,7 +177,7 @@ def test_outward_duplicate_link_never_overrides_unknown_or_newer_chronology(targ
     ]
     packet = evaluate(ticket, candidates, parse_assessment(document))
     assert packet.explicit_duplicate_link
-    assert packet.action == "abstain"
+    assert_unclear_draft(packet)
 
 
 @pytest.mark.parametrize(
@@ -165,19 +193,19 @@ def test_canonical_target_is_not_a_customer_or_another_duplicate(changes):
     candidates = [
         replace(c, **changes) if c.key == document["duplicateOf"] else c for c in candidates
     ]
-    assert evaluate(ticket, candidates, parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, candidates, parse_assessment(document)))
 
 
 def test_outward_link_does_not_replace_retrieving_the_canonical_report():
     ticket, _, document = case("duplicate")
-    assert evaluate(ticket, [], parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, [], parse_assessment(document)))
 
 
 @pytest.mark.parametrize("claim", ["sameFailure", "sameTrigger"])
 def test_similarity_claim_must_cite_both_reports(claim):
     ticket, candidates, document = case("duplicate")
     document["proof"][claim]["refs"] = [document["duplicateOf"]]
-    assert evaluate(ticket, candidates, parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, candidates, parse_assessment(document)))
 
 
 @pytest.mark.parametrize("kind", ["duplicate", "already_fixed"])
@@ -302,25 +330,35 @@ def test_search_does_not_confuse_numeric_prefixes_with_exact_issue_keys():
     assert search_prs_for_key("RHDHBUGS-12345", cache, False)
 
 
-def test_all_abstentions_leave_no_drafts_or_investigation_requests(tmp_path):
+def test_explicit_unclear_assessments_produce_drafts_without_human_investigation_requests(tmp_path):
     output = tmp_path / "run"
+    assessments = tmp_path / "assessments"
+    assessments.mkdir()
+    for ticket in load_export(str(FIXTURES / "issues.json")):
+        (assessments / f"{ticket.key}.json").write_text(
+            json.dumps({"key": ticket.key, "disposition": "unclear", "evidence": []})
+        )
     result = run(
         RunConfig(
             input_path=str(FIXTURES / "issues.json"),
             output_dir=str(output),
+            current_release=CURRENT_RELEASE,
+            release_evidence=RELEASE_EVIDENCE,
+            assessments_dir=str(assessments),
             size=5,
             as_of="2026-11-09",
         )
     )
-    assert all(
-        p.action == "abstain" and not p.proposed_comment and not p.recommended_step
-        for p in result.packets
-    )
-    assert not (output / "proposed").exists()
+    for packet in result.packets:
+        assert_unclear_draft(packet)
+        assert "ask " not in packet.recommended_step.lower()
+        assert "reproduce" not in packet.recommended_step.lower()
+    assert len(list((output / "proposed").glob("*.md"))) == 5
     report = (output / "report.md").read_text()
-    assert not any("### " + p.key in report for p in result.packets)
-    assert result.manifest["counts"]["abstained"] == 5
-    assert result.manifest["counts"]["surfacedRecommendations"] == 0
+    assert all("### " + p.key in report for p in result.packets)
+    assert result.manifest["counts"]["abstained"] == 0
+    assert result.manifest["counts"]["surfacedRecommendations"] == 5
+    assert result.manifest["counts"]["closeProposals"] == 0
     assert result.manifest["writes"] == []
 
 
@@ -329,16 +367,24 @@ def test_occupied_output_is_refused_without_overwriting_user_or_old_proposals(tm
     output.mkdir()
     sentinel = output / "my-review.md"
     sentinel.write_text("Do not change this")
-    with pytest.raises(RunError, match="not empty"):
-        run(RunConfig(input_path=str(FIXTURES / "issues.json"), output_dir=str(output)))
+    with pytest.raises(RunError, match="already exists"):
+        run(
+            RunConfig(
+                input_path=str(FIXTURES / "issues.json"),
+                output_dir=str(output),
+                current_release=CURRENT_RELEASE,
+                release_evidence=RELEASE_EVIDENCE,
+            )
+        )
     assert sentinel.read_text() == "Do not change this"
     assert list(output.iterdir()) == [sentinel]
 
 
-def test_strict_evaluation_allows_honest_abstention_and_does_not_count_it_as_a_prediction(tmp_path):
+def test_strict_evaluation_allows_honest_uncertainty_without_counting_a_fixed_prediction(tmp_path):
     ticket, candidates, document = case("already_fixed")
     document["fix"]["merged"] = False
     packet = evaluate(ticket, candidates, parse_assessment(document))
+    assert_unclear_draft(packet)
     truth = {packet.key: {"disposition": "already_fixed"}}
     result = score_run([packet], truth)
     assert result.abstained == 1
@@ -368,9 +414,13 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
     sample.write_text(
         json.dumps(
             {
+                "schemaVersion": 3,
+                "currentRelease": CURRENT_RELEASE,
+                "scope": "aged",
+                "eligibleCount": 7,
                 "tickets": [
                     {"key": key, "kind": "control"} for key in ["RHDHBUGS-1006", "RHDHBUGS-1010"]
-                ]
+                ],
             }
         )
     )
@@ -379,6 +429,8 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
         RunConfig(
             input_path=str(FIXTURES / "issues.json"),
             output_dir=str(output),
+            current_release=CURRENT_RELEASE,
+            release_evidence=RELEASE_EVIDENCE,
             sample_path=str(sample),
             assessments_dir=str(FIXTURES / "assessments"),
             as_of="2026-11-09",
@@ -417,12 +469,14 @@ def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
         ],
     }
     export_path = tmp_path / "input.json"
-    export_path.write_text(json.dumps({"issues": [issue]}))
+    export_path.write_text(json.dumps({"fieldNames": export["fieldNames"], "issues": [issue]}))
     output = tmp_path / "run"
     result = run(
         RunConfig(
             input_path=str(export_path),
             output_dir=str(output),
+            current_release=CURRENT_RELEASE,
+            release_evidence=RELEASE_EVIDENCE,
             size=1,
             assessments_dir=str(FIXTURES / "assessments"),
             as_of="2026-11-14",
@@ -430,8 +484,10 @@ def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
     )
     assert result.packets[0].comment_plan["status"] == "suppress"
     assert not (output / "proposed").exists()
-    assert "### " + ticket.key not in (output / "report.md").read_text()
-    assert result.manifest["counts"]["surfacedRecommendations"] == 0
+    report = (output / "report.md").read_text()
+    assert "### " + ticket.key in report
+    assert "`suppress`" in report
+    assert result.manifest["counts"]["surfacedRecommendations"] == 1
 
 
 @pytest.mark.parametrize("kind", ["duplicate", "already_fixed"])
@@ -460,7 +516,7 @@ def test_high_lexical_duplicate_still_requires_complete_semantic_proof_without_a
         evaluate(ticket, candidates, parse_assessment(document)).action == "propose_close_duplicate"
     )
     document.pop("proof")
-    assert evaluate(ticket, candidates, parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, candidates, parse_assessment(document)))
 
 
 @pytest.mark.parametrize(
@@ -474,7 +530,7 @@ def test_high_lexical_duplicate_still_requires_complete_semantic_proof_without_a
 def test_fixed_proof_claims_need_the_correct_artifact_types(claim, ref):
     ticket, candidates, document = case("already_fixed")
     document["proof"][claim]["refs"] = [ref]
-    assert evaluate(ticket, candidates, parse_assessment(document)).action == "abstain"
+    assert_unclear_draft(evaluate(ticket, candidates, parse_assessment(document)))
 
 
 def test_replanning_does_not_duplicate_the_reference_footer():
@@ -490,6 +546,8 @@ def test_replanning_does_not_duplicate_the_reference_footer():
 
 def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_path):
     _, _, template = case("duplicate")
+    field_names = json.loads((FIXTURES / "issues.json").read_text())["fieldNames"]
+    customer_fields = {field_id: None for field_id, name in field_names.items() if name != "Team"}
     issues = [
         dict(
             key=key,
@@ -497,6 +555,11 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
             description="Selecting a catalog filter drops the next keystroke.",
             created=created,
             status="Backlog",
+            versions=["1.9.0"],
+            labels=[],
+            issuelinks=[],
+            fieldNames=field_names,
+            **customer_fields,
             comments=[],
             commentsComplete=True,
         )
@@ -510,6 +573,9 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
     export.write_text(json.dumps(issues))
     assessments = tmp_path / "assessments"
     assessments.mkdir()
+    (assessments / "RHDHBUGS-100.json").write_text(
+        json.dumps({"key": "RHDHBUGS-100", "disposition": "unclear", "evidence": []})
+    )
     for source, target in [("RHDHBUGS-300", "RHDHBUGS-200"), ("RHDHBUGS-200", "RHDHBUGS-100")]:
         encoded = (
             json.dumps(template).replace("RHDHBUGS-1010", source).replace("RHDHBUGS-1009", target)
@@ -520,6 +586,8 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
         RunConfig(
             input_path=str(export),
             output_dir=str(output),
+            current_release=CURRENT_RELEASE,
+            release_evidence=RELEASE_EVIDENCE,
             assessments_dir=str(assessments),
             size=3,
             as_of="2026-11-14",
@@ -527,6 +595,6 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
     )
     packets = {p.key: p for p in result.packets}
     assert packets["RHDHBUGS-200"].action == "propose_close_duplicate"
-    assert packets["RHDHBUGS-300"].action == "abstain"
-    assert not (output / "proposed/RHDHBUGS-300.md").exists()
+    assert_unclear_draft(packets["RHDHBUGS-300"])
+    assert (output / "proposed/RHDHBUGS-300.md").exists()
     assert (output / "proposed/RHDHBUGS-200.md").exists()

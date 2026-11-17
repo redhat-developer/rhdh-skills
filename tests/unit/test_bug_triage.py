@@ -64,6 +64,10 @@ from bugtriage.run import (  # noqa: E402
 from bugtriage.selection import Control, SelectionConfig, select_sample  # noqa: E402
 
 AS_OF = datetime(2026, 11, 9, tzinfo=timezone.utc)
+CURRENT_RELEASE = "2.1.0"
+RELEASE_EVIDENCE = (
+    "https://docs.redhat.com/en/documentation/red_hat_developer_hub/2.1/html/release_notes/"
+)
 
 
 def fixture_tickets():
@@ -74,9 +78,34 @@ def by_key():
     return {ticket.key: ticket for ticket in fixture_tickets()}
 
 
+def assessment_directory(tmp_path):
+    directory = tmp_path / "complete-assessments"
+    directory.mkdir()
+    for ticket in fixture_tickets():
+        source = FIXTURES / "assessments" / f"{ticket.key}.json"
+        document = (
+            json.loads(source.read_text())
+            if source.exists()
+            else {"key": ticket.key, "disposition": "unclear", "evidence": []}
+        )
+        (directory / f"{ticket.key}.json").write_text(json.dumps(document))
+    return str(directory)
+
+
+def assert_unclear_draft(packet):
+    assert packet.disposition == "unclear"
+    assert packet.action == "comment_only"
+    assert "Disposition: unclear" in packet.proposed_comment
+    assert "Recommended next step:" in packet.proposed_comment
+    assert packet.recommended_step
+    assert "close " not in packet.recommended_step.lower()
+    assert "\nProof:" not in packet.proposed_comment
+
+
 def sample_manifest(tmp_path: Path, size: int = 5) -> Path:
     tickets = fixture_tickets()
     config = SelectionConfig(
+        current_release=CURRENT_RELEASE,
         size=size,
         aged_days=90,
         seed=18094,
@@ -166,7 +195,7 @@ class TestSelection:
         tickets = fixture_tickets()
         selected, excluded, eligible = select_sample(
             tickets,
-            SelectionConfig(size=20, aged_days=90, seed=18094),
+            SelectionConfig(current_release=CURRENT_RELEASE, size=20, aged_days=90, seed=18094),
             AS_OF,
         )
         keys = {item.ticket.key for item in selected}
@@ -183,10 +212,14 @@ class TestSelection:
     def test_stratified_selection_is_stable(self):
         tickets = fixture_tickets()
         first, _, _ = select_sample(
-            tickets, SelectionConfig(size=5, aged_days=90, seed=18094), AS_OF
+            tickets,
+            SelectionConfig(current_release=CURRENT_RELEASE, size=5, aged_days=90, seed=18094),
+            AS_OF,
         )
         second, _, _ = select_sample(
-            tickets, SelectionConfig(size=5, aged_days=90, seed=18094), AS_OF
+            tickets,
+            SelectionConfig(current_release=CURRENT_RELEASE, size=5, aged_days=90, seed=18094),
+            AS_OF,
         )
         assert [item.ticket.key for item in first] == [item.ticket.key for item in second]
 
@@ -194,6 +227,7 @@ class TestSelection:
         selected, _, _ = select_sample(
             fixture_tickets(),
             SelectionConfig(
+                current_release=CURRENT_RELEASE,
                 size=3,
                 aged_days=90,
                 seed=18094,
@@ -208,10 +242,11 @@ class TestSelection:
         assert {item.ticket.key for item in controls} == {"RHDHBUGS-1009", "RHDHBUGS-1010"}
         assert {item.control_label for item in controls} == {"still-valid", "duplicate"}
 
-    def test_done_control_is_selected_without_an_exclusion_entry(self):
+    def test_done_control_is_refused_with_an_explicit_exclusion(self):
         selected, excluded, _ = select_sample(
             fixture_tickets(),
             SelectionConfig(
+                current_release=CURRENT_RELEASE,
                 size=1,
                 aged_days=90,
                 seed=18094,
@@ -220,13 +255,16 @@ class TestSelection:
             AS_OF,
         )
         controls = [item for item in selected if item.kind == "control"]
-        assert [item.ticket.key for item in controls] == ["RHDHBUGS-1012"]
-        assert all(item["key"] != "RHDHBUGS-1012" for item in excluded)
+        assert controls == []
+        assert next(
+            item["reason"] for item in excluded if item["key"] == "RHDHBUGS-1012"
+        ).startswith("control is done")
 
     def test_customer_control_is_refused(self):
         selected, excluded, _ = select_sample(
             fixture_tickets(),
             SelectionConfig(
+                current_release=CURRENT_RELEASE,
                 size=1,
                 aged_days=90,
                 seed=18094,
@@ -307,49 +345,75 @@ class TestDuplicates:
 
 
 class TestPolicy:
-    def test_missing_assessment_abstains_without_requesting_repro(self):
-        packet = evaluate_packet(by_key()["RHDHBUGS-1007"], [], None)
-        assert packet.disposition == "unclear"
-        assert packet.action == "abstain"
-        assert packet.proposed_comment == ""
-        assert packet.recommended_step == ""
+    def test_missing_assessment_is_unclear_without_requesting_human_repro(self):
+        packet = evaluate_packet(by_key()["RHDHBUGS-1007"], [], None, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
+        assert "reproduce" not in packet.recommended_step.lower()
 
-    def test_still_valid_is_internal_evidence_not_a_recommendation(self):
+    def test_still_valid_has_a_current_release_validation_draft(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1001.json"))
-        packet = evaluate_packet(by_key()["RHDHBUGS-1001"], [], assessment)
+        packet = evaluate_packet(by_key()["RHDHBUGS-1001"], [], assessment, CURRENT_RELEASE)
         assert packet.disposition == "still_valid"
-        assert packet.action == "abstain"
-        assert packet.proposed_comment == ""
-        assert packet.recommended_step == ""
+        assert packet.action == "comment_only"
+        assert "Disposition: still_valid" in packet.proposed_comment
+        assert "runtime on release 2.1.0" in packet.proposed_comment
+        assert packet.recommended_step
+        assert "close " not in packet.recommended_step.lower()
 
-    def test_duplicate_below_lexical_floor_abstains(self):
+    def test_duplicate_hypothesis_without_semantic_proof_is_an_unclear_draft(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1002.json"))
+        assert assessment.proof == {}
         candidates = rank_candidates(by_key()["RHDHBUGS-1002"], fixture_tickets(), limit=3)
-        packet = evaluate_packet(by_key()["RHDHBUGS-1002"], candidates, assessment)
-        assert packet.disposition == "duplicate"
-        assert packet.action == "abstain"
-        assert packet.proposed_comment == ""
+        packet = evaluate_packet(by_key()["RHDHBUGS-1002"], candidates, assessment, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
+        assert any("proof.sameFailure" in gap for gap in packet.gaps)
 
-    def test_explicit_duplicate_link_clears_close_gate(self):
+    def test_low_lexical_similarity_with_complete_semantic_proof_can_qualify(self):
+        tickets = by_key()
+        ticket, canonical = tickets["RHDHBUGS-1010"], tickets["RHDHBUGS-1009"]
+        ticket.summary = "The next typed letter disappears after narrowing catalog results"
+        ticket.description = (
+            "Keyboard entry is discarded because applying a facet blurs the search field."
+        )
+        ticket.links = []
+        candidate = score_candidate(ticket, canonical)
+        assert candidate.score < DUPLICATE_CLOSE_THRESHOLD
+        assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
+        packet = evaluate_packet(ticket, [candidate], assessment, CURRENT_RELEASE)
+        assert packet.explicit_duplicate_link is False
+        assert packet.disposition == "duplicate"
+        assert packet.action == "propose_close_duplicate"
+        assert packet.confidence >= DUPLICATE_CLOSE_THRESHOLD
+        assert packet.target == canonical.key
+        assert packet.verification_errors == []
+
+    def test_outward_duplicate_link_with_complete_proof_permits_close_advice(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
         candidates = rank_candidates(by_key()["RHDHBUGS-1010"], fixture_tickets(), limit=3)
-        packet = evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment)
+        packet = evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment, CURRENT_RELEASE)
         assert packet.explicit_duplicate_link is True
         assert packet.action == "propose_close_duplicate"
         assert packet.target == "RHDHBUGS-1009"
         assert packet.verification_errors == []
+        assessment.proof = {}
+        unproven = evaluate_packet(
+            by_key()["RHDHBUGS-1010"], candidates, assessment, CURRENT_RELEASE
+        )
+        assert unproven.explicit_duplicate_link is True
+        assert_unclear_draft(unproven)
+        assert any("proof.sameFailure" in gap for gap in unproven.gaps)
 
     def test_inward_duplicate_link_does_not_clear_close_gate(self):
         # "is duplicated by" means the linked ticket is the duplicate; the
-        # queried ticket is canonical and must stay open. The lexical score for
-        # RHDHBUGS-1002 is below the floor, so the inward link must not rescue it.
+        # queried ticket is canonical and must stay open. An inward link cannot
+        # supply the missing semantic proof or authorize reverse closure.
         ticket = by_key()["RHDHBUGS-1002"]
         ticket.links = [Link(type="Duplicate", key="RHDHBUGS-1001", direction="inward")]
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1002.json"))
         candidates = rank_candidates(ticket, fixture_tickets(), limit=3)
-        packet = evaluate_packet(ticket, candidates, assessment)
+        packet = evaluate_packet(ticket, candidates, assessment, CURRENT_RELEASE)
         assert packet.explicit_duplicate_link is False
-        assert packet.action == "abstain"
+        assert_unclear_draft(packet)
 
     def test_customer_ticket_never_gets_a_close_action(self):
         ticket = by_key()["RHDHBUGS-1003"]
@@ -369,21 +433,22 @@ class TestPolicy:
             independent_passes=2,
             agreement=True,
         )
-        packet = evaluate_packet(ticket, [], assessment)
+        packet = evaluate_packet(ticket, [], assessment, CURRENT_RELEASE)
         assert packet.customer_signals
-        assert not packet.action.startswith("propose_close")
+        assert packet.action == "abstain"
+        assert packet.proposed_comment == ""
         assert any("customer-linked" in gap for gap in packet.gaps)
 
     def test_one_review_pass_blocks_close(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
         assessment.independent_passes = 1
         candidates = rank_candidates(by_key()["RHDHBUGS-1010"], fixture_tickets(), limit=3)
-        packet = evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment)
-        assert packet.action == "abstain"
+        packet = evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
 
     def test_released_fix_with_pr_closes(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
-        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
+        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, CURRENT_RELEASE)
         assert packet.disposition == "already_fixed"
         assert packet.action == "propose_close_fixed"
         assert "2.1.0" in packet.proposed_comment
@@ -391,17 +456,16 @@ class TestPolicy:
     def test_fix_release_ahead_of_review_blocks_close(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, current_release="2.0.0")
-        assert packet.action == "abstain"
+        assert_unclear_draft(packet)
         assert any("newer than the release under review" in gap for gap in packet.gaps)
 
-    def test_unclear_assessment_is_silent(self):
+    def test_unclear_assessment_has_a_bounded_draft(self):
         ticket = by_key()["RHDHBUGS-1007"]
         assessment = Assessment(key=ticket.key, disposition="unclear", evidence=[])
-        packet = evaluate_packet(ticket, [], assessment)
-        assert packet.action == "abstain"
-        assert packet.proposed_comment == ""
+        packet = evaluate_packet(ticket, [], assessment, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
 
-    def test_still_valid_without_direct_evidence_is_silent(self):
+    def test_still_valid_without_direct_validation_is_unclear(self):
         ticket = by_key()["RHDHBUGS-1001"]
         assessment = Assessment(
             key=ticket.key,
@@ -415,23 +479,21 @@ class TestPolicy:
                 )
             ],
         )
-        packet = evaluate_packet(ticket, [], assessment)
-        assert packet.action == "abstain"
-        assert packet.proposed_comment == ""
+        packet = evaluate_packet(ticket, [], assessment, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
 
     def test_done_ticket_never_gets_a_close_action(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
-        packet = evaluate_packet(by_key()["RHDHBUGS-1012"], [], assessment)
-        assert packet.disposition == "already_fixed"
-        assert packet.action == "abstain"
-        assert any("does not match" in gap for gap in packet.gaps)
-
-    def test_unreleased_fix_abstains_without_a_draft(self):
-        assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
-        assessment.fix_released = False
-        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
+        packet = evaluate_packet(by_key()["RHDHBUGS-1012"], [], assessment, CURRENT_RELEASE)
         assert packet.action == "abstain"
         assert packet.proposed_comment == ""
+        assert any("Done" in gap or "completed" in gap for gap in packet.gaps)
+
+    def test_unreleased_fix_has_an_unclear_draft_without_close_advice(self):
+        assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
+        assessment.fix_released = False
+        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
 
     def test_invalid_evidence_is_dropped_and_fails_closed(self):
         document = json.loads(
@@ -442,8 +504,8 @@ class TestPolicy:
 
         assessment = parse_assessment(document)
         assert assessment.invalid_evidence
-        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
-        assert packet.action != "propose_close_fixed"
+        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, CURRENT_RELEASE)
+        assert_unclear_draft(packet)
         assert any("invalid evidence" in gap for gap in packet.gaps)
 
     def test_verifier_rejects_close_without_direct_evidence(self):
@@ -460,6 +522,7 @@ class TestPolicy:
                 Evidence(type="jira", ref="RHDHBUGS-2", why="support", strength="supporting")
             ],
             duplicate_candidates=[],
+            current_release=CURRENT_RELEASE,
             independent_passes=2,
             agreement=True,
         )
@@ -471,7 +534,7 @@ class TestReport:
     def _packet(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
         candidates = rank_candidates(by_key()["RHDHBUGS-1010"], fixture_tickets(), limit=3)
-        return evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment)
+        return evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment, CURRENT_RELEASE)
 
     def test_packet_marks_dry_run_and_never_posts(self):
         rendered = render_packet(self._packet(), by_key()["RHDHBUGS-1010"])
@@ -479,7 +542,7 @@ class TestReport:
         assert rendered.startswith(self._packet().proposed_comment)
         assert "## Review details" in rendered
         assert "Closing as" not in rendered
-        assert "Recommendation:" in rendered
+        assert "Recommended next step:" in rendered
         assert "Proof:" in rendered
         assert "https://redhat.atlassian.net/browse/RHDHBUGS-1009" in rendered
         assert "propose_close_duplicate" in rendered
@@ -488,7 +551,7 @@ class TestReport:
 
     def test_fixed_comment_links_the_pr_and_release(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
-        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment)
+        packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, CURRENT_RELEASE)
         rendered = render_packet(packet, by_key()["RHDHBUGS-1006"])
         assert "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)" in rendered
         assert "https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0" in rendered
@@ -559,8 +622,9 @@ class TestRun:
                 input_path=str(FIXTURES / "issues.json"),
                 output_dir=str(out),
                 sample_path=str(sample),
-                assessments_dir=str(FIXTURES / "assessments"),
+                assessments_dir=assessment_directory(tmp_path),
                 current_release="2.1.0",
+                release_evidence=RELEASE_EVIDENCE,
                 as_of="2026-11-09",
             )
         )
@@ -569,7 +633,7 @@ class TestRun:
         assert result.manifest["commentPolicy"]["cooldownDays"] == 14
         for name in ("report.md", "packets.json", "summary.csv", "manifest.json"):
             assert (out / name).is_file()
-        assert not (out / "proposed" / "RHDHBUGS-1001.md").exists()
+        assert (out / "proposed" / "RHDHBUGS-1001.md").exists()
         proposal = (out / "proposed" / "RHDHBUGS-1006.md").read_text(encoding="utf-8")
         assert proposal.startswith(
             next(p.proposed_comment for p in result.packets if p.key == "RHDHBUGS-1006")
@@ -588,13 +652,26 @@ class TestRun:
 
     def test_missing_sample_key_fails_closed(self, tmp_path):
         sample = tmp_path / "sample.json"
-        sample.write_text(json.dumps({"tickets": [{"key": "RHDHBUGS-9999"}]}), encoding="utf-8")
+        sample.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 3,
+                    "currentRelease": CURRENT_RELEASE,
+                    "scope": "aged",
+                    "tickets": [{"key": "RHDHBUGS-9999", "kind": "aged"}],
+                }
+            ),
+            encoding="utf-8",
+        )
         with pytest.raises(RunError, match="missing from the export"):
             run(
                 RunConfig(
                     input_path=str(FIXTURES / "issues.json"),
                     output_dir=str(tmp_path / "run"),
                     sample_path=str(sample),
+                    current_release=CURRENT_RELEASE,
+                    release_evidence=RELEASE_EVIDENCE,
+                    assessments_dir=assessment_directory(tmp_path),
                 )
             )
 
@@ -610,6 +687,8 @@ class TestRun:
                     output_dir=str(tmp_path / "run"),
                     sample_path=str(sample),
                     assessments_dir=str(assessments),
+                    current_release=CURRENT_RELEASE,
+                    release_evidence=RELEASE_EVIDENCE,
                     as_of="2026-11-09",
                 )
             )
@@ -624,7 +703,9 @@ class TestEvaluate:
                 input_path=str(FIXTURES / "issues.json"),
                 output_dir=str(out),
                 sample_path=str(sample),
-                assessments_dir=str(FIXTURES / "assessments"),
+                assessments_dir=assessment_directory(tmp_path),
+                current_release=CURRENT_RELEASE,
+                release_evidence=RELEASE_EVIDENCE,
                 as_of="2026-11-09",
             )
         )
@@ -641,19 +722,22 @@ class TestEvaluate:
                 recommended_step=item["recommendedStep"],
                 evidence=[],
                 duplicate_candidates=[],
+                current_release=CURRENT_RELEASE,
                 target=item.get("target", ""),
             )
             for item in packets["packets"]
         ]
         result = evaluate(observed, load_truth(str(FIXTURES / "truth.json")))
         assert result.false_closes == []
+        assert result.false_conclusions == []
+        assert result.strict_passed
         assert result.precision["duplicate"] == 1.0
         assert result.precision["already_fixed"] == 1.0
         assert result.coverage == 1.0
         assert result.abstained == 5
         assert result.decision_ready == 2
 
-    def test_unsupported_disposition_is_not_rendered_as_zero_percent(self):
+    def test_unexercised_close_dispositions_are_not_rendered_as_zero_percent(self):
         packet = Packet(
             key="RHDHBUGS-1001",
             summary="still valid",
@@ -661,10 +745,11 @@ class TestEvaluate:
             disposition="still_valid",
             confidence=0.8,
             confidence_basis=[],
-            action="keep_open",
+            action="comment_only",
             recommended_step="keep open",
             evidence=[],
             duplicate_candidates=[],
+            current_release=CURRENT_RELEASE,
             target="",
         )
         result = evaluate([packet], {"RHDHBUGS-1001": {"disposition": "still_valid"}})
@@ -684,6 +769,7 @@ class TestEvaluate:
             recommended_step="close",
             evidence=[],
             duplicate_candidates=[],
+            current_release=CURRENT_RELEASE,
             target="RHDHBUGS-1002",
         )
         result = evaluate([packet], {"RHDHBUGS-1001": {"disposition": "still_valid"}})
@@ -779,29 +865,19 @@ class TestAdapters:
 
 
 class TestDryRunInvariant:
-    def test_no_write_verbs_in_scripts(self):
-        forbidden = [
-            '["jira", "workitem", "edit"',
-            '"workitem", "edit"',
-            '"workitem", "create"',
-            '"workitem", "comment"',
-            '"workitem", "transition"',
-            '"gh", "pr", "merge"',
-            '"gh", "pr", "comment"',
-            '"gh", "pr", "create"',
-        ]
-        for path in (SKILL_ROOT / "scripts").rglob("*.py"):
-            text = path.read_text(encoding="utf-8")
-            for value in forbidden:
-                assert value not in text, f"{path} contains a write verb: {value}"
-
     def test_cli_has_no_apply_or_post_command(self):
         parser = cli.build_parser()
         help_text = parser.format_help()
         assert "apply" not in help_text.lower()
         assert "post" not in help_text.lower()
 
-    def test_run_manifest_records_zero_writes(self, tmp_path):
+    def test_run_manifest_records_zero_writes_without_external_commands(
+        self, tmp_path, monkeypatch
+    ):
+        def reject_external_command(*args, **kwargs):
+            pytest.fail(f"offline triage executed an external command: {args!r}")
+
+        monkeypatch.setattr(subprocess, "run", reject_external_command)
         sample = sample_manifest(tmp_path)
         out = tmp_path / "run"
         result = run(
@@ -809,7 +885,9 @@ class TestDryRunInvariant:
                 input_path=str(FIXTURES / "issues.json"),
                 output_dir=str(out),
                 sample_path=str(sample),
-                assessments_dir=str(FIXTURES / "assessments"),
+                assessments_dir=assessment_directory(tmp_path),
+                current_release=CURRENT_RELEASE,
+                release_evidence=RELEASE_EVIDENCE,
                 as_of="2026-11-09",
             )
         )
@@ -829,4 +907,3 @@ class TestCatalogMembership:
         assert entry["invocation"] == "model"
         assert "rhdh-jira-api" in entry["requiresSkills"]
         assert (SKILL_ROOT / "agents" / "openai.yaml").is_file()
-        assert (SKILL_ROOT / "TESTING.md").is_file()

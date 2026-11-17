@@ -6,13 +6,17 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, urlsplit
 
 from .model import Ticket, parse_datetime
 from .policy import (
     CLOSE_ACTIONS,
     EVIDENCE_TYPES,
+    PROOF_FIELDS,
     Assessment,
     Packet,
+    input_errors,
+    next_step_kind,
     recommendation_comment,
     valid_ref,
     verify_packet,
@@ -21,6 +25,56 @@ from .policy import (
 DEFAULT_COOLDOWN_DAYS = 14
 MARKER_PREFIX = "rhdh-bug-triage:v1:"
 MARKER_RE = re.compile(re.escape(MARKER_PREFIX) + r"([a-f0-9]{64})\b")
+
+
+def _history_review(ticket: Ticket, assessment: Assessment | None) -> dict | None:
+    """Accept an explicit source-linked review of exactly the fetched comments."""
+    review = assessment.history_review if assessment and assessment.key == ticket.key else {}
+    ids = [comment.id for comment in ticket.comments]
+    checked = review.get("checkedCommentIds")
+    refs = review.get("refs")
+    if (
+        review.get("complete") is not True
+        or not ids
+        or any(not comment_id for comment_id in ids)
+        or len(set(ids)) != len(ids)
+        or not isinstance(checked, list)
+        or any(not isinstance(comment_id, str) for comment_id in checked)
+        or len(checked) != len(ids)
+        or set(checked) != set(ids)
+        or type(review.get("equivalentAdvice")) is not bool
+        or type(review.get("pendingAction")) is not bool
+        or not isinstance(review.get("summary"), str)
+        or not review["summary"].strip()
+        or not isinstance(refs, list)
+        or not refs
+    ):
+        return None
+    cited_ids = set()
+    for ref in refs:
+        if not isinstance(ref, str) or not valid_ref(ref) or not ref.startswith("https://"):
+            return None
+        url = urlsplit(ref)
+        if url.netloc != "redhat.atlassian.net":
+            return None
+        if url.path == "/browse/" + ticket.key:
+            focused = parse_qs(url.query).get("focusedCommentId", [])
+            comment_id = (
+                focused[0]
+                if len(focused) == 1
+                else url.fragment.removeprefix("comment-")
+                if not focused and url.fragment.startswith("comment-")
+                else ""
+            )
+        else:
+            match = re.fullmatch(
+                r"/rest/api/[23]/issue/" + re.escape(ticket.key) + r"/comment/([^/]+)", url.path
+            )
+            comment_id = match[1] if match else ""
+        if comment_id not in ids:
+            return None
+        cited_ids.add(comment_id)
+    return review if cited_ids == set(ids) else None
 
 
 def plan_comment(
@@ -38,13 +92,29 @@ def plan_comment(
     """
     if cooldown_days < 0:
         raise ValueError("comment cooldown must be nonnegative")
+    # Identity is the advice, not its wording or a growing bibliography. Claim
+    # roles are structural semantics; target, fix and validation carry the
+    # concrete outcome. Rephrasing a summary cannot clear pending work.
     identity = {
         "key": packet.key,
         "release": packet.current_release,
         "disposition": packet.disposition,
-        "action": packet.action,
         "target": packet.target,
-        "evidence": sorted({item.ref for item in packet.evidence}),
+        "fix": {
+            name: packet.fix.get(name, "") for name in ("pr", "commit", "release", "reviewRelease")
+        },
+        "validation": {
+            name: packet.validation.get(name, "") for name in ("release", "method", "result")
+        },
+        "proof": sorted(
+            name
+            for name in PROOF_FIELDS.get(packet.disposition, ())
+            if isinstance(packet.proof.get(name), dict)
+            and isinstance(packet.proof[name].get("summary"), str)
+            and packet.proof[name]["summary"].strip()
+            and packet.proof[name].get("refs")
+        ),
+        "nextStep": next_step_kind(packet),
     }
     fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     marker = MARKER_PREFIX + fingerprint
@@ -58,14 +128,25 @@ def plan_comment(
             **details,
         }
 
-    if packet.action not in CLOSE_ACTIONS:
-        return decision(
-            "suppress", "Abstained: no qualifying duplicate or already-fixed recommendation."
-        )
+    # Exact repeat suppression does not require a trustworthy timestamp, an ID,
+    # or complete history: seeing the marker is enough to avoid another post.
+    for comment in ticket.comments:
+        if fingerprint in MARKER_RE.findall(comment.body):
+            return decision(
+                "suppress", "The same recommendation is already on Jira.", priorCommentId=comment.id
+            )
+    if packet.action not in CLOSE_ACTIONS | {"comment_only"}:
+        return decision("suppress", "No triage comment was drafted.")
     if verify_packet(packet, ticket):
-        return decision("suppress", "Closure proof failed re-verification; no comment proposed.")
+        return decision("suppress", "Finding failed re-verification; the draft is not eligible.")
     if ticket.customer_signals or ticket.is_done:
         return decision("suppress", "Customer-linked or completed issue; no comment proposed.")
+    # A private validity finding can remain supported while customer context is
+    # incomplete. Delivery still requires the full mapped-field read coverage.
+    if input_errors(ticket, require_customer_coverage=True):
+        return decision(
+            "review_required", "Issue status, description or customer-field coverage is incomplete."
+        )
     if not ticket.comments_complete:
         return decision(
             "review_required", "Comment history is missing or truncated; fetch it in full."
@@ -76,7 +157,7 @@ def plan_comment(
         return decision(
             "review_required", "Draft does not match the verified recommendation and proof."
         )
-    if re.search(r"\bclosing as\b", body, re.I):
+    if re.search(r"\b(?:closing|will close)\b", body, re.I):
         return decision("review_required", "Comment claims a closure instead of recommending one.")
     citations = re.findall(r"\[[^\]]+\]\((https?://[^\s)]+)\)", body)
     allowed = {item.ref for item in packet.evidence if item.ref.startswith(("http://", "https://"))}
@@ -86,9 +167,7 @@ def plan_comment(
         if re.fullmatch(r"[A-Z][A-Z0-9_]+-\d+", ref)
     )
     # A target citation is useful only after the disposition policy selected it.
-    if not citations or any(
-        url.split("#", 1)[0] not in {ref.split("#", 1)[0] for ref in allowed} for url in citations
-    ):
+    if not citations or any(url not in allowed for url in citations):
         return decision(
             "review_required", "Comment needs linked evidence from the packet; check its citations."
         )
@@ -97,6 +176,13 @@ def plan_comment(
         return decision("review_required", "Format the evidence URLs as Markdown links.")
     if re.search(r"\b(?:RHDHBUGS|RHIDP|RHDHPLAN|RHDHSUPP|ACCOUNT)-\d+\b", unlinked):
         return decision("review_required", "Link the Jira keys in the proposed comment.")
+    reviewed = _history_review(ticket, assessment)
+    if reviewed and (reviewed["equivalentAdvice"] or reviewed["pendingAction"]):
+        return decision(
+            "suppress",
+            "The cited discussion review found equivalent advice or a pending action.",
+            historyReview=reviewed,
+        )
     prior = []
     for comment in ticket.comments:
         if "rhdh-bug-triage:" not in comment.body:
@@ -106,25 +192,23 @@ def plan_comment(
             return decision(
                 "review_required", "Unrecognized triage reference; reconcile history first."
             )
-        if matches[0] == fingerprint:
-            return decision(
-                "suppress", "The same recommendation is already on Jira.", priorCommentId=comment.id
-            )
         created = parse_datetime(comment.created)
         if not created or not comment.id or created > as_of:
             return decision(
                 "review_required", "Prior triage comment has no reliable ID or posting time."
             )
         prior.append((created, comment))
-    if not prior and any("rhdh-bug-triage:" not in comment.body for comment in ticket.comments):
+    unmarked = any("rhdh-bug-triage:" not in comment.body for comment in ticket.comments)
+    if not prior and unmarked and not reviewed:
         return decision(
             "review_required",
-            "Unmarked discussion may contain equivalent advice or a pending owner action; human review required.",
+            "Unmarked discussion needs a complete, cited historyReview before eligibility.",
         )
     if not prior:
         return decision(
             "propose",
-            "No previous marked triage comment; review existing discussion before approval.",
+            "Complete history has no previous equivalent advice or pending action; this draft is eligible for human review.",
+            **({"historyReview": reviewed} if reviewed else {}),
         )
     created, latest = max(prior, key=lambda item: item[0])
     details = {"priorCommentId": latest.id, "lastPostedAt": created.isoformat()}
@@ -136,7 +220,7 @@ def plan_comment(
             earliestReconsiderAt=earliest.isoformat(),
             **details,
         )
-    follow_up = assessment.follow_up if assessment else {}
+    follow_up = assessment.follow_up if assessment and assessment.key == ticket.key else {}
     evidence = follow_up.get("evidence") or []
     verified_event = (
         follow_up.get("priorCommentId") == latest.id
@@ -160,16 +244,17 @@ def plan_comment(
             "Previous requested action is pending or unverified; time alone is not a reason to comment again.",
             **details,
         )
-    if any("rhdh-bug-triage:" not in comment.body for comment in ticket.comments):
+    if unmarked and not reviewed:
         return decision(
             "review_required",
-            "Review unmarked discussion before a changed recommendation.",
+            "Complete a cited historyReview of unmarked discussion before a changed recommendation.",
             **details,
         )
     return decision(
         "propose",
         "Cooldown elapsed and cited follow-up supports a changed recommendation.",
         followUp=follow_up,
+        **({"historyReview": reviewed} if reviewed else {}),
         **details,
     )
 

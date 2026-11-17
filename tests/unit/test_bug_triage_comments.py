@@ -32,12 +32,29 @@ def case():
             "key": "RHDHBUGS-1006",
             "summary": "External S3 endpoint lookup fails",
             "description": "Existing reproduction steps.",
+            "status": {"name": "Backlog", "statusCategory": {"name": "To Do"}},
+            "fieldNames": {
+                "customfield_10746": "Customer Name",
+                "customfield_10716": "Customers",
+                "customfield_10747": "Customer Impact",
+                "customfield_10748": "Case Link",
+                "customfield_10749": "Support Case Reference",
+            },
+            "customfield_10746": None,
+            "customfield_10716": None,
+            "customfield_10747": None,
+            "customfield_10748": None,
+            "customfield_10749": None,
+            "labels": [],
+            "issuelinks": [],
             "comment": {"comments": [], "total": 0},
         }
     )
     assessment = load_assessment(
         str(Path(__file__).parent / "fixtures/bug_triage/assessments/RHDHBUGS-1006.json")
     )
+    assert ticket.customer_fields_complete is True
+    assert ticket.unmapped_custom_fields == []
     return ticket, evaluate(ticket, [], assessment, "2.1.0"), assessment
 
 
@@ -53,8 +70,9 @@ def previous(ticket, reference, days=20, comment_id="10"):
 
 def changed_history(case, days=20):
     ticket, packet, assessment = case
-    old = replace(packet, current_release="1.9")
-    reference = plan_comment(ticket, old, assessment, NOW)["reference"]
+    old_assessment = Assessment(key=ticket.key, disposition="unclear")
+    old = evaluate(ticket, [], old_assessment, "2.1.0")
+    reference = plan_comment(ticket, old, old_assessment, NOW)["reference"]
     previous(ticket, reference, days)
     return ticket, packet, assessment
 
@@ -147,17 +165,32 @@ def test_malformed_followup_evidence_fails_closed(case):
     "history", [None, {"comments": [], "total": 3}, [], {"comments": [], "total": 0, "startAt": 3}]
 )
 def test_incomplete_history_requires_review(case, history):
-    _, packet, assessment = case
-    ticket = normalize_issue({"key": packet.key, "comment": history})
+    original, packet, assessment = case
+    ticket = normalize_issue({**original.raw, "comment": history})
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "review_required"
 
 
 def test_flat_adapter_must_attest_comment_completeness(case):
-    _, packet, assessment = case
-    ticket = normalize_issue(
-        {"key": packet.key, "summary": packet.summary, "comments": [], "commentsComplete": True}
-    )
+    original, packet, assessment = case
+    payload = {**original.raw, "comments": [], "commentsComplete": True}
+    payload.pop("comment")
+    ticket = normalize_issue(payload)
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
+
+
+def test_unfetched_mapped_support_field_blocks_fixed_advice_and_delivery(case):
+    original, _, assessment = case
+    payload = dict(original.raw)
+    payload.pop("customfield_10749")
+    ticket = normalize_issue(payload)
+    assert ticket.customer_fields_complete is False
+    assert ticket.customer_signals == []
+    packet = evaluate(ticket, [], assessment, "2.1.0")
+    assert packet.disposition == "unclear"
+    assert packet.action == "comment_only"
+    assert "Disposition: unclear" in packet.proposed_comment
+    assert "close " not in packet.recommended_step.lower()
+    assert plan_comment(ticket, packet, assessment, NOW)["status"] == "review_required"
 
 
 @pytest.mark.parametrize(
@@ -216,7 +249,7 @@ def test_source_inspection_does_not_claim_a_runtime_reproduction(case):
     assert "https://github.com/redhat-developer/rhdh/pull/999" in packet.proposed_comment
 
 
-def test_obsolete_findings_do_not_leak_into_closure_recommendations(case):
+def test_obsolete_claim_without_current_release_scope_validation_is_unclear(case):
     ticket, _, _ = case
     assessment = Assessment(
         key=ticket.key,
@@ -232,13 +265,16 @@ def test_obsolete_findings_do_not_leak_into_closure_recommendations(case):
         independent_passes=2,
         agreement=True,
     )
-    packet = evaluate(ticket, [], assessment)
-    assert packet.action == "abstain"
-    assert packet.proposed_comment == ""
-    assert plan_comment(ticket, packet, assessment, NOW)["status"] == "suppress"
+    packet = evaluate(ticket, [], assessment, "2.1.0")
+    assert packet.action == "comment_only"
+    assert packet.disposition == "unclear"
+    assert "Disposition: unclear" in packet.proposed_comment
+    assert "close " not in packet.recommended_step.lower()
+    assert "\nProof:" not in packet.proposed_comment
+    assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
 
 
-def test_unclear_next_step_cannot_create_a_reproduction_or_comment_request(case):
+def test_unclear_draft_cannot_turn_legacy_advice_into_a_human_reproduction_request(case):
     ticket, _, _ = case
     assessment = parse_assessment(
         {
@@ -247,7 +283,12 @@ def test_unclear_next_step_cannot_create_a_reproduction_or_comment_request(case)
             "recommendedStep": "Ask Documentation to verify the published title procedure.",
         }
     )
-    packet = evaluate(ticket, [], assessment)
-    assert packet.action == "abstain"
-    assert packet.recommended_step == ""
-    assert packet.proposed_comment == ""
+    packet = evaluate(ticket, [], assessment, "2.1.0")
+    assert packet.action == "comment_only"
+    assert packet.disposition == "unclear"
+    assert "Disposition: unclear" in packet.proposed_comment
+    assert packet.recommended_step
+    assert "Ask Documentation" not in packet.recommended_step
+    assert "Ask Documentation" not in packet.proposed_comment
+    assert "reproduce" not in packet.recommended_step.lower()
+    assert "close " not in packet.recommended_step.lower()

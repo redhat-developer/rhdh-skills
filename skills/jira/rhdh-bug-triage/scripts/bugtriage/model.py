@@ -15,8 +15,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlsplit
 
-DEFAULT_CURRENT_RELEASE = "2.1.0"
 DEFAULT_AGED_DAYS = 90
 DEFAULT_SAMPLE_SIZE = 12
 DEFAULT_SEED = 18094
@@ -29,7 +29,12 @@ CUSTOMER_FIELD_NAMES = (
     "Customer Impact",
     "Case Link",
     "Support Case Reference",
+    "Account Number",
+    "Account",
     "SFDC cases",
+    "SFDC Cases Counter",
+    "SFDC Cases Links",
+    "SFDC Cases Open",
     "Customer Cloud Subscription (CCS)",
 )
 # A support key anywhere in the ticket is a customer signal. It is deliberately
@@ -39,7 +44,7 @@ PR_URL_RE = re.compile(r"https://github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+/p
 COMMIT_URL_RE = re.compile(
     r"https://github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+/commit/([0-9a-fA-F]{7,40})"
 )
-JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9_]+-\d+)\b")
+JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9_]*-\d+)\b")
 
 DONE_CATEGORIES = {"done", "closed", "complete", "completed"}
 DONE_STATUSES = {"closed", "done", "resolved", "released"}
@@ -56,30 +61,30 @@ def as_text(value: Any) -> str:
     if isinstance(value, list):
         return "\n".join(part for part in (as_text(item) for item in value) if part)
     if isinstance(value, dict):
-        # Atlassian Document Format: text nodes carry the sentence.
-        if isinstance(value.get("text"), str):
-            links = [
-                mark.get("attrs", {}).get("href", "")
-                for mark in value.get("marks") or []
-                if isinstance(mark, dict) and isinstance(mark.get("attrs"), dict)
-            ]
-            return " ".join(
-                [value["text"], *[link for link in links if isinstance(link, str) and link]]
-            )
-        if value.get("type") in ("inlineCard", "blockCard", "embedCard"):
-            attrs = value.get("attrs", {})
-            return (
-                attrs.get("url", "")
-                if isinstance(attrs, dict) and isinstance(attrs.get("url", ""), str)
-                else ""
-            )
         parts = []
-        for key in ("content", "body", "value", "description", "comments"):
+        # Include ADF marks/attributes: the visible label can hide a support
+        # reference or a PR URL. Jira custom-field options also use name/value.
+        for key in (
+            "text",
+            "content",
+            "body",
+            "value",
+            "name",
+            "displayName",
+            "display_name",
+            "description",
+            "comments",
+            "url",
+            "href",
+            "key",
+            "attrs",
+            "marks",
+        ):
             if key in value:
                 parts.append(as_text(value[key]))
-        if parts:
+        if any(parts):
             return "\n".join(part for part in parts if part)
-        return ""
+        return as_text(value.get("id"))
     return str(value)
 
 
@@ -115,8 +120,51 @@ def as_names(value: Any) -> List[str]:
 
 
 def _payload(issue: Dict[str, Any]) -> Dict[str, Any]:
+    if "fields" in issue and not isinstance(issue["fields"], dict):
+        raise ValueError("issue fields must be an object")
     fields = issue.get("fields")
     return fields if isinstance(fields, dict) else issue
+
+
+def validate_issue_key(key: Any) -> str:
+    """Require a key, not an id or path fragment, before reads or file writes."""
+    if not isinstance(key, str) or not JIRA_KEY_RE.fullmatch(key):
+        raise ValueError(f"invalid issue key: {key!r}")
+    return key
+
+
+def _is_customer_field(name: str) -> bool:
+    return name.casefold() in {
+        item.casefold() for item in CUSTOMER_FIELD_NAMES
+    } or name.casefold().startswith("sfdc cases")
+
+
+def merge_field_names(*sources: Any) -> Dict[str, str]:
+    """Merge REST names/export fieldNames without erasing a customer mapping.
+
+    A deployment's field catalogue can be incomplete or inconsistent. A known
+    customer alias wins a conflict; the mapping never certifies field coverage.
+    """
+    mapped: Dict[str, str] = {}
+    for source in sources:
+        if source is None:
+            continue
+        if not isinstance(source, dict) or any(
+            not isinstance(key, str) or not isinstance(name, str) for key, name in source.items()
+        ):
+            raise ValueError("field names must map field ids to names")
+        for key, name in source.items():
+            if key not in mapped or not _is_customer_field(mapped[key]):
+                mapped[key] = name
+    return mapped
+
+
+def _populated(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_populated(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_populated(item) for item in value)
+    return value not in (None, "", 0, False, "0") and bool(as_text(value).strip())
 
 
 def _first(payload: Dict[str, Any], *keys: str) -> Any:
@@ -136,8 +184,8 @@ def _comments(payload: Dict[str, Any]) -> List["Comment"]:
         return []
     comments = []
     for item in raw:
-        if not isinstance(item, dict):
-            continue
+        if not isinstance(item, dict) or "body" not in item:
+            raise ValueError("comment records must be objects with a body")
         author = as_name(item.get("author")) or as_name(item.get("updateAuthor"))
         comments.append(
             Comment(
@@ -158,7 +206,7 @@ def _links(payload: Dict[str, Any]) -> List["Link"]:
     for item in raw:
         if not isinstance(item, dict):
             continue
-        link_type = as_name(item.get("type")) or "related"
+        link_type = as_name(_first(item, "type", "linktype")) or "related"
         for direction, keys in (
             ("outward", ("outwardIssue", "outward_issue")),
             ("inward", ("inwardIssue", "inward_issue")),
@@ -208,25 +256,21 @@ def _customer_signals(
 
     for link in links:
         prefix = link.key.split("-", 1)[0].upper()
-        if prefix in CUSTOMER_LINK_PREFIXES:
+        if prefix in CUSTOMER_LINK_PREFIXES or link.type.strip().casefold() == "account":
             signals.append(f"link:{link.type}:{link.key}")
 
     # Field names arrive either as a customfield-id -> name map or inline as
-    # human-readable keys. Both are checked; a mapped id is authoritative.
+    # human-readable keys. Neither a known name nor an id mapping may erase a
+    # customer signal found through the other spelling.
     for field_id, value in payload.items():
         field_name = ""
-        if field_names and field_id in field_names:
-            field_name = field_names[field_id]
-        elif field_id.casefold() in {
-            name.casefold() for name in CUSTOMER_FIELD_NAMES
-        } or field_id.casefold().startswith("sfdc cases"):
+        if _is_customer_field(field_id):
             field_name = field_id
-        if not field_name or (
-            field_name.casefold() not in {name.casefold() for name in CUSTOMER_FIELD_NAMES}
-            and not field_name.casefold().startswith("sfdc cases")
-        ):
+        elif field_names and field_id in field_names:
+            field_name = field_names[field_id]
+        if not field_name or not _is_customer_field(field_name):
             continue
-        if value not in (0, False, "0") and as_text(value).strip():
+        if _populated(value):
             signals.append(f"field:{field_name}")
 
     text = json.dumps(payload, default=str)
@@ -234,6 +278,48 @@ def _customer_signals(
         if key != ticket_key:
             signals.append(f"text:{key}")
     return sorted(set(signals))
+
+
+def _host_customer_signals(issue: Dict[str, Any], payload: Dict[str, Any]) -> List[str]:
+    """Accept cited host review, never a generic customer-word text heuristic.
+
+    triageCustomerSignals is additive enrichment, not a native source fact or
+    evidence that missing fields were fetched. The host owns semantic review of
+    the cited material; normalization validates the declaration's structure.
+    """
+    signals = []
+    for source in [issue] if issue is payload else [issue, payload]:
+        if "triageCustomerSignals" not in source:
+            continue
+        declarations = source["triageCustomerSignals"]
+        if not isinstance(declarations, list):
+            raise ValueError("triageCustomerSignals must be a list of cited reasons")
+        for declaration in declarations:
+            if not isinstance(declaration, dict):
+                raise ValueError("triageCustomerSignals records need a ref and reason")
+            ref, reason = declaration.get("ref"), declaration.get("reason")
+            if not isinstance(ref, str) or not isinstance(reason, str) or not reason.strip():
+                raise ValueError("triageCustomerSignals records need a nonempty ref and reason")
+            valid = bool(JIRA_KEY_RE.fullmatch(ref))
+            if not valid:
+                try:
+                    url = urlsplit(ref)
+                    valid = bool(
+                        url.scheme == "https"
+                        and url.hostname
+                        and not url.username
+                        and not url.password
+                        and not re.search(r"[\s\x00-\x1f\x7f<>]", ref)
+                    )
+                    # Accessing port also validates a malformed URL port.
+                    if url.port is not None and not 0 < url.port <= 65535:
+                        valid = False
+                except ValueError:
+                    valid = False
+            if not valid:
+                raise ValueError("triageCustomerSignals ref must be a valid HTTPS URL or Jira key")
+            signals.append(f"host:{ref}:{' '.join(reason.split())}")
+    return signals
 
 
 @dataclass
@@ -280,6 +366,12 @@ class Ticket:
     is_done: bool = False
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
     comments_complete: bool = False
+    comments_fetched: bool = False
+    customer_fields_read: List[str] = field(default_factory=list)
+    unmapped_custom_fields: List[str] = field(default_factory=list)
+    read_gaps: List[str] = field(default_factory=list)
+    affects_versions_ambiguous: bool = False
+    customer_fields_complete: bool = False
 
     @property
     def search_text(self) -> str:
@@ -292,20 +384,24 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
     """Convert one REST or flattened issue record into a Ticket."""
     if not isinstance(issue, dict):
         raise ValueError(f"issue must be an object, got {type(issue).__name__}")
-    key = as_text(issue.get("key")) or as_text(issue.get("id"))
-    if not key:
-        raise ValueError("issue has no key")
+    key = validate_issue_key(issue.get("key"))
     payload = _payload(issue)
+    field_names = merge_field_names(field_names, issue.get("names"), issue.get("fieldNames"))
     status = as_name(_first(payload, "status"))
     status_category = (
-        as_name((payload.get("status") or {}).get("category"))
+        as_name(_first(payload["status"], "statusCategory", "category"))
         if isinstance(payload.get("status"), dict)
-        else ""
+        else as_name(_first(payload, "statusCategory", "status_category"))
     )
     labels = as_names(payload.get("labels"))
     links = _links(payload)
     comments = _comments(payload)
-    raw_comments = payload.get("comment", payload.get("comments"))
+    raw_comments = payload.get("comment")
+    if raw_comments is None:
+        raw_comments = payload.get("comments")
+    comments_fetched = isinstance(raw_comments, list) or (
+        isinstance(raw_comments, dict) and isinstance(raw_comments.get("comments"), list)
+    )
     comments_complete = (
         isinstance(raw_comments, list)
         and payload.get("commentsComplete") is True
@@ -313,13 +409,30 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
     ) or (
         isinstance(raw_comments, dict)
         and isinstance(raw_comments.get("comments"), list)
-        and isinstance(raw_comments.get("total"), int)
+        and type(raw_comments.get("total")) is int
         and raw_comments.get("startAt", 0) == 0
         and raw_comments["total"] == len(raw_comments["comments"])
         and len(comments) == len(raw_comments["comments"])
     )
+    # An explicit incomplete marker must win even over apparently matching totals.
+    if payload.get("commentsComplete") is False or (
+        isinstance(raw_comments, dict)
+        and (
+            raw_comments.get("commentsComplete") is False
+            or raw_comments.get("isLast") is False
+            or raw_comments.get("hasMore") is True
+            or raw_comments.get("nextPageToken")
+            or raw_comments.get("nextPage")
+        )
+    ):
+        comments_complete = False
     team = as_name(_first(payload, "customfield_10001", "team")) or ""
     components = as_names(payload.get("components"))
+    raw_versions = _first(payload, "versions", "affects_versions")
+    version_items = raw_versions if isinstance(raw_versions, list) else [raw_versions]
+    versions_ambiguous = raw_versions is not None and any(
+        not isinstance(value, (str, dict)) or not as_name(value).strip() for value in version_items
+    )
     is_done = bool(status_category.lower() in DONE_CATEGORIES or status.lower() in DONE_STATUSES)
     ticket = Ticket(
         key=key,
@@ -336,11 +449,13 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
         components=components,
         labels=labels,
         fix_versions=as_names(_first(payload, "fixVersions", "fix_versions")),
-        affects_versions=as_names(_first(payload, "versions", "affects_versions")),
+        affects_versions=as_names(raw_versions),
+        affects_versions_ambiguous=versions_ambiguous,
         assignee=as_name(_first(payload, "assignee")),
         reporter=as_name(_first(payload, "reporter")),
         comments=comments,
         comments_complete=comments_complete,
+        comments_fetched=comments_fetched,
         links=links,
         pr_urls=_collect_pr_urls(payload, links),
         commit_shas=_collect_commits(payload),
@@ -349,31 +464,130 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
     )
     if ticket.assignee.lower() in ("unassigned", "none"):
         ticket.assignee = ""
-    ticket.customer_signals = _customer_signals(
-        ticket.key, payload, ticket.labels, ticket.links, field_names
+    ticket.customer_signals = sorted(
+        set(
+            _customer_signals(ticket.key, payload, ticket.labels, ticket.links, field_names)
+            + _host_customer_signals(issue, payload)
+        )
     )
+    ticket.customer_fields_read = sorted(
+        {
+            field_id if _is_customer_field(field_id) else field_names[field_id]
+            for field_id in payload
+            if _is_customer_field(field_id) or _is_customer_field(field_names.get(field_id, ""))
+        }
+    )
+    ticket.unmapped_custom_fields = sorted(
+        field_id
+        for field_id in payload
+        if field_id.startswith("customfield_") and field_id not in field_names
+    )
+    # Coverage is relative to the supplied field catalogue, never to hardcoded
+    # tenant ids or to a customerFieldsComplete claim in an arbitrary export.
+    # A nonempty catalogue plus actual field presence is required; null values
+    # mean fetched-and-empty, while missing keys mean not read.
+    customer_field_ids = {
+        field_id
+        for field_id, name in field_names.items()
+        if field_id.startswith("customfield_") and _is_customer_field(name)
+    }
+    raw_labels = payload.get("labels")
+    raw_links = payload.get("issuelinks")
+    ticket.customer_fields_complete = bool(
+        customer_field_ids
+        and customer_field_ids <= payload.keys()
+        and isinstance(raw_labels, list)
+        and all(isinstance(label, str) for label in raw_labels)
+        and isinstance(raw_links, list)
+        and all(isinstance(link, dict) for link in raw_links)
+        and len(links) >= len(raw_links)
+    )
+    if not ticket.customer_fields_complete:
+        ticket.read_gaps.append("customer-field coverage is not established by this export")
+        missing = sorted(customer_field_ids - payload.keys())
+        if missing:
+            ticket.read_gaps.append("mapped customer fields not fetched: " + ", ".join(missing))
+    if ticket.unmapped_custom_fields:
+        ticket.read_gaps.append(
+            "unmapped custom fields: " + ", ".join(ticket.unmapped_custom_fields)
+        )
+    if not comments_fetched:
+        ticket.read_gaps.append("comment history was not fetched")
+    elif not comments_complete:
+        ticket.read_gaps.append("comment history was fetched but completeness is unverified")
     return ticket
 
 
-def extract_issues(document: Any) -> List[Dict[str, Any]]:
+def extract_issues(document: Any, *, allow_partial: bool = False) -> List[Dict[str, Any]]:
     """Return the issue list from every export shape the adapters accept."""
+    records = None
     if isinstance(document, list):
-        return [item for item in document if isinstance(item, dict)]
-    if isinstance(document, dict):
+        records = document
+    elif isinstance(document, dict):
+        if (
+            document.get("error")
+            or document.get("errors")
+            or document.get("errorMessages")
+            or document.get("success") is False
+        ):
+            raise ValueError("export reports a failed Jira read")
         for key in ("issues", "results", "items"):
-            value = document.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-    raise ValueError("export must be a list of issues or contain an 'issues' list")
+            if key in document:
+                if not isinstance(document[key], list):
+                    raise ValueError(f"export {key} must be a list")
+                records = document[key]
+                break
+        if records is None and "key" in document:
+            records = [document]
+        if records is not None and "key" not in document:
+            for name in ("total", "startAt"):
+                if name in document and (type(document[name]) is not int or document[name] < 0):
+                    raise ValueError(f"export {name} must be a nonnegative integer")
+        if records is not None and "key" not in document and not allow_partial:
+            total = document.get("total")
+            if (
+                (type(total) is int and total != len(records))
+                or document.get("startAt", 0) != 0
+                or document.get("isLast") is False
+                or document.get("hasMore") is True
+                or document.get("nextPageToken")
+                or document.get("nextPage")
+            ):
+                raise ValueError("export contains a partial issue list")
+    if records is None:
+        raise ValueError("export must be an issue object, a list, or contain an 'issues' list")
+    keys = set()
+    for index, item in enumerate(records):
+        if not isinstance(item, dict):
+            raise ValueError(f"issue record {index} must be an object")
+        if (
+            item.get("error")
+            or item.get("errors")
+            or item.get("errorMessages")
+            or item.get("success") is False
+        ):
+            raise ValueError(f"issue record {index} reports a failed Jira read")
+        key = validate_issue_key(item.get("key"))
+        if key in keys:
+            raise ValueError(f"duplicate issue key in export: {key}")
+        keys.add(key)
+        _payload(item)
+    return records
+
+
+def normalize_export(document: Any, field_names: Optional[Dict[str, str]] = None) -> List[Ticket]:
+    mapped = merge_field_names(
+        document.get("names") if isinstance(document, dict) else None,
+        document.get("fieldNames") if isinstance(document, dict) else None,
+        field_names,
+    )
+    return [normalize_issue(issue, mapped) for issue in extract_issues(document)]
 
 
 def load_export(path: str, field_names: Optional[Dict[str, str]] = None) -> List[Ticket]:
     with open(path, encoding="utf-8") as handle:
         document = json.load(handle)
-    mapped = field_names
-    if isinstance(document, dict) and isinstance(document.get("fieldNames"), dict):
-        mapped = {**document["fieldNames"], **(field_names or {})}
-    return [normalize_issue(issue, mapped) for issue in extract_issues(document)]
+    return normalize_export(document, field_names)
 
 
 def parse_datetime(value: str) -> Optional[datetime]:
@@ -410,13 +624,3 @@ def age_days(created: str, as_of: Optional[datetime] = None) -> Optional[int]:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     return max(0, (now - created_at).days)
-
-
-def age_label(days: Optional[int]) -> str:
-    if days is None:
-        return "unknown age"
-    if days < 180:
-        return f"{days}d"
-    if days < 365:
-        return f"{days // 30}mo"
-    return f"{days / 365:.1f}y"
