@@ -38,7 +38,7 @@ import { dirname, resolve as resolvePath } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 
-import { resolveRepoLayout } from './repo-layout.js';
+import { defaultBumpBranch, resolveRepoLayout } from './repo-layout.js';
 
 const execFile = promisify(execFileCb);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,8 +59,10 @@ Modes:
 Options:
   --repo-root <path>   Local checkout (default: cwd walk-up / RHDH_PLUGINS_ROOT / RHDH_CORE_ROOT)
   --upstream <remote>  Remote that tracks redhat-developer (default: upstream)
-  --base <branch>      Base branch to fetch/reset onto (default: main)
-  --branch <name>      Branch to create/reset (default: chore/<workspace>-cve-bumps)
+  --base <branch>      Base branch to fetch/reset onto (default: main).
+                       Use release-X.Y for release trains (prefer a worktree).
+  --branch <name>      Branch to create/reset (default: chore/<workspace>-cve-bumps,
+                       or chore/<workspace>-cve-bumps-release-X.Y when --base is a release)
   --verify-only        Verify lockfile + report HEAD; skip git fetch/checkout
   --reset-branch       Force interactive reset even when FULLSEND_OUTPUT_DIR is set
   --dry-run            Print the plan only; no git fetch/checkout
@@ -70,6 +72,7 @@ Options:
 Examples:
   node prepare-workspace-bump.js --repo-root /path/to/rhdh-plugins scorecard
   node prepare-workspace-bump.js --repo-root /path/to/rhdh rhdh
+  node prepare-workspace-bump.js --repo-root /path/to/rhdh --base release-1.10 rhdh
   node prepare-workspace-bump.js --verify-only cost-management
 `);
 }
@@ -160,13 +163,18 @@ async function remoteExists(repoRoot, remote) {
     .includes(remote);
 }
 
-function nextCommands(layout, skillDir) {
+function nextCommands(layout, skillDir, base) {
   const repo = layout.defaultDependabotRepo || 'redhat-developer/rhdh-plugins';
   const ws = layout.workspace;
-  const bump = `node ${skillDir}/bump-workspace-packages.js --repo-root ${layout.repoRoot} --repo ${repo} ${ws} --json`;
+  const baseFlag = base && base !== 'main' ? ` --base ${base}` : '';
+  const alertsHint = process.env.FULLSEND_OUTPUT_DIR
+    ? ' --alerts-json $FULLSEND_OUTPUT_DIR/dependabot-alerts.json'
+    : '';
+  const bump = `node ${skillDir}/bump-workspace-packages.js --repo-root ${layout.repoRoot} --repo ${repo}${baseFlag}${alertsHint} ${ws} --json`;
+  const format = `node ${skillDir}/format-bump-pr.js --with-title${baseFlag}`;
   return [
-    `node ${skillDir}/list-dependabot-packages.js --repo ${repo} ${ws}`,
-    `${bump} | node ${skillDir}/format-bump-pr.js --with-title`,
+    `node ${skillDir}/list-dependabot-packages.js --repo ${repo}${baseFlag}${alertsHint} ${ws}`,
+    `${bump} | ${format}`,
   ];
 }
 
@@ -210,7 +218,8 @@ async function main() {
   const lockfileRel = layout.lockfileRel;
   const upstream = options.upstream;
   const base = options.base;
-  const branch = options.branch || layout.bumpBranch;
+  const branch =
+    options.branch || defaultBumpBranch(workspace, base) || layout.bumpBranch;
   const upstreamRef = `${upstream}/${base}`;
   const dryRun = flags.has('dry-run');
   const verifyOnly = resolveVerifyOnly(flags);
@@ -240,7 +249,7 @@ async function main() {
           `git fetch ${upstream} ${base}`,
           `git checkout -B ${branch} ${upstreamRef}`,
         ],
-    next: nextCommands(layout, skillDir),
+    next: nextCommands(layout, skillDir, base),
   };
 
   if (verifyOnly) {

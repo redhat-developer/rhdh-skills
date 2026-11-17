@@ -359,6 +359,7 @@ function productManifest(manifestPath) {
   if (
     manifestPath.startsWith('e2e-tests/') ||
     manifestPath.startsWith('.ci/') ||
+    manifestPath.startsWith('dynamic-plugins/') ||
     manifestPath.startsWith('scripts/')
   ) {
     return false;
@@ -369,6 +370,18 @@ function productManifest(manifestPath) {
   return (
     manifestPath.startsWith('packages/') || manifestPath.startsWith('plugins/')
   );
+}
+
+/**
+ * Default bump branch name. Release bases get a suffix so follow-ups do not
+ * reuse a merged PR branch tip.
+ */
+export function defaultBumpBranch(workspace, base = 'main') {
+  const stem = `chore/${workspace}-cve-bumps`;
+  if (base && base !== 'main' && /^release-\d+\.\d+/.test(base)) {
+    return `${stem}-${base}`;
+  }
+  return stem;
 }
 
 export function matchAlertManifest(layout, manifestPath) {
@@ -405,6 +418,37 @@ export function filterAlertsForLayout(alerts, layout, packageName) {
 }
 
 /**
+ * Package discovery for bumps. Same as filterAlertsForLayout, except on
+ * release-1.10 dual-lockfile mode also includes dynamic-plugins/ alerts so
+ * one Dependabot package list covers both lockfiles (no separate token).
+ * Pass dualLockfile=true only when wantsDualLockfileBump(...).
+ */
+export function filterAlertsForPackageDiscovery(
+  alerts,
+  layout,
+  { packageName, dualLockfile = false } = {},
+) {
+  return (alerts || []).filter(alert => {
+    const dep = alert.dependency ?? {};
+    if (packageName && dep.package?.name !== packageName) {
+      return false;
+    }
+    const path = dep.manifest_path;
+    if (matchAlertManifest(layout, path)) {
+      return true;
+    }
+    if (
+      dualLockfile &&
+      layout.kind === LAYOUT_RHDH_CORE &&
+      layout.scope === 'product'
+    ) {
+      return String(path || '').startsWith('dynamic-plugins/');
+    }
+    return false;
+  });
+}
+
+/**
  * Dependabot manifest_path (+ optional scope) → classification label.
  * For rhdh-core, packages/app|backend are CORE_PROD, never RUNNER.
  */
@@ -418,6 +462,10 @@ export function classifyManifest(layoutKind, manifestPath, scope) {
     }
     if (manifestPath.startsWith('.ci/')) {
       return 'CI';
+    }
+    if (manifestPath.startsWith('dynamic-plugins/')) {
+      // Not a product dismiss path; release-1.10 dual-lockfile bumps only.
+      return 'LOCKFILE';
     }
     if (/(^|\/)plugins\//.test(manifestPath)) {
       return scope === 'development' ? 'PLUGIN_DEV' : 'PLUGIN_PROD';
@@ -529,13 +577,8 @@ export function resolveRepoLayout({
     lockPath,
     yarnCwd: workspaceDir,
     defaultDependabotRepo: defaultDependabotRepo(kind),
-    bumpBranch: `chore/${parsed.workspace}-cve-bumps`,
-    statusPaths:
-      kind === LAYOUT_RHDH_CORE && parsed.scope === 'product'
-        ? ['yarn.lock', 'package.json', 'packages', 'plugins']
-        : kind === LAYOUT_PLUGINS
-          ? [`workspaces/${parsed.workspace}`]
-          : [parsed.lockfileRel],
+    bumpBranch: defaultBumpBranch(parsed.workspace),
+    statusPaths: resolveStatusPaths(kind, parsed, repoRoot),
   };
 
   if (requireCheckout) {
@@ -550,6 +593,28 @@ function coreOrPluginsDir(kind, repoRoot, parsed) {
     return coreYarnCwd(repoRoot, parsed);
   }
   return resolvePath(repoRoot, 'workspaces', parsed.workspace);
+}
+
+/**
+ * Paths prepare / agents use for `git status`. On rhdh product, include
+ * `dynamic-plugins` when that lockfile exists so a release-1.10 dual bump
+ * lands in one commit/PR with the root yarn.lock.
+ */
+function resolveStatusPaths(kind, parsed, repoRoot) {
+  if (kind === LAYOUT_PLUGINS) {
+    return [`workspaces/${parsed.workspace}`];
+  }
+  if (kind === LAYOUT_RHDH_CORE && parsed.scope === 'product') {
+    const paths = ['yarn.lock', 'package.json', 'packages', 'plugins'];
+    if (
+      repoRoot &&
+      existsSync(resolvePath(repoRoot, 'dynamic-plugins/yarn.lock'))
+    ) {
+      paths.push('dynamic-plugins');
+    }
+    return paths;
+  }
+  return [parsed.lockfileRel];
 }
 
 export function pluginRunnerPackage(id) {
