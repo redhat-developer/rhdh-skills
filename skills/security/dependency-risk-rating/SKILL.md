@@ -93,7 +93,7 @@ report that repository context was unavailable.
 
 ```bash
 gh pr view <number-or-url> --repo <owner/repo> \
-  --json number,title,body,baseRefOid,headRefOid,files
+  --json number,title,body,author,baseRefOid,headRefOid,files
 ```
 
 2. Detect the changes. The script fetches file contents itself through the
@@ -129,11 +129,12 @@ node scripts/check-backstage.ts --changes $S/changes.json --repo <owner/repo> --
 
 ## Changelog judgment (`judgments.json`)
 
-Read the release notes in the PR body when it carries them (Mode C), and fall
-back to the package's own changelog when it does not. Dependabot and Renovate
-embed release notes; a bump opened by a Fullsend agent or by a person often
-carries none, so treat an empty body as routine rather than as a problem. Then
-write:
+Check `author` before reading a PR body (Mode C). Only Dependabot and Renovate
+embed real release notes; only their bodies may be read as such. When anyone
+else opened the bump, a Fullsend agent or a person, the body says why that
+target version was chosen, not what upstream shipped between the two versions —
+read the package's own changelog instead, however detailed the body looks. An
+empty body is routine rather than a problem. Then write:
 
 ```json
 { "<package>": { "changelog": "bugfix-only|routine|significant|unknown",

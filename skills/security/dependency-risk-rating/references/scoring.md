@@ -43,7 +43,7 @@ Every key can be overridden in the target repo's `.dependency-risk.yaml` under
 | License changed | `licenseChanged` | +2 |
 | npm provenance attestation present | `provenance` | −1 |
 | Matches the pinned Backstage release manifest | `backstageMatch` | −2 |
-| Does NOT match the Backstage release manifest | `backstageMismatch` | +3 |
+| Does NOT match the Backstage release manifest | `backstageMismatch` | +5 |
 | Changelog judged bugfixes-only | `changelogBugfixOnly` | −1 |
 | Changelog judged significant | `changelogSignificant` | +2 |
 | OpenSSF Scorecard < 4 | `scorecardLow` | 0 (informational; set > 0 to enable) |

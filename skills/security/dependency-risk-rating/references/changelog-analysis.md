@@ -1,11 +1,16 @@
 # Changelog analysis (writing the judgments file)
 
 Produce the judgments JSON that feeds `score.ts` from whatever release notes
-you can find. Dependabot and Renovate embed notes or changelog excerpts in the
-PR body; a bump opened by a Fullsend agent or by a person usually does not, so
-the body is a convenience, not the source. When it carries nothing, go to the
-package's own changelog — see "Where to look when the PR body has nothing"
-below. An absent body is normal and is not itself a risk signal.
+you can find.
+
+Check who opened the PR before reading its body. Dependabot and Renovate embed
+notes or changelog excerpts, and those are usable as release notes. Nobody
+else's body is: a bump opened by a Fullsend agent or by a person says why the
+author chose that target version, while the changelog says what upstream
+shipped between the two versions. The first is no evidence for the second, so a
+detailed security-remediation body listing CVEs and tickets still sends you to
+the changelog — see "Where to look up a changelog" below. An absent body is
+normal and is not itself a risk signal.
 
 ```json
 {
@@ -72,14 +77,32 @@ minor effective delta.
 Lockstep ecosystems (all `@backstage/*` packages of one release train) may
 share one changelog; applying the shared release notes to each member is fine.
 
-## Where to look when the PR body has nothing
+## Where to look up a changelog
 
-This is the normal path for a Fullsend or human-opened bump, not an exception.
+This is the normal path for a Fullsend or human-opened bump, not an exception —
+it applies whether that body is empty or full.
 
 1. `https://registry.npmjs.org/<name>` — the packument sometimes links the
    repository; check `repository.url`.
 2. The repository's GitHub Releases page or CHANGELOG.md at the tag matching
    the target version, read through the Contents API:
    `gh api "repos/<slug>/contents/CHANGELOG.md?ref=<tag>" -H "Accept: application/vnd.github.raw"`.
-3. If nothing is found, use `"unknown"` — an absent changelog for a major bump
+3. When step 2 returns a changelog that has no entry for the target version,
+   read the CHANGELOG.md published inside the version's own npm tarball. A
+   patch line maintained on a release branch — a security backport — never
+   reaches the default branch, so step 2 can return a long, healthy-looking
+   file that simply skips the versions you are rating. Extract one member into
+   a new empty directory and read it; never extract the whole tree, and never
+   run anything from it:
+
+   ```bash
+   D="$(mktemp -d)"
+   curl -sS -o "$D/pkg.tgz" "$(npm view <name>@<version> dist.tarball)"
+   tar -xzf "$D/pkg.tgz" -C "$D" package/CHANGELOG.md
+   ```
+
+   Read the entries from the version after `from` through `to` inclusive. Not
+   every package ships CHANGELOG.md in its tarball; when this one does not,
+   fall through to step 4.
+4. If nothing is found, use `"unknown"` — an absent changelog for a major bump
    of a low-download package is itself a mild warning sign worth a note.

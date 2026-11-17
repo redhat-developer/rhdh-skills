@@ -36,7 +36,7 @@ export const DEFAULT_WEIGHTS: Record<string, number> = {
   licenseChanged: 2,
   provenance: -1,
   backstageMatch: -2,
-  backstageMismatch: 3,
+  backstageMismatch: 5,
   changelogBugfixOnly: -1,
   changelogSignificant: 2,
   scorecardLow: 0, // informational by default; set > 0 to penalize OpenSSF score < 4
