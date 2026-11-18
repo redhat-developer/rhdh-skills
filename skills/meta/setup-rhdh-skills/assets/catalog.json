@@ -310,6 +310,12 @@
       ]
     },
     {
+      "name": "cve-pr-review",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": []
+    },
+    {
       "name": "rhdh-platform-lifecycle",
       "category": "release",
       "invocation": "model",
