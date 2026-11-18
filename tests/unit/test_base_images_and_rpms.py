@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import git_env
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SKILL_DIR = PROJECT_ROOT / "skills" / "ci" / "rhdh-base-images"
@@ -699,20 +700,39 @@ class TestBaseImagesAndRpmsScript:
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == expected
 
-    def test_detect_repo_kind_must_gather_uses_target_branch_tree(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("hook_environment", [False, True])
+    def test_detect_repo_kind_must_gather_uses_target_branch_tree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hook_environment: bool
+    ) -> None:
+        outer = tmp_path / "hook-repository"
+        if hook_environment:
+            subprocess.run(
+                ["git", "init", "-b", "main", str(outer)],
+                check=True,
+                capture_output=True,
+                env=git_env(),
+            )
+            monkeypatch.setenv("GIT_DIR", str(outer / ".git"))
+            monkeypatch.setenv("GIT_WORK_TREE", str(outer))
+            monkeypatch.setenv("GIT_INDEX_FILE", str(outer / ".git" / "index"))
         detect = _extract_bash_function(MAIN_SCRIPT, "detect_repo_kind")
         present = _extract_bash_function(MAIN_SCRIPT, "must_gather_marker_present")
         repo = tmp_path / "must-gather"
         repo.mkdir()
         git = ["git", "-C", str(repo), "-c", "user.email=test@example.com", "-c", "user.name=test"]
-        subprocess.run([*git, "init", "-b", "main"], check=True, capture_output=True)
+        # A commit hook exports repository-local Git variables. Do not let this
+        # temporary repository's commands reach the checkout running the hook.
+        env = git_env()
+        subprocess.run([*git, "init", "-b", "main"], check=True, capture_output=True, env=env)
         (repo / "cmd" / "gather").mkdir(parents=True)
         (repo / "cmd" / "gather" / "keep").write_text("ok\n")
-        subprocess.run([*git, "add", "cmd"], check=True, capture_output=True)
-        subprocess.run([*git, "commit", "-m", "gather"], check=True, capture_output=True)
-        subprocess.run([*git, "checkout", "-b", "other"], check=True, capture_output=True)
-        subprocess.run([*git, "rm", "-r", "cmd"], check=True, capture_output=True)
-        subprocess.run([*git, "commit", "-m", "drop gather"], check=True, capture_output=True)
+        subprocess.run([*git, "add", "cmd"], check=True, capture_output=True, env=env)
+        subprocess.run([*git, "commit", "-m", "gather"], check=True, capture_output=True, env=env)
+        subprocess.run([*git, "checkout", "-b", "other"], check=True, capture_output=True, env=env)
+        subprocess.run([*git, "rm", "-r", "cmd"], check=True, capture_output=True, env=env)
+        subprocess.run(
+            [*git, "commit", "-m", "drop gather"], check=True, capture_output=True, env=env
+        )
         result = subprocess.run(
             [
                 "bash",
@@ -724,9 +744,20 @@ class TestBaseImagesAndRpmsScript:
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "rhdh-must-gather"
+        if hook_environment:
+            outer_head = subprocess.run(
+                ["git", "-C", str(outer), "rev-parse", "--verify", "HEAD"],
+                check=False,
+                capture_output=True,
+                env=git_env(),
+            )
+            assert outer_head.returncode != 0, (
+                "temporary-repository commands committed into the hook repository"
+            )
 
     def test_detect_repo_kind_hub_lockfiles_are_not_must_gather(self, tmp_path: Path) -> None:
         function = _extract_bash_function(MAIN_SCRIPT, "detect_repo_kind")

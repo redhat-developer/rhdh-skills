@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from .comments import DEFAULT_COOLDOWN_DAYS, attach_comment_plan
+from .discovery import discover
 from .duplicates import (
     DUPLICATE_CLOSE_THRESHOLD,
     DUPLICATE_HINT_THRESHOLD,
@@ -26,6 +27,7 @@ from .model import (
     Ticket,
     age_days,
     load_export,
+    normalize_issue,
     parse_datetime,
 )
 from .policy import (
@@ -34,6 +36,7 @@ from .policy import (
     Assessment,
     Packet,
     evaluate,
+    investigation_errors,
     load_assessment,
     recommendation_comment,
 )
@@ -48,6 +51,7 @@ from .report import (
     write_text,
 )
 from .selection import Control, SelectionConfig, select_sample
+from .verification import load_verification
 
 
 class RunError(RuntimeError):
@@ -73,6 +77,8 @@ class RunConfig:
     all_tickets: bool = False
     release_evidence: str = ""
     evidence_dir: str = ""
+    verification_dir: str = ""
+    require_investigation: bool = False
 
 
 @dataclass
@@ -274,6 +280,14 @@ def run(config: RunConfig) -> RunResult:
     absent = sorted(set(selection) - set(assessments))
     if absent:
         raise RunError("missing assessments (triage has not completed): " + ", ".join(absent))
+    if config.require_investigation:
+        for key in selection:
+            assessment = assessments[key]
+            errors = investigation_errors(
+                assessment.investigation, assessment.evidence, config.current_release
+            )
+            if errors:
+                raise RunError(f"investigation incomplete for {key}: " + "; ".join(errors))
     collection = {}
     if config.evidence_dir:
         evidence_root = Path(config.evidence_dir)
@@ -284,11 +298,47 @@ def run(config: RunConfig) -> RunResult:
             if not path.is_file():
                 raise RunError(f"missing collection evidence: {path}")
             collection[key] = json.loads(path.read_text(encoding="utf-8"))
+    verification = (
+        load_verification(config.verification_dir, selection, config.current_release)
+        if config.verification_dir
+        else {}
+    )
     corpus_by_key = {item.key: item for item in corpus}
+    for key, evidence in collection.items():
+        discovery = evidence.get("discovery", {})
+        if discovery and discovery.get("key") != key:
+            raise RunError(f"discovery evidence does not match {key}")
+        for record in discovery.get("candidateRecords", []):
+            candidate = normalize_issue(record)
+            # Fresh collected records supersede the bounded corpus snapshot.
+            corpus_by_key[candidate.key] = candidate
+    corpus_by_key.update(tickets_by_key)
+    corpus = list(corpus_by_key.values())
+    corpus_has_closed = any(item.is_done for item in corpus)
     packets: List[Packet] = []
     for key in selection:
         ticket = tickets_by_key[key]
         candidates = rank_candidates(ticket, corpus, limit=10)
+        discovery = discover(ticket, corpus)
+        collected_discovery = collection.get(key, {}).get("discovery", {})
+        if collected_discovery:
+            discovery["collection"] = collected_discovery
+            by_lead = {lead["key"]: lead for lead in discovery["leads"]}
+            for lead in collected_discovery.get("leads", []):
+                if lead["key"] not in by_lead:
+                    by_lead[lead["key"]] = lead
+                    continue
+                current = by_lead[lead["key"]]
+                for field in ("foundBy", "reasons", "warnings"):
+                    for value in lead.get(field, []):
+                        if value not in current.setdefault(field, []):
+                            current[field].append(value)
+            discovery["leads"] = [by_lead[key] for key in sorted(by_lead)]
+        discovered_keys = {lead["key"] for lead in discovery["leads"]}
+        discovered_keys.update(lead["key"] for lead in collected_discovery.get("leads", []))
+        for candidate_key in sorted(discovered_keys):
+            if candidate_key in corpus_by_key and all(c.key != candidate_key for c in candidates):
+                candidates.append(score_candidate(ticket, corpus_by_key[candidate_key]))
         assessment = assessments.get(key)
         # An explicitly investigated target may lie outside the top lexical hits.
         if (
@@ -302,7 +352,9 @@ def run(config: RunConfig) -> RunResult:
             candidates,
             assessment,
             current_release=config.current_release,
+            verification=verification.get(key),
         )
+        packet.discovery = discovery
         for gap in data_gaps(ticket):
             if gap not in packet.gaps:
                 packet.gaps.append(gap)
@@ -428,6 +480,16 @@ def run(config: RunConfig) -> RunResult:
         },
     }
     manifest["releaseEvidence"] = config.release_evidence
+    manifest["investigationRequired"] = config.require_investigation
+    manifest["investigationStates"] = {
+        status: sum(p.investigation.get("status", "not_recorded") == status for p in packets)
+        for status in ("completed", "blocked", "not_recorded")
+    }
+    manifest["discovery"] = {
+        "leadCount": sum(len(p.discovery.get("leads", [])) for p in packets),
+        "passes": sorted({route for p in packets for route in p.discovery.get("passesRun", [])}),
+        "leadsAreVerdicts": False,
+    }
     manifest["coverage"] = coverage
     manifest["inputs"]["corpus"] = config.corpus_path or config.input_path
     manifest["inputSha256"] = {
@@ -439,6 +501,15 @@ def run(config: RunConfig) -> RunResult:
                 f"assessment:{key}": str(Path(config.assessments_dir) / f"{key}.json")
                 for key in selection
             },
+            **{
+                f"collection:{key}": str(Path(config.evidence_dir) / f"{key}.json")
+                for key in collection
+            },
+            **(
+                {"verification:index": str(Path(config.verification_dir) / "index.json")}
+                if verification
+                else {}
+            ),
         }.items()
     }
     manifest["codeSha256"] = {

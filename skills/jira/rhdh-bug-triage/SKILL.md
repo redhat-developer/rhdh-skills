@@ -32,6 +32,10 @@ entry point for the end-to-end agent workflow and runnable commands.
   assessment inputs, artifacts and migration.
 - [references/verification.md](references/verification.md) owns verification and
   evaluation acceptance criteria.
+- [references/discovery.md](references/discovery.md) owns independent discovery,
+  query coverage, alias identity and scoped fix-evidence states.
+- [references/verification-acquisition.md](references/verification-acquisition.md)
+  owns runnable source/diff/ancestry and exact OCI metadata acquisition.
 
 ## Operating contract
 
@@ -42,6 +46,11 @@ entry point for the end-to-end agent workflow and runnable commands.
   and inspect current-release code, runtime evidence, documentation or dependencies.
   An open Jira status or no PR search hit does not establish `still_valid`.
   Without definitive cited validation, retain uncertainty.
+- **Diagnose any bug type.** Own the bug-fixing investigation without making a
+  fix: reconstruct the trigger, trace the code/configuration/docs/dependency
+  path, inspect candidate corrections and test every reported requirement.
+  Follow [bug verification](references/bug-verification.md). A specialist skill
+  may assist; its absence is not a substitute for this investigation.
 - **Preview all findings.** Show every exact draft and its delivery status in
   `report.md`, including `suppress` and `review_required`; only non-suppressed
   drafts get `proposed/KEY.md`. Do not turn uncertainty into generic reproduction
@@ -69,8 +78,9 @@ Compose through interfaces, never another skill's files or scripts:
   bug-identity criteria needed to distinguish the same failure from related work.
 - `/rhdh-forge`: read-only PR/commit, diff and release-ancestry inspection; no
   write payload or PR creation is needed here.
-- `/rhdh-plugin-bug-fix`: read-only diagnosis and a specific reproduction plan;
-  never execute its fix/PR path, builds or cluster-changing steps in this workflow.
+- `/rhdh-plugin-bug-fix`: optional inspection-only specialist assistance where
+  available; never a prerequisite for general bug verification. Do not execute
+  its fix/PR path, builds or cluster-changing steps in this workflow.
 - `/prose-editing`: exactly one final batch pass over the exact Jira drafts in
   the flavored register before reviewer preview; preserve facts and safety limits.
 - `/rhdh-jira-refine`: refinement hygiene and a likely-duplicate audit, not full

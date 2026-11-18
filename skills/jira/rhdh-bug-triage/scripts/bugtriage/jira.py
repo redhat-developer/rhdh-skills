@@ -210,6 +210,13 @@ def _full_read(
     return issue
 
 
+def hydrate_acli(
+    issue: Dict[str, Any], field_names: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """Full read for a discovery hit, including available paginated comments."""
+    return _full_read(issue, field_names)
+
+
 def export_from_acli(
     jql: str, limit: Optional[int] = None, field_names: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:

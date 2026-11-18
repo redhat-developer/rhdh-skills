@@ -84,6 +84,19 @@ def normalize_pr(payload: Dict[str, Any], url: str = "") -> Dict[str, Any]:
     }
 
 
+def read_api(path: str) -> Any:
+    """Authenticated GET only; credentials stay inside the native gh adapter."""
+    try:
+        return json.loads(_run_gh(["api", "--method", "GET", path], timeout=60))
+    except json.JSONDecodeError as error:
+        raise ForgeAdapterError(f"invalid forge JSON: {error}") from error
+
+
+def read_diff(repository: str, number: int) -> str:
+    """Read the actual PR diff rather than interpreting metadata as coverage."""
+    return _run_gh(["pr", "diff", str(number), "--repo", repository], timeout=60)
+
+
 def lookup_pr(url: str, cache: Dict[str, Any], use_gh: bool) -> Dict[str, Any]:
     cached = cache.get(url)
     if isinstance(cached, dict):
@@ -220,6 +233,7 @@ def collect_for_ticket(
     jira_keys = sorted(
         {match for match in JIRA_KEY_RE.findall(ticket.search_text) if match != ticket.key}
         | {link.key for link in ticket.links if link.key and link.key != ticket.key}
+        | set(ticket.former_keys)
     )
     known = {pull.get("url") for pull in pulls}
 

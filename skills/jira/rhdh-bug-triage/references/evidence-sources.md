@@ -85,8 +85,10 @@ reviewed release, not to moving `main` or an old ticket snapshot:
 | `documentation` | Version-specific product contract/configuration proving the behavior remains required or is removed | A search miss or generic latest page is not current-release validation |
 | `dependency` | Released product's pinned dependency and its relevant implementation/compatibility change | An upstream fix alone does not prove the product incorporates it |
 
-Use `/rhdh-plugin-bug-fix` in read-only diagnosis/reproduction-planning mode for
-the relevant path and exact check. Do not follow its implementation/PR path or
+Use `/rhdh-plugin-bug-fix` with explicit `inspection-only` scope for plugin
+inspection and an exact next check; verify the installed version supports that
+branch. Do not invent a mode or enter its default reproduction/fix branch.
+Do not follow its implementation/PR path or
 run builds, deploys or cluster mutations. Inspect existing runtime artifacts
 honestly, naming who ran them when known; never claim a run not performed.
 If the required environment/evidence is unavailable, specify the missing check

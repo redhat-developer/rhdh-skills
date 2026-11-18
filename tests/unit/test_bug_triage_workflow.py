@@ -140,6 +140,45 @@ def test_unfilled_template_is_not_a_completed_investigation(inputs):
         run(inputs)
 
 
+def test_required_investigation_rejects_unclear_placeholder_before_output(inputs):
+    inputs.require_investigation = True
+    with pytest.raises(RunError, match="investigation incomplete"):
+        run(inputs)
+    assert not Path(inputs.output_dir).exists()
+
+
+def test_required_investigation_preserves_blocked_check_without_certifying_completion(inputs):
+    path = Path(inputs.assessments_dir, "RHDHBUGS-101.json")
+    document = json.loads(path.read_text())
+    document["investigation"] = {
+        "status": "blocked",
+        "release": RELEASE,
+        "scope": "The reported catalog filter refresh scenario.",
+        "mechanism": "The report omits which filter and catalog request lose state.",
+        "requirements": [
+            {
+                "statement": "The selected filter survives refresh.",
+                "result": "unknown",
+                "observed": "No original request trace or filter value is attached.",
+                "method": "report",
+                "refs": ["RHDHBUGS-101"],
+            }
+        ],
+        "blocker": "Identify the original filter value and an existing refresh request trace.",
+    }
+    path.write_text(json.dumps(document))
+    inputs.require_investigation = True
+    result = run(inputs)
+    assert result.manifest["investigationRequired"] is True
+    assert result.manifest["investigationStates"] == {
+        "completed": 0,
+        "blocked": 1,
+        "not_recorded": 0,
+    }
+    assert result.packets[0].to_dict()["investigationOutcome"] == "not_determined"
+    assert result.manifest["writes"] == []
+
+
 @pytest.mark.parametrize("field,value", [("currentRelease", "1.9.0"), ("scope", "all-open")])
 def test_saved_sample_cannot_change_scope_or_baseline_silently(inputs, field, value):
     path = Path(inputs.sample_path)

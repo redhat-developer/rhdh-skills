@@ -271,6 +271,7 @@ class DuplicateCandidate:
     customer_signals: List[str] = field(default_factory=list)
     resolution: str = ""
     duplicate_of: List[str] = field(default_factory=list)
+    same_record: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -285,6 +286,7 @@ class DuplicateCandidate:
             "customerSignals": self.customer_signals,
             "resolution": self.resolution,
             "duplicateOf": self.duplicate_of,
+            "sameRecord": self.same_record,
         }
 
 
@@ -378,6 +380,7 @@ def score_candidate(query: Ticket, candidate: Ticket) -> DuplicateCandidate:
         created=candidate.created,
         customer_signals=list(candidate.customer_signals),
         resolution=candidate.resolution,
+        same_record=bool({query.key, *query.former_keys} & {candidate.key, *candidate.former_keys}),
         duplicate_of=[
             link.key
             for link in candidate.links
@@ -394,7 +397,7 @@ def rank_candidates(
 ) -> List[DuplicateCandidate]:
     scored = []
     for candidate in corpus:
-        if candidate.key == query.key:
+        if {candidate.key, *candidate.former_keys} & {query.key, *query.former_keys}:
             continue
         result = score_candidate(query, candidate)
         if result.score >= min_score:
@@ -407,9 +410,8 @@ def distinctive_phrases(ticket: Ticket, limit: int = 3) -> List[str]:
     """Return JQL-friendly phrases for a broader live search.
 
     The first phrase prefers a quoted error from the report; the rest use the
-    most distinctive summary tokens. Each phrase is OR-joined by the caller, so
-    precision matters more than recall here — the deterministic scorer reranks
-    whatever the search returns.
+    most distinctive summary tokens. Execute terms separately and retain each
+    query's outcome; a combined query can hide individual-key recall failures.
     """
     phrases: List[str] = []
     quoted = [value.strip() for value in QUOTED_RE.findall(ticket.summary) if value.strip()]

@@ -32,6 +32,7 @@ definitive gate or become a command to post, close, fix, or backport.
 | Current validity | Cited exact-release `persists` succeeds; cited `resolved` plus whole-scope removal supports obsolete. Open status, no PR hit, missing/wrong-release/uncited validation or non-repro without cause must not become definitive validity. |
 | Selection | Age exactly 90 days; younger/missing age; all affects older; mixed older/equal/newer; missing/ambiguous/non-comparable affects; `all-open` bypasses only age/affects; customer/Done always excluded; default 12 versus `--all`; reasons retained. |
 | Investigation gate | Missing directory/file, mismatched key, blank/unknown disposition and malformed inputs fail before a successful report. An honestly investigated uncertainty is supported; a template is not adjudication. |
+| Requirement verification | `--require-investigation` rejects absent/not-started records, missing observations/citations, mismatched release and false completion with unknown requirements. Positive/negative checks need direct method-matching evidence. A specific blocked check is visible; a valid source diagnosis survives unrelated closure gates. |
 | Read adapters | Search-to-full-view fallback, pagination/partial envelope rejection, deployment-specific customer mappings, missing fields, ADF hidden Jira/PR/support links, and exact Jira-key boundaries. |
 | Collection audit | Successful zero matches versus rate limits/permission/invalid responses/cache-only reads; actual repository scope; linked-key truncation/unsearched keys; no fabricated exhaustive coverage. |
 | Untrusted evidence | Instructions embedded in Jira/PR/code text cannot trigger writes, command execution, scope changes or fabricated reviewer agreement; cached context versus repo-tag conflicts require the authoritative product release source. |
@@ -65,9 +66,11 @@ facts or reviewers; perform and retain the actual source inspection separately.
    other mutation command. Mock external calls and assert only read operations.
    End-to-end agent review must also confirm no remote writer or cluster mutation
    is invoked through a composed skill.
-7. Verify `/rhdh-context`, `/rhdh-jira-api`, `/rhdh-forge` and read-only
-   `/rhdh-plugin-bug-fix` diagnosis/repro planning are actually used as needed,
-   and `/prose-editing` runs once on the final draft batch before preview.
+7. Verify general diagnosis follows the owning
+   [bug-verification loop](bug-verification.md) for every bug type. Verify
+   `/rhdh-context`, `/rhdh-jira-api`, `/rhdh-forge` and any available inspection-only
+   specialist assistance are actually used as needed, and `/prose-editing` runs
+   once on the final draft batch before preview.
    Repeated prompts in one context are not independent reviewer sessions.
 
 ## Evaluation and live shadow review
@@ -92,3 +95,26 @@ Any future writer needs separate fresh-read/customer/history checks, per-issue
 serialization, exact approved-body preservation through ADF/readback and
 uncertain-delivery reconciliation tests. Those behaviors are neither implemented
 nor certified by this dry-run milestone.
+
+## Discovery regression coverage
+
+Test routes independently of conclusions: nonlexical graph retrieval, burst
+hard negatives, closed-copy comment evidence, conflicting pointers, alias/self
+identity, and fix-first neighbours that share only generic error words. Exercise
+failed, empty, capped and unexecuted queries, successful/failed hydration and
+budgets (failed reads consume budget too). A successful script exit is not a
+semantic duplicate/fix adjudication.
+
+For live development replays, freeze seeds, corpus, selection and limits; save
+each collection and run in a fresh private directory. Compare route/candidate
+provenance, not just closure counts. Retain baseline retrieval successes: a known
+pair already ranked first is not a newly discovered duplicate. Targeted exposed
+leads are regression cases, not blind discovery accuracy. Fewer leads is a
+workload measure, not measured precision without labels for the remaining leads.
+
+Verify that positive subset evidence can retain `partial_fix_supported` without
+authorizing whole-issue closure, while a merged candidate with absent coverage
+stays `not_established`. Scoped source/build completion does not bypass released
+artifact, full acceptance or independent review gates. Repeat a final frozen run
+to check stable packet content; timestamps alone do not constitute different
+triage results.

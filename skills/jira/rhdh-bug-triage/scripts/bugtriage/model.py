@@ -372,12 +372,30 @@ class Ticket:
     read_gaps: List[str] = field(default_factory=list)
     affects_versions_ambiguous: bool = False
     customer_fields_complete: bool = False
+    former_keys: List[str] = field(default_factory=list)
 
     @property
     def search_text(self) -> str:
         return "\n".join(
             [self.summary, self.description, *[comment.body for comment in self.comments]]
         )
+
+
+def _former_keys(issue: Dict[str, Any], payload: Dict[str, Any], key: str) -> List[str]:
+    aliases = as_names(_first(payload, "formerKeys", "former_keys"))
+    changelog = issue.get("changelog", {})
+    histories = changelog.get("histories", []) if isinstance(changelog, dict) else []
+    for history in histories:
+        for item in history.get("items", []) if isinstance(history, dict) else []:
+            if isinstance(item, dict) and str(item.get("field", "")).casefold() == "key":
+                aliases.extend([item.get("fromString"), item.get("toString")])
+    return sorted(
+        {
+            value
+            for value in aliases
+            if isinstance(value, str) and JIRA_KEY_RE.fullmatch(value) and value != key
+        }
+    )
 
 
 def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]] = None) -> Ticket:
@@ -461,6 +479,7 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
         commit_shas=_collect_commits(payload),
         is_done=is_done,
         raw=issue,
+        former_keys=_former_keys(issue, payload, key),
     )
     if ticket.assignee.lower() in ("unassigned", "none"):
         ticket.assignee = ""

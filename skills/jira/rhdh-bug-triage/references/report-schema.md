@@ -48,6 +48,41 @@ An input confidence is ignored; the policy computes its own non-probability scor
 
 ## Current-release validation
 
+### Requirement-level investigation
+
+The agent workflow uses `run --require-investigation`. Each assessment supplies
+`investigation` with `status` (`completed` or `blocked`), exact numeric `release`,
+plain-text `scope`, causal `mechanism`, and nonempty `requirements`. Each
+requirement has `statement`, `observed`, `result` (`satisfied`, `violated`,
+`unknown`), `method` (`code`, `runtime`, `documentation`, `dependency`, `artifact`
+or `report`), and nonempty `refs` already present in `evidence`. A positive or
+negative observation needs direct method-matching evidence; `report` is only
+for an unknown behavioral result, not proof of current behavior. Historical
+reporter validation remains separately scoped evidence, not a current test.
+
+`completed` cannot contain unknown requirements. `blocked` requires an unknown
+requirement and a specific nonempty `blocker`. Missing or `not_started` records
+are rejected by the strict workflow. Older inputs without the block can still
+be replayed without the flag, but their investigation is `not_recorded`, not
+certified complete. These structural checks do not prove causal correctness or
+version applicability; the agent must read and evaluate the evidence.
+
+Requirement observations survive unrelated closure-review failures. Their
+scoped outcome is separate from advisory disposition and delivery; it cannot
+bypass the existing proof gates or manufacture release/runtime validation.
+
+Optional `fixEvidence` records scoped progress separately from production closure
+proof. Its states, dimensions and direct-citation requirements are defined in
+[discovery](discovery.md). `discovery` in output packets retains local routes,
+collected queries, candidate provenance and gaps; it is never proof. `sameRecord`
+marks self/alias comparisons, which cannot authorize duplicate closure. Existing
+policy-3 inputs without the optional block retain the existing full proof gates.
+
+Output `verification` retains acquired source/diff/ancestry and OCI metadata from
+`run --verification`. The CLI validates saved receipts and release identity; see
+[acquisition](verification-acquisition.md). These observations are separate from
+the investigator's acceptance judgment and do not auto-populate resolved flags.
+
 The following is a **placeholder shape**, not a valid assessment to run unchanged:
 
 ```json

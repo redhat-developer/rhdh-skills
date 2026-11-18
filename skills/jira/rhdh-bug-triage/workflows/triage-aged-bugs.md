@@ -86,7 +86,8 @@ python3 scripts/triage.py select --input export.json \
 
 ```bash
 python3 scripts/triage.py collect --input export.json --sample sample.json \
-  --out fresh-evidence --gh --repo owner/product-repo --repo owner/docs-repo
+  --corpus broad-export.json --out fresh-evidence --gh \
+  --repo owner/product-repo --repo owner/docs-repo
 python3 scripts/triage.py template --sample sample.json --out assessments
 ```
 
@@ -95,6 +96,15 @@ by `/rhdh-context`, repeating `--repo` for relevant product/plugin/docs repos.
 Omit `--gh` for cache-only/offline collection. That does **not** search GitHub.
 Keep linked-key search limits, unsearched keys, cache misses, permission errors
 and rate limits; none are a successful zero-result search.
+
+Collection also runs independent local [discovery routes](../references/discovery.md).
+Add `--jira-search --max-queries 4 --query-limit 20 --hydrate-limit 10` for bounded
+live defect-card queries (limits apply per issue), and `--field-names` with the
+tenant map for full candidate reads. Otherwise queries are planned, not executed.
+Inspect `discovery.leads`, `commentSignals`, query outcomes and unexecuted work.
+Follow useful leads beyond a failed/capped budget through authenticated read tools;
+never call bounded retrieval exhaustive. Discovery never assigns a disposition.
+Record scoped fix progress in `fixEvidence`; missing verification is not a partial fix.
 
 Invoke `/rhdh-forge` read-only to open actual PRs/commits, inspect diffs and
 regression coverage, and verify exact target-release ancestry. Search the issue
@@ -110,12 +120,18 @@ Use current-release code, runtime evidence, documentation or dependency inspecti
 as appropriate. Record the method, outcome, precise release and citations in
 `validation`; otherwise state exactly what remains unknown.
 
-Invoke `/rhdh-plugin-bug-fix` in **read-only diagnosis/reproduction-planning mode**
-for the relevant code path and a concrete validation plan. Do not execute its
-implementation, build/deploy, cluster mutation, fix, PR or backport steps. A plan
-is not a completed reproduction. Existing runtime evidence can be inspected;
-do not claim to have run it yourself. Unavailable validation yields `unclear`
-or `needs_repro`, not an automatic task or generic "please reproduce" comment.
+Follow [bug verification](../references/bug-verification.md) for **every bug**,
+including frontend, backend, configuration, docs, dependencies and installation.
+Own the same causal investigation a bug fixer would perform, stopping before
+implementation or environment mutation. Record `investigation` with the actual
+mechanism, scoped requirement checks, observations, methods and citations. A
+completed investigation and a blocked check must not look identical in the
+report. A specific remaining runtime check is a blocker, not a claimed test run.
+
+An available specialist such as `/rhdh-plugin-bug-fix` may assist with explicit
+**inspection-only** scope; do not invoke its default fix workflow. An unavailable
+specialist is not a reason to skip general diagnosis. No product-code execution,
+build/deploy, cluster mutation, fix, PR or backport is authorized here.
 
 Write one investigated `assessments/KEY.json` per selected bug. An open status,
 stale ticket, old affects version, empty fixVersion or missing PR match cannot
@@ -137,14 +153,27 @@ disagreement and keep it uncertain; do not erase it during reconciliation.
 python3 scripts/triage.py run --input export.json --sample sample.json \
   --assessments assessments --corpus broad-export.json --evidence fresh-evidence \
   --out fresh-review --current-release "$CURRENT_RELEASE" \
-  --release-evidence "$RELEASE_EVIDENCE_URL"
+  --release-evidence "$RELEASE_EVIDENCE_URL" --require-investigation
 ```
+
+For source/provenance acquisition, first author an explicit per-issue read plan
+using the [verification-acquisition contract](../references/verification-acquisition.md).
+Run `python3 scripts/triage.py verify --plan verification-plan.json --out fresh-verification`,
+inspect the returned exact source, actual diffs, ancestry and artifact metadata,
+then add `--verification fresh-verification` to `run`. This command makes network
+reads; it is not an offline classifier. It does not run product code/tests or
+declare acceptance covered. The run validates receipt hashes and release identity
+before attaching evidence; missing/failed provenance remains visible.
 
 Add `--scope all-open` only when that was the explicit selection scope. Use a
 fresh output directory: a nonempty one is refused without retaining stale drafts.
 Missing assessment files, untouched/unknown dispositions or invalid input block
 the run; do not manufacture an "unclear" assessment just to obtain exit code 0.
 An investigated inconclusive finding is a useful draft, not silent abstention.
+`--require-investigation` rejects absent/untouched or structurally invalid
+requirement checks. `blocked` is allowed only with an unknown requirement and a
+specific missing check, and remains visibly blocked, not a completed diagnosis.
+Structural acceptance cannot establish whether the source analysis is correct.
 
 The agent, as final composer, invokes `/prose-editing` **exactly once for the
 batch of exact Jira drafts**, in the flavored register, before reviewer preview.

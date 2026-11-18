@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .discovery import discover
 from .forge import collect_for_ticket, load_cache
 from .model import load_export
 from .report import now_iso, write_json
@@ -24,12 +25,19 @@ class CollectConfig:
     forge_cache: str = ""
     use_gh: bool = False
     repos: Optional[List[str]] = None
+    corpus_path: str = ""
+    jira_search: bool = False
+    max_queries: int = 4
+    query_limit: int = 20
+    hydrate_limit: int = 10
+    field_names: Optional[dict] = None
 
 
 def collect(config: CollectConfig) -> Dict[str, str]:
     tickets = {ticket.key: ticket for ticket in load_export(config.input_path)}
     sample = load_sample_manifest(config.sample_path)
     cache = load_cache(config.forge_cache)
+    corpus = load_export(config.corpus_path or config.input_path)
     output = Path(config.output_dir)
     if output.exists():
         raise RunError("evidence directory already exists; use a fresh directory")
@@ -50,6 +58,15 @@ def collect(config: CollectConfig) -> Dict[str, str]:
         evidence["created"] = ticket.created
         evidence["issueUpdated"] = ticket.updated
         evidence["collectedAt"] = now_iso()
+        evidence["discovery"] = discover(
+            ticket,
+            corpus,
+            live=config.jira_search,
+            max_queries=config.max_queries,
+            query_limit=config.query_limit,
+            hydrate_limit=config.hydrate_limit,
+            field_names=config.field_names,
+        )
         if entry.get("controlLabel"):
             evidence["controlLabel"] = entry["controlLabel"]
         path = output / f"{key}.json"
@@ -62,6 +79,8 @@ def collect(config: CollectConfig) -> Dict[str, str]:
             "generatedAt": now_iso(),
             "dryRun": True,
             "forge": "gh" if config.use_gh else "cache-only",
+            "corpus": config.corpus_path or config.input_path,
+            "jiraSearch": config.jira_search,
             "tickets": [{"key": key, "path": path} for key, path in sorted(written.items())],
         },
     )

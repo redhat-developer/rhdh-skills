@@ -11,6 +11,7 @@ import json
 import platform
 import shutil
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
@@ -35,6 +36,7 @@ from .run import (
     run,
 )
 from .selection import Control, SelectionConfig
+from .verification import collect_verification
 
 
 def _controls(values: Optional[List[str]]) -> List[Control]:
@@ -122,6 +124,12 @@ def command_collect(args: argparse.Namespace) -> int:
             forge_cache=args.forge_cache,
             use_gh=args.gh,
             repos=args.repo,
+            corpus_path=args.corpus or "",
+            jira_search=args.jira_search,
+            max_queries=args.max_queries,
+            query_limit=args.query_limit,
+            hydrate_limit=args.hydrate_limit,
+            field_names=_field_names(args.field_names),
         )
     )
     if args.json:
@@ -153,6 +161,8 @@ def command_run(args: argparse.Namespace) -> int:
             all_tickets=args.all,
             release_evidence=args.release_evidence,
             evidence_dir=args.evidence or "",
+            verification_dir=args.verification or "",
+            require_investigation=args.require_investigation,
         )
     )
     counts = result.manifest["counts"]
@@ -170,6 +180,13 @@ def command_run(args: argparse.Namespace) -> int:
         "actions": _count(result.packets, "action"),
         "draftComments": counts["draftComments"],
         "delivery": result.manifest["commentPolicy"]["counts"],
+        "comparisonOutcomes": dict(
+            Counter(c["relationship"] for p in result.packets for c in p.comparisons)
+        ),
+        "scopedFixStates": dict(
+            Counter(p.fix_evidence["state"] for p in result.packets if p.fix_evidence)
+        ),
+        "investigationStates": result.manifest["investigationStates"],
     }
     if args.json:
         print(json.dumps(summary, indent=2))
@@ -240,6 +257,15 @@ def command_template(args: argparse.Namespace) -> int:
                 ),
                 "disposition": "",
                 "duplicateOf": "",
+                "comparisons": [],
+                "investigation": {
+                    "status": "not_started",
+                    "release": "",
+                    "scope": "",
+                    "mechanism": "",
+                    "requirements": [],
+                    "blocker": "",
+                },
                 "evidence": [],
                 "proof": {},
                 "validation": {
@@ -259,6 +285,14 @@ def command_template(args: argparse.Namespace) -> int:
                     "reviewRelease": "",
                     "containedInReviewRelease": False,
                 },
+                "fixEvidence": {
+                    "state": "not_assessed",
+                    "scenario": "",
+                    "covered": [],
+                    "unverified": [],
+                    "incorporation": {},
+                    "validation": {},
+                },
                 "repro": {"result": "not_run", "release": "", "notes": ""},
                 "review": {"independentPasses": 0, "agree": False},
                 "notes": "",
@@ -271,6 +305,25 @@ def command_template(args: argparse.Namespace) -> int:
     print(f"Wrote {len(written)} assessment template(s) to {output}")
     if skipped:
         print(f"Skipped {len(skipped)} existing file(s); pass --force to overwrite")
+    return 0
+
+
+def command_verify(args: argparse.Namespace) -> int:
+    result = collect_verification(args.plan, args.out)
+    print(
+        json.dumps(
+            {
+                "dryRun": True,
+                "keys": result["keys"],
+                "reads": len(result["reads"]),
+                "failedReads": sum(r["status"] == "failed" for r in result["reads"]),
+                "output": args.out,
+                "verdict": "requires_agent_inspection",
+                "sourceSystemWrites": [],
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -352,6 +405,22 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--sample", required=True, help="sample manifest")
     collect_parser.add_argument("--out", required=True, help="evidence directory")
     collect_parser.add_argument("--forge-cache", default="", help="offline gh PR cache")
+    collect_parser.add_argument("--corpus", help="bounded open-and-closed candidate export")
+    collect_parser.add_argument(
+        "--jira-search",
+        action="store_true",
+        help="execute separate defect-card JQL reads (default: plans only)",
+    )
+    collect_parser.add_argument(
+        "--max-queries", type=int, default=4, help="live query budget per issue"
+    )
+    collect_parser.add_argument("--query-limit", type=int, default=20)
+    collect_parser.add_argument(
+        "--hydrate-limit", type=int, default=10, help="new full candidate reads per issue"
+    )
+    collect_parser.add_argument(
+        "--field-names", help="tenant field-ID mapping for candidate full reads"
+    )
     collect_parser.add_argument(
         "--repo",
         action="append",
@@ -386,6 +455,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence", help="collection directory, retained in the audit with search failures"
     )
     run_parser.add_argument(
+        "--verification", help="integrity-checked source/release/artifact receipt directory"
+    )
+    run_parser.add_argument(
+        "--require-investigation",
+        action="store_true",
+        help="reject placeholder/absent or invalid per-requirement investigations",
+    )
+    run_parser.add_argument(
         "--comment-cooldown-days",
         type=int,
         default=DEFAULT_COOLDOWN_DAYS,
@@ -408,6 +485,18 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--strict", action="store_true")
     eval_parser.add_argument("--json", action="store_true")
     eval_parser.set_defaults(func=command_evaluate)
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="acquire source, diff, ancestry and exact OCI metadata evidence through read-only network requests",
+    )
+    verify_parser.add_argument(
+        "--plan",
+        required=True,
+        help="explicit per-issue requirements and source/artifact read plan",
+    )
+    verify_parser.add_argument("--out", required=True, help="fresh private verification directory")
+    verify_parser.set_defaults(func=command_verify)
 
     template_parser = subparsers.add_parser(
         "template", help="write assessment templates for a sample"

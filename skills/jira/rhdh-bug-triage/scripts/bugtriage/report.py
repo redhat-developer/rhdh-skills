@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .model import Ticket
-from .policy import CLOSE_ACTIONS, Packet
+from .policy import CLOSE_ACTIONS, Packet, investigation_outcome
 
 DRY_RUN_BANNER = (
     "**Dry run.** Nothing was posted, transitioned, linked, or written to Jira. "
@@ -93,18 +93,35 @@ def render_report(
         status: sum(p.comment_plan.get("status") == status for p in packets)
         for status in ("propose", "review_required", "suppress")
     }
+    investigations = {
+        status: sum(p.investigation.get("status", "not_recorded") == status for p in packets)
+        for status in ("completed", "blocked", "not_recorded")
+    }
+    outcomes = {
+        outcome: sum(investigation_outcome(p) == outcome for p in packets)
+        for outcome in (
+            "requirements_satisfied_in_stated_scope",
+            "requirement_violated",
+            "not_determined",
+            "not_recorded",
+            "invalid",
+        )
+    }
     lines = [
         f"# RHDH bug triage — {as_of.date().isoformat()}",
         "",
         DRY_RUN_BANNER,
         "",
-        "Each triaged issue appears below, including uncertainty. A draft is not permission to post. "
+        "Each selected issue appears below, including blocked checks. A draft is not permission to post. "
         "Suppressed drafts are shown for inspection only; they must not be sent again.",
         "",
-        f"**Bottom line:** {len(packets)} triaged; {drafts} comment draft(s); "
+        f"**Bottom line:** {len(packets)} reviewed; {drafts} comment draft(s); "
         f"{sum(p.action in CLOSE_ACTIONS for p in packets)} advisory closure recommendation(s).",
         "",
         f"- Delivery: {delivery['propose']} proposed; {delivery['review_required']} require history/proof review; {delivery['suppress']} suppressed.",
+        f"- Agent report-identity comparisons supported: {sum(c.get('relationship') == 'duplicate_supported' for p in packets for c in p.comparisons)}; scoped fixes verified: {sum(p.fix_evidence.get('state') == 'verified_for_stated_scope' for p in packets)}; supported subsets/mitigations: {sum(p.fix_evidence.get('state') == 'partial_fix_supported' for p in packets)}. These are not closure counts.",
+        f"- Investigation states: {investigations}. Blocked checks are not completed verification.",
+        f"- Scoped investigation outcomes: {outcomes}. These do not certify runtime or released-artifact identity beyond the stated scope.",
         f"- Reviewed: {len(packets)} ({control_count} Control tickets). Scope: {coverage.get('scope', 'aged')}.",
         f"- Corpus: {corpus_size} tickets; release under review: {current_release}.",
         f"- Product release evidence: {release_evidence or 'not supplied'}.",
@@ -140,6 +157,65 @@ def render_report(
         ]
         if packet.notes:
             lines += [f"**Reviewer context:** {packet.notes}", ""]
+        if packet.verification:
+            v = packet.verification
+            lines += [
+                f"**Verification acquisition:** `{v['status']}`; acceptance still requires source inspection.",
+                "",
+            ]
+            for repository in v["repositories"]:
+                lines.append(
+                    f"- Source: {repository['repository']} @ `{repository['revision'] or 'unresolved'}` (requested `{repository['requestedRef']}`)."
+                )
+                for pull in repository["pullRequests"]:
+                    lines.append(
+                        f"  - {pull['ref']}: `{pull['containment']}`; actual diff {'read' if pull.get('diff') is not None else 'unavailable'}."
+                    )
+            for artifact in v["artifacts"]:
+                lines.append(
+                    f"- Artifact: {artifact['releaseReference']}; source binding `{artifact['sourceBinding']}`; {len(artifact['objects'])} digest-checked metadata objects read."
+                )
+            lines += ["", "**Acquisition/provenance gaps:** " + "; ".join(v["gaps"]), ""]
+        for comparison in packet.comparisons:
+            lines += [
+                f"**Report comparison (agent assessment, not closure permission):** {comparison.get('key')}: `{comparison.get('relationship')}` — {comparison.get('summary')}",
+                "",
+            ]
+        if packet.fix_evidence:
+            lines += [
+                f"**Scoped fix state:** `{packet.fix_evidence.get('state', 'not_assessed')}` (separate from closure eligibility).",
+                "",
+            ]
+            lines += [f"**Scenario:** {packet.fix_evidence.get('scenario', 'not established')}", ""]
+            lines += [
+                "**Unverified requirements:** "
+                + "; ".join(packet.fix_evidence.get("unverified", [])),
+                "",
+            ]
+            for claim in packet.fix_evidence.get("covered", []):
+                if isinstance(claim, dict):
+                    lines += [
+                        f"- Scoped coverage account: {claim.get('summary', '')}; refs: {claim.get('refs', [])}"
+                    ]
+            lines.append("")
+        discovery = packet.discovery
+        if discovery:
+            lines += ["**Discovery leads (not verdicts):**", ""]
+            for lead in discovery.get("leads", []):
+                lines.append(
+                    f"- {lead['key']}: {', '.join(lead['foundBy'])}"
+                    + ("; " + "; ".join(lead["warnings"]) if lead.get("warnings") else "")
+                )
+            queries = discovery.get("collection", discovery).get("queries", [])
+            outcomes = {
+                name: sum(q.get("outcome") == name for q in queries)
+                for name in ("returned", "empty", "capped", "failed", "not_run")
+            }
+            lines += [
+                "",
+                f"**Jira discovery coverage:** {outcomes}. Failed, capped and unrun queries are not zero matches.",
+                "",
+            ]
         if packet.gaps:
             lines += ["**Limits:** " + "; ".join(packet.gaps), ""]
         collected = coverage.get("collection", {}).get(packet.key, {})
