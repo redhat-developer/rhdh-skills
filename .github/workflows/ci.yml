@@ -97,8 +97,10 @@ jobs:
       - name: Verify skills.sh discovery
         run: npx --yes skills@1.5.22 add . --list
 
-      - name: Test JavaScript skill scripts
-        run: node --test "skills/**/tests/*.test.mjs"
+      - name: Test JavaScript / TypeScript skill scripts
+        # --experimental-strip-types: run .ts scripts under Node 22 without a build
+        # step (rhdh-adr ADR-008). Harmless for existing .js/.mjs suites.
+        run: node --experimental-strip-types --test "skills/**/tests/*.test.mjs"
 
       - name: Lint shell skill scripts
         run: find skills -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
