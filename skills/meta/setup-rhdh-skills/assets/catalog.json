@@ -17,6 +17,14 @@
   ],
   "skills": [
     {
+      "name": "rhdh-cve-pr-jira-link",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate"
+      ]
+    },
+    {
       "name": "rhdh-jira-create",
       "category": "jira",
       "invocation": "model",

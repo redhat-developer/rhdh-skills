@@ -46,8 +46,9 @@
       "source": "./",
       "description": "Security skills from the RHDH pack",
       "skills": [
-        "./skills/security/rhdh-package-impact",
+        "./skills/security/rhdh-cve-pr-jira-link",
         "./skills/reference/mutation-gate",
+        "./skills/security/rhdh-package-impact",
         "./skills/reference/prose-editing",
         "./skills/security/cve-pr-review"
       ]
