@@ -22,6 +22,7 @@ from .duplicates import (
     rank_candidates,
     score_candidate,
 )
+from .layout import write_phased_output
 from .model import (
     JIRA_KEY_RE,
     Ticket,
@@ -40,13 +41,7 @@ from .policy import (
     load_assessment,
     recommendation_comment,
 )
-from .report import (
-    now_iso,
-    render_manifest,
-    render_report,
-    write_json,
-    write_text,
-)
+from .report import now_iso, render_manifest
 from .selection import Control, SelectionConfig, select_sample
 from .verification import load_verification
 
@@ -408,30 +403,11 @@ def run(config: RunConfig) -> RunResult:
         "corpusExhaustive": False,
         "collection": collection,
     }
-    # Two files, by design: report.md for people, packets.json for the system
-    # (findings plus the meta block that says where the data came from and
-    # that nothing was written). Working inputs live outside this directory,
-    # wherever the workflow put them.
+    # The run root holds two phases: 01-triage (decide, comment, prove) and
+    # 02-fixes (a handoff scaffold for separately approved write work).
+    # Working inputs stay outside this directory.
     output_dir.mkdir(parents=True, exist_ok=False)
 
-    report = render_report(
-        packets,
-        tickets_by_key,
-        generated_at=generated_at,
-        as_of=as_of,
-        current_release=config.current_release,
-        jql=jql,
-        sample_size=sum(1 for entry in selection.values() if entry.get("kind") == "aged"),
-        control_count=sum(1 for entry in selection.values() if entry.get("kind") == "control"),
-        backlog_size=len(backlog),
-        backlog_has_closed=backlog_has_closed,
-        excluded=sample.get("excluded", []),
-        selection=selection,
-        thresholds=thresholds,
-        coverage=coverage,
-        release_evidence=config.release_evidence,
-    )
-    write_text(output_dir / "report.md", report)
     meta = render_manifest(
         generated_at=generated_at,
         as_of=as_of,
@@ -464,6 +440,9 @@ def run(config: RunConfig) -> RunResult:
         status: sum(p.investigation.get("status", "not_recorded") == status for p in packets)
         for status in ("completed", "blocked", "not_recorded")
     }
+    meta["customerFieldsCompleteCount"] = sum(
+        1 for packet in packets if tickets_by_key[packet.key].customer_fields_complete
+    )
     meta["discovery"] = {
         "leadCount": sum(len(p.discovery.get("leads", [])) for p in packets),
         "passes": sorted({route for p in packets for route in p.discovery.get("passesRun", [])}),
@@ -495,16 +474,20 @@ def run(config: RunConfig) -> RunResult:
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(Path(__file__).parent.glob("*.py"))
     }
-    write_json(
-        output_dir / "packets.json",
-        {
-            "schemaVersion": 3,
-            "dryRun": True,
-            "generatedAt": generated_at,
-            "currentRelease": config.current_release,
-            "meta": meta,
-            "packets": [packet.to_dict() for packet in packets],
-        },
+    write_phased_output(
+        output_dir,
+        packets=packets,
+        tickets=tickets_by_key,
+        sample=sample,
+        coverage=coverage,
+        meta=meta,
+        generated_at=generated_at,
+        as_of=as_of.date().isoformat(),
+        current_release=config.current_release,
+        jql=jql,
+        thresholds=thresholds,
+        release_evidence=config.release_evidence,
+        assessments_dir=config.assessments_dir,
     )
 
     return RunResult(

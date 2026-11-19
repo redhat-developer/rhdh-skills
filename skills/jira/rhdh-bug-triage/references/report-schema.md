@@ -165,15 +165,42 @@ customer fields block closure advice; the comment stays `review_required`.
 
 ## What a run writes
 
-Two files, by design:
+Two phases under the run root:
 
-- `report.md` — the one file a human reads: every exact draft with its
-  verdict, proof or uncertainty, fix plan, owner, next step and posting
-  status. On-hold and suppressed drafts included.
-- `packets.json` — the same findings for the system, plus a `meta` block:
-  release and its evidence link, input paths and SHA-256 hashes, module
-  hashes, thresholds, counts, delivery policy, collection coverage and
-  `writes: []`.
+- `01-triage/START-HERE.md` — the decision page: metrics, one row per bug,
+  the reading order, and the limits.
+- `01-triage/comments/KEY.md` — one exact draft per bug, with its posting
+  status above a separator. On-hold and suppressed drafts included.
+- `01-triage/audit/` — `METHOD.md`, `RUN.md`, `release.md`, `selection.json`,
+  `manifest.json`, `packets.json`, `assessments/KEY.json` and
+  `bugs/KEY.md` (proof, validation, fix plan, owner, next step, limits).
+- `02-fixes/` — `README.md`, `INTAKE.md`, `AUDIT.md`, and one case per bug
+  under `pull-requests/`, `docs/`, `new-bugs/`, `resolution/` or `blocked/`.
+  Each case has `CASE.md`, `PLAN.md`, `ARTIFACT.md`, `VERIFY.md` and
+  `APPROVAL.md`. Plans only: no branch, commit, PR, Jira issue or closure.
+
+`packets.json` carries the findings for the system plus a `meta` block:
+release and its evidence link, input paths and SHA-256 hashes, module
+hashes, thresholds, counts, delivery policy, collection coverage and
+`writes: []`.
+
+## Optional handoff
+
+An assessment may name its primary fix outcome:
+
+```json
+"handoff": {
+  "outcome": "pull_request",
+  "reason": "The fix needs a code change in the product repository."
+}
+```
+
+Valid outcomes are `pull_request`, `docs`, `new_bug`, `resolution` and
+`blocked`. Without it, the tool infers: duplicate/already-fixed/no-longer-valid
+and complexity `none` route to `resolution`; `unclear` or a blocked
+investigation routes to `blocked`; all-documentation areas route to `docs`;
+everything else routes to `pull-requests`. One primary outcome per bug; a
+secondary action belongs in `CASE.md`.
 
 Keep private exports and live reports out of the PR. `--evidence` attaches
 the collection results and their failures; without it, do not call the

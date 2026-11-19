@@ -178,10 +178,15 @@ done; `--require-fix-plan` refuses ones without a fix plan. A blocked
 investigation needs one unknown check and a sentence on what is missing, and
 stays visibly blocked.
 
-The run writes exactly two files: `report.md` and `packets.json`. Nothing
-else. `report.md` is the one file a human reads; `packets.json` carries the
-same findings for the system plus a `meta` block (which inputs, which hashes,
-which code, and `writes: []`).
+The run writes a phased root. `01-triage/` contains the decision page
+(`START-HERE.md`), one exact draft per bug under `comments/`, and the
+selection, release record, method, per-bug proof, assessments and machine
+record under `audit/`. `02-fixes/` contains `README.md`, `INTAKE.md`,
+`AUDIT.md`, and one case folder per finding under its outcome:
+`pull-requests/`, `docs/`, `new-bugs/`, `resolution/` or `blocked/`. Every
+fix case is a plan only; no branch, commit, PR, Jira issue or closure exists.
+`audit/packets.json` carries the machine record plus a `meta` block (which
+inputs, which hashes, which code, and `writes: []`).
 
 To make the source citations tamper-evident, write a read plan first (which
 sources, which checks — see
@@ -197,24 +202,27 @@ the assessment and rerun into a new directory; never hand-edit a draft into
 something the checks did not verify. An unavailable `/prose-editing` is
 recorded as a gap, not silently skipped.
 
-Read `report.md`: every exact comment, verdict, validation, fix plan, owner,
+Read `01-triage/START-HERE.md` for the decision table, then
+`01-triage/comments/KEY.md` for the exact draft and
+`01-triage/audit/bugs/KEY.md` for the proof, validation, fix plan, owner,
 next step, and whether the comment may be posted. `review_required` and
 `suppress` are statuses, not missing findings and not permission to post.
+`02-fixes/INTAKE.md` is the handoff; it does not authorize a write.
 
 ## 6. Finish the dry run
 
-Report the `report.md` path, the bug/verdict/delivery counts and the
-important limits. Say that nothing was posted, no bugs were closed, and no
-fixes, PRs or backports were created. Zero close recommendations is a fine
-outcome; zero investigated drafts for a non-empty sample is not. Never call
-`/rhdh-jira-update` or any other writer during this run, even if the user
-likes the preview. Posting and closing are separate, explicitly approved
-work under `/mutation-gate`.
+Report the `01-triage/START-HERE.md` path, the bug/verdict/delivery counts,
+the fix outcomes, and the important limits. Say that nothing was posted, no
+bugs were closed, and no fixes, PRs or backports were created. Zero close
+recommendations is a fine outcome; zero investigated drafts for a non-empty
+sample is not. Never call `/rhdh-jira-update` or any other writer during this
+run, even if the user likes the preview. Posting, closing and the `02-fixes`
+write phase are separate, explicitly approved work under `/mutation-gate`.
 
 ## Scoring against known answers
 
 ```bash
-python3 scripts/triage.py evaluate --packets review/packets.json \
+python3 scripts/triage.py evaluate --packets REVIEW/01-triage/audit/packets.json \
   --truth labels.json --strict
 ```
 

@@ -27,6 +27,7 @@ from .jira import (
     load_tickets_from_acli,
     write_acli_probe,
 )
+from .layout import fix_outcome
 from .model import (
     DEFAULT_AGED_DAYS,
     DEFAULT_SAMPLE_SIZE,
@@ -195,6 +196,7 @@ def command_run(args: argparse.Namespace) -> int:
             Counter(p.fix_evidence["state"] for p in result.packets if p.fix_evidence)
         ),
         "investigationStates": result.manifest["investigationStates"],
+        "fixOutcomes": dict(Counter(fix_outcome(packet) for packet in result.packets)),
     }
     if args.json:
         print(json.dumps(summary, indent=2))
@@ -209,9 +211,11 @@ def command_run(args: argparse.Namespace) -> int:
             f"Draft comments: {counts['draftComments']} · advisory closure recommendations: {counts['closeProposals']}"
         )
         print(f"Comment delivery: {result.manifest['commentPolicy']['counts']}")
+        print(f"Fix outcomes: {dict(Counter(fix_outcome(packet) for packet in result.packets))}")
         print(
-            "Open report.md — it is the only file to read. packets.json holds the "
-            "same findings for the system, with a meta block that records inputs and hashes."
+            "Open 01-triage/START-HERE.md first. Exact drafts are in 01-triage/comments/, "
+            "proof is in 01-triage/audit/, and the fix handoff is in 02-fixes/. "
+            "01-triage/audit/packets.json holds the machine record, inputs and hashes."
         )
     return 0
 
@@ -302,7 +306,10 @@ def command_template(args: argparse.Namespace) -> int:
                     "two independent reviews that agree. Every bug needs a fixPlan: "
                     "what a fix would change, where it would land, and how big it is "
                     "(for duplicate/already-fixed/no-longer-valid, describe the "
-                    "resolution action instead and use complexity 'none')."
+                    "resolution action instead and use complexity 'none'). "
+                    "Optionally set handoff.outcome to pull_request, docs, "
+                    "new_bug, resolution or blocked when the default routing "
+                    "would put the case in the wrong phase."
                 ),
                 "verdict": "",
                 "duplicateOf": "",
@@ -334,6 +341,10 @@ def command_template(args: argparse.Namespace) -> int:
                     ],
                     "complexity": "",
                     "refs": [],
+                },
+                "handoff": {
+                    "outcome": "",
+                    "reason": "",
                 },
                 "fix": {
                     "pr": "",
@@ -502,7 +513,8 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.set_defaults(func=command_collect)
 
     run_parser = subparsers.add_parser(
-        "run", help="check the assessments and write report.md + packets.json"
+        "run",
+        help="check the assessments and write 01-triage + 02-fixes",
     )
     run_parser.add_argument("--input", required=True, help="Jira JSON export")
     run_parser.add_argument("--sample", help="sample manifest; omit to select in memory")

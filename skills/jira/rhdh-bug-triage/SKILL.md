@@ -62,10 +62,11 @@ the single step-by-step guide, with every command.
   verdicts, describe the resolution action instead (complexity `none`). A
   plan is guidance for the separately approved fix work — it is not a change,
   not proof a fix exists, and not permission to close the bug.
-- **Show everything.** Every exact comment draft lands in `report.md` with
-  its verdict, evidence, fix plan and whether it may ever be posted —
-  including the ones on hold and the ones we are staying quiet about because
-  the same advice was given before.
+- **Show everything.** Every exact comment draft lands in
+  `01-triage/comments/` with its verdict, evidence, fix plan and whether it
+  may ever be posted — including the ones on hold and the ones we are staying
+  quiet about because the same advice was given before. The decision page is
+  `01-triage/START-HERE.md`; the proof is in `01-triage/audit/`.
 - **Never write to Jira.** No comments, links, assignments, transitions,
   closes, fixes, PRs or backports. There is no `post` command. A
   recommendation is not authorization.
@@ -103,10 +104,13 @@ Run `python3 scripts/triage.py` from the installed skill directory. The
   fully-read parts that carry dates, links and fix versions.
 - `brief` writes one self-contained file per picked bug, so each investigator
   reads about its own bug only — not the whole export.
-- `run` writes exactly two files: `report.md` (the one humans read) and
-  `packets.json` (the same findings for the system, plus a `meta` block
-  recording where the data came from and that nothing was written). Pass
-  `--require-investigation --require-fix-plan` so half-done work is refused.
+- `run` writes a phased run root: `01-triage/` holds the decision page
+  (`START-HERE.md`), one exact draft per bug under `comments/`, and the proof,
+  selection and machine record under `audit/`; `02-fixes/` holds a handoff
+  scaffold that routes each finding to a pull request, documentation change,
+  new issue, resolution, or blocked check. It writes no Jira mutation and no
+  PR. Pass `--require-investigation --require-fix-plan` so half-done work is
+  refused.
 
 By default we review open, non-customer bugs at least 90 days old whose
 affected versions are all older than the release under review (12 of them,
@@ -117,11 +121,13 @@ the export covers the whole tracker.
 ## Completion
 
 Every picked bug has been investigated; every draft, fix plan and delivery
-status is in `report.md`; disagreements, exclusions, input hashes and search
-failures are kept in the audit data; `meta.writes` is empty. Keep local
-reports and private Jira exports out of the PR.
+status is in `01-triage/comments/` and `01-triage/audit/`; disagreements,
+exclusions, input hashes and search failures are kept in the audit data;
+`meta.writes` is empty. `02-fixes/INTAKE.md` names the handoff outcome for
+each finding, and no branch, commit or PR exists. Keep local reports and
+private Jira exports out of the PR.
 
-Report the bug count, the verdict and delivery counts, the `report.md` path
-and the important limits. Say plainly: nothing was posted to Jira, no bugs
-were closed, no fixes, PRs or backports were created. A blocked or
-uninvestigated run is never called complete.
+Report the `01-triage/START-HERE.md` path, the bug/verdict/delivery counts,
+the fix outcomes, and the important limits. Say plainly: nothing was posted
+to Jira, no bugs were closed, no fixes, PRs or backports were created. A
+blocked or uninvestigated run is never called complete.

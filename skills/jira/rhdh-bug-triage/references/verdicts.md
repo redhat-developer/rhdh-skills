@@ -115,7 +115,8 @@ change or permission to close.
 
 `commentPlan.status` is `propose`, `suppress` or `review_required`; none of
 them is a receipt or authorization. Every exact draft stays visible in
-`report.md` and `packets.json`, including suppressed and on-hold ones.
+`01-triage/comments/` and `01-triage/audit/packets.json`, including
+suppressed and on-hold ones.
 
 Identical advice that was already given is suppressed indefinitely. Changed
 advice needs the cooldown (default 14 days) **and** cited proof that the

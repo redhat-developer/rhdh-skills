@@ -35,6 +35,11 @@ def evaluate(ticket, candidates, assessment):
     return evaluate_finding(ticket, candidates, assessment, current_release=CURRENT_RELEASE)
 
 
+def comment_text(output, key):
+    text = (output / "01-triage" / "comments" / f"{key}.md").read_text(encoding="utf-8")
+    return text.split("---\n", 1)[1].strip()
+
+
 def assert_unclear_draft(packet):
     assert packet.action == "comment_only"
     assert packet.verdict == "unclear"
@@ -353,9 +358,9 @@ def test_explicit_unclear_assessments_produce_drafts_without_human_investigation
         assert_unclear_draft(packet)
         assert "ask " not in packet.recommended_step.lower()
         assert "reproduce" not in packet.recommended_step.lower()
-    report = (output / "report.md").read_text()
-    assert report.count("### RHDHBUGS-") == 5
-    assert all("### " + p.key in report for p in result.packets)
+    comments = list((output / "01-triage" / "comments").glob("*.md"))
+    assert len(comments) == 5
+    assert {path.stem for path in comments} == {p.key for p in result.packets}
     assert result.manifest["counts"]["abstained"] == 0
     assert result.manifest["counts"]["surfacedRecommendations"] == 5
     assert result.manifest["counts"]["closeProposals"] == 0
@@ -436,16 +441,9 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
             as_of="2026-11-09",
         )
     )
-    report = (output / "report.md").read_text()
-    assert report.count("### RHDHBUGS-") == len(result.packets)
+    assert len(list((output / "01-triage" / "comments").glob("*.md"))) == len(result.packets)
     for packet in result.packets:
-        section = report.split("### " + packet.key + " —", 1)[1].split("\n### ", 1)[0]
-        quoted = "\n".join(
-            line[2:] if line.startswith("> ") else ""
-            for line in section.splitlines()
-            if line.startswith(">")
-        )
-        assert quoted == packet.proposed_comment
+        assert comment_text(output, packet.key) == packet.proposed_comment
         assert packet.proposed_comment.count("Triage reference:") == 1
 
 
@@ -481,10 +479,9 @@ def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
         )
     )
     assert result.packets[0].comment_plan["status"] == "suppress"
-    assert not (output / "proposed").exists()
-    report = (output / "report.md").read_text()
-    assert "### " + ticket.key in report
-    assert "`suppress`" in report
+    assert not (output / "01-triage" / "proposed").exists()
+    comment = (output / "01-triage" / "comments" / f"{ticket.key}.md").read_text()
+    assert comment.startswith("Status: suppress")
     assert result.manifest["counts"]["surfacedRecommendations"] == 1
 
 
@@ -594,5 +591,6 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
     packets = {p.key: p for p in result.packets}
     assert packets["RHDHBUGS-200"].action == "propose_close_duplicate"
     assert_unclear_draft(packets["RHDHBUGS-300"])
-    report = (output / "report.md").read_text(encoding="utf-8")
-    assert "RHDHBUGS-300" in report and "RHDHBUGS-200" in report
+    comments = output / "01-triage" / "comments"
+    assert (comments / "RHDHBUGS-300.md").is_file()
+    assert (comments / "RHDHBUGS-200.md").is_file()

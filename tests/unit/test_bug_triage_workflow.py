@@ -105,11 +105,9 @@ def test_end_to_end_uncertainty_has_exact_comment_not_an_empty_closure_report(in
     assert packet.action == "comment_only"
     assert packet.proposed_comment
     assert packet.comment_plan["status"] == "propose"
-    report = (result.output_dir / "report.md").read_text()
-    for line in packet.proposed_comment.splitlines():
-        if line:
-            assert "> " + line in report
-    saved = json.loads((result.output_dir / "packets.json").read_text())
+    comment = (result.output_dir / "01-triage" / "comments" / f"{packet.key}.md").read_text()
+    assert comment.split("---\n", 1)[1].strip() == packet.proposed_comment
+    saved = json.loads((result.output_dir / "01-triage" / "audit" / "packets.json").read_text())
     assert saved["packets"][0]["proposedComment"] == packet.proposed_comment
     assert result.manifest["counts"]["draftComments"] == 1
     assert result.manifest["counts"]["closeProposals"] == 0
@@ -240,8 +238,9 @@ def test_failed_searches_and_bounded_coverage_survive_into_report(inputs, tmp_pa
     )
     inputs.evidence_dir = str(evidence)
     result = run(inputs)
-    report = (result.output_dir / "report.md").read_text()
-    assert "1 failed or invalid" in report
+    run_audit = (result.output_dir / "01-triage" / "audit" / "RUN.md").read_text()
+    assert "failed" in run_audit
+    assert "A failed search is not a zero result." in run_audit
     assert result.manifest["coverage"]["corpusExhaustive"] is False
     assert result.manifest["coverage"]["assessedIssues"] == 1
 

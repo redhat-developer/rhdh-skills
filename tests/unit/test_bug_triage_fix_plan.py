@@ -216,5 +216,5 @@ class TestRequireFixPlan:
     def test_run_with_fix_plan_succeeds_and_records_the_flag(self, tmp_path):
         result = run(self._config(tmp_path, with_plan=True))
         assert result.manifest["fixPlanRequired"] is True
-        assert (result.output_dir / "packets.json").is_file()
-        assert (result.output_dir / "report.md").is_file()
+        assert (result.output_dir / "01-triage" / "audit" / "packets.json").is_file()
+        assert (result.output_dir / "01-triage" / "START-HERE.md").is_file()

@@ -101,6 +101,7 @@ class Assessment:
     comparisons: List[Dict[str, Any]] = field(default_factory=list)
     investigation: Dict[str, Any] = field(default_factory=dict)
     fix_plan: Dict[str, Any] = field(default_factory=dict)
+    handoff: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -139,6 +140,7 @@ class Packet:
     comparisons: List[Dict[str, Any]] = field(default_factory=list)
     investigation: Dict[str, Any] = field(default_factory=dict)
     fix_plan: Dict[str, Any] = field(default_factory=dict)
+    handoff: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -175,6 +177,7 @@ class Packet:
             "comparisons": self.comparisons,
             "investigation": self.investigation,
             "fixPlan": self.fix_plan,
+            "handoff": self.handoff,
             "investigationOutcome": investigation_outcome(self),
             "sameRecord": bool(
                 any(c.get("relationship") == "same_record" for c in self.comparisons)
@@ -299,6 +302,7 @@ def parse_assessment(document: Dict[str, Any]) -> Assessment:
         comparisons=comparisons,
         investigation=document.get("investigation", {}),
         fix_plan=document.get("fixPlan") if isinstance(document.get("fixPlan"), dict) else {},
+        handoff=document.get("handoff") if isinstance(document.get("handoff"), dict) else {},
     )
 
 
@@ -1254,6 +1258,7 @@ def evaluate(
         packet.comparisons = [dict(item) for item in assessment.comparisons]
         packet.investigation = assessment.investigation
         packet.fix_plan = dict(assessment.fix_plan)
+        packet.handoff = dict(assessment.handoff)
         packet.repro = {"result": assessment.repro_result, "release": assessment.repro_release}
         packet.invalid_evidence = assessment.invalid_evidence
         packet.independent_passes, packet.agreement = (

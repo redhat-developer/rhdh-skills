@@ -618,14 +618,28 @@ class TestRun:
         assert len(result.packets) == 7
         assert sum(result.manifest["commentPolicy"]["counts"].values()) == 7
         assert result.manifest["commentPolicy"]["cooldownDays"] == 14
-        # Two files, by design: the human report and the machine record.
-        assert sorted(path.name for path in out.iterdir()) == ["packets.json", "report.md"]
-        packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
+        # Two phases: the triage decision and the fix handoff.
+        assert sorted(path.name for path in out.iterdir()) == ["01-triage", "02-fixes"]
+        triage = out / "01-triage"
+        assert (triage / "START-HERE.md").is_file()
+        assert (triage / "comments").is_dir()
+        assert len(list((triage / "comments").glob("*.md"))) == 7
+        assert (triage / "audit" / "bugs").is_dir()
+        assert (triage / "audit" / "METHOD.md").is_file()
+        assert (triage / "audit" / "RUN.md").is_file()
+        start = (triage / "START-HERE.md").read_text(encoding="utf-8")
+        assert "## Decisions" in start
+        assert "Fix cases: pull request" in start
+        intake = (out / "02-fixes" / "INTAKE.md").read_text(encoding="utf-8")
+        assert "RHDHBUGS-1006" in intake
+        packets = json.loads((triage / "audit" / "packets.json").read_text(encoding="utf-8"))
         assert packets["dryRun"] is True
         assert packets["meta"]["writes"] == []
         assert packets["meta"]["counts"]["packets"] == 7
-        report = (out / "report.md").read_text(encoding="utf-8")
-        assert "[PR #999]" in report
+        comments = "\n".join(
+            path.read_text(encoding="utf-8") for path in (triage / "comments").glob("*.md")
+        )
+        assert "[PR #999]" in comments
         close = [item for item in packets["packets"] if item["action"].startswith("propose_close")]
         assert {item["key"] for item in close} == {"RHDHBUGS-1006", "RHDHBUGS-1010"}
         assert all(item["evidence"] for item in close)
@@ -693,7 +707,9 @@ class TestEvaluate:
                 as_of="2026-11-09",
             )
         )
-        packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
+        packets = json.loads(
+            (out / "01-triage" / "audit" / "packets.json").read_text(encoding="utf-8")
+        )
         observed = [
             Packet(
                 key=item["key"],

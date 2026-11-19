@@ -1,4 +1,9 @@
-"""The one report a human reads: every draft comment, decision and limit."""
+"""Shared rendering helpers and the optional full dossier.
+
+The phased layout in :mod:`layout` is the primary human view. This module keeps
+the manifest builder and the file writers, plus a compatibility renderer for
+callers that still want the older single-document view.
+"""
 
 from __future__ import annotations
 
@@ -90,7 +95,7 @@ def render_report(
         f"- Reviewed: {len(packets)} bugs ({control_count} of them control bugs with known answers). Scope: {'bugs at least 90 days old' if coverage.get('scope', 'aged') == 'aged' else 'all open bugs'}.",
         f"- Bugs searched for duplicates and fixes: {backlog_size}. Release under review: {current_release}.",
         f"- Proof of that release: {release_evidence or 'not supplied'}.",
-        f"- Picked {coverage.get('selectedIssues', len(packets))} of {coverage.get('eligibleIssues', 'unknown')} eligible bugs; {len(excluded)} were excluded, with reasons in packets.json.",
+        f"- Picked {coverage.get('selectedIssues', len(packets))} of {coverage.get('eligibleIssues', 'unknown')} eligible bugs; {len(excluded)} were excluded, with reasons in audit/selection.json.",
         "- We only searched the bugs listed above; that list is not the whole tracker, and 'no match found' never proves a bug is unique.",
         "",
         "## The exact comments we would post",
