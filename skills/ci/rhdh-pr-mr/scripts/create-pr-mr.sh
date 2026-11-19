@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Push a topic branch and open a GitHub PR or GitLab CEE MR.
-# Require attribution and Jira metadata, then link via sibling rhdh-jira-link.
+# Require attribution; add Jira metadata and link via sibling rhdh-jira-link
+# only when an issue key is given (Jira-less automation omits it).
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -25,13 +26,14 @@ usage() {
 Usage:
   create-pr-mr.sh --cwd DIR --base BRANCH --head BRANCH --title TITLE
                   [--body TEXT | --body-file FILE]
-                  --issue KEY --attribution ATTR
+                  [--issue KEY] --attribution ATTR
                   [--label LABEL] [--open] [--dry-run]
 
 Caller owns the commit. This script pushes --head and opens a GitHub PR or
 GitLab CEE MR. It verifies the latest commit carries an Assisted-By trailer,
-adds the resolved attribution and a Markdown Jira link to the description, and
-links Jira via rhdh-jira-link.
+adds the resolved attribution and — when --issue is given — a Markdown Jira
+link to the description, and links Jira via rhdh-jira-link. Without --issue
+the PR/MR opens with attribution only, for Jira-less automation.
 
 ATTR is written as-is when it already starts with Assisted-By:/Generated-by:,
 otherwise it is prefixed with "Assisted-By: ". Its payload is optional past
@@ -67,10 +69,10 @@ done
   echo "[ERROR] --base, --head, and --title are required" >&2
   exit 1
 }
-[[ "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || {
-  echo "[ERROR] --issue KEY is required (for example RHIDP-12345)" >&2
+if [[ -n "${ISSUE}" && ! "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]]; then
+  echo "[ERROR] --issue KEY must look like RHIDP-12345" >&2
   exit 1
-}
+fi
 # Attribution: tool name required, everything after it optional. Fill in from
 # the running harness when the caller passed nothing, and never invent a
 # placeholder value — an agent copies a placeholder verbatim.
@@ -108,10 +110,15 @@ append_body_line() {
   fi
 }
 
-jira_url="https://redhat.atlassian.net/browse/${ISSUE}"
-jira_line="Related Jira: [${ISSUE}](${jira_url})"
+jira_line=""
+if [[ -n "${ISSUE}" ]]; then
+  jira_url="https://redhat.atlassian.net/browse/${ISSUE}"
+  jira_line="Related Jira: [${ISSUE}](${jira_url})"
+fi
 ensure_body_metadata() {
-  append_body_line "${jira_line}"
+  if [[ -n "${jira_line}" ]]; then
+    append_body_line "${jira_line}"
+  fi
   # Accept any existing attribution trailer, whatever its payload.
   printf '%s\n' "${BODY}" | grep -Eiq '^(generated|assisted)-by:' || append_body_line "${attribution_line}"
 }
@@ -150,9 +157,13 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "[INFO] dry-run: would push ${HEAD} → ${BASE} on ${host} ${repo_slug}"
   echo "[INFO] dry-run: title=${TITLE}"
   echo "[INFO] dry-run: description metadata:"
-  echo "${jira_line}"
+  if [[ -n "${jira_line}" ]]; then
+    echo "${jira_line}"
+  fi
   echo "${attribution_line}"
-  echo "[INFO] dry-run: would link Jira ${ISSUE}"
+  if [[ -n "${ISSUE}" ]]; then
+    echo "[INFO] dry-run: would link Jira ${ISSUE}"
+  fi
   exit 0
 fi
 
@@ -288,6 +299,11 @@ else
 fi
 
 echo "url: ${url}"
+
+if [[ -z "${ISSUE}" ]]; then
+  echo "[INFO] no --issue given; opened without Jira linkage"
+  exit 0
+fi
 
 link_js="${JIRA_LINK_SCRIPTS}/link-pr-mr.js"
 if [[ ! -f "${link_js}" ]]; then

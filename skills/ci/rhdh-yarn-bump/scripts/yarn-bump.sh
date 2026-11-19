@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Multi-repo Yarn Berry 4.x bump. Mutator: bump-yarn.js.
-# Opens PRs/MRs via sibling skills/ci/rhdh-pr-mr with attribution and a Jira key.
+# Opens PRs/MRs via sibling skills/ci/rhdh-pr-mr with attribution and an
+# optional Jira key (omit for Jira-less scheduled runs).
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -45,14 +46,14 @@ Resolves latest Yarn 4.x when --to is omitted. Clones GitHub then GitLab CEE,
 runs bump-yarn.js --from-all. Downloads the Yarn CLI once and passes --bin so
 each PR/MR commits yarn-<to>.cjs. If that download fails, GitLab falls back to
 copying the binary from a GitHub bump. Commits as rhdh-bot and opens PRs/MRs on
-chore/automated-yarn-bump via rhdh-pr-mr, with the attribution trailer and the
-Jira link that opener requires.
+chore/automated-yarn-bump via rhdh-pr-mr, with the attribution trailer and,
+when --issue is given, the Jira link that opener adds.
 
 ATTR follows the opener's grammar: '<tool> (<agent> + <model> (<provider>), thinking: <level>)'.
 Only the parts that are known are written. Default: rhdh-yarn-bump.
 
 Env: GITHUB_TOKEN or GH_TOKEN; PRIVATE_TOKEN (GitLab CEE); CREATE_PR_MR (optional);
-     JIRA_ISSUE (required: standing ticket for automated bumps);
+     JIRA_ISSUE (optional: standing ticket; omit for Jira-less runs);
      RHDH_ATTRIBUTION or RHDH_ASSISTED_BY (optional override).
 EOF
 }
@@ -80,10 +81,10 @@ preflight() {
   done
   [[ -f "${BUMP_JS}" ]] || { echo "[ERROR] missing ${BUMP_JS}" >&2; exit 1; }
   [[ -f "${CREATE_PR_MR}" ]] || { echo "[ERROR] missing ${CREATE_PR_MR} (rhdh-pr-mr skill)" >&2; exit 1; }
-  [[ "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || {
-    echo "[ERROR] --issue KEY or JIRA_ISSUE required (standing ticket for automated bumps)" >&2
+  if [[ -n "${ISSUE}" && ! "${ISSUE}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]]; then
+    echo "[ERROR] --issue KEY must look like RHIDP-12345" >&2
     exit 1
-  }
+  fi
   if [[ "${ATTRIBUTION}" == *$'\n'* ]] || [[ ! "${ATTRIBUTION}" =~ [^[:space:]] ]]; then
     echo "[ERROR] attribution must be a single non-blank line" >&2
     exit 1
@@ -220,17 +221,14 @@ commit_and_pr() {
   body_file=$(mktemp)
   body="$(printf '## Summary\n- Bump Yarn Berry to `%s`.\n\n## Test plan\n- [ ] `yarn --version` is %s\n' "${TO}" "${TO}")"
   printf '%s\n' "${body}" >"${body_file}"
+  local opener_args=(--cwd "${dir}" --base "${BRANCH}" --head "${TOPIC}"
+    --title "${title}" --body-file "${body_file}"
+    --attribution "${ATTRIBUTION}" --label ok-to-test --no-open)
+  if [[ -n "${ISSUE}" ]]; then
+    opener_args+=(--issue "${ISSUE}")
+  fi
   GITLAB_PIPELINE="${GITLAB_PIPELINE:-true}" \
-    "${CREATE_PR_MR}" \
-    --cwd "${dir}" \
-    --base "${BRANCH}" \
-    --head "${TOPIC}" \
-    --title "${title}" \
-    --body-file "${body_file}" \
-    --issue "${ISSUE}" \
-    --attribution "${ATTRIBUTION}" \
-    --label ok-to-test \
-    --no-open \
+    "${CREATE_PR_MR}" "${opener_args[@]}" \
     || echo "[WARN] create-pr-mr failed for ${slug}" >&2
   rm -f "${body_file}"
   popd >/dev/null
