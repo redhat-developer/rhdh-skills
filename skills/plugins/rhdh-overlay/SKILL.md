@@ -50,16 +50,20 @@ number that cannot be discovered from the checkout.
 ## PR commands
 
 `pr-actions.yaml` in the overlay repository answers five PR comments. Each is a
-workspace-scoped write: it is skipped without a status when the PR spans several
-workspaces. `workflows/triage-prs.md` derives which one a PR needs, and posting
-any of them goes through `/mutation-gate`.
+workspace-scoped write: it resolves exactly one workspace from the branch name or
+the PR files. A PR that touches zero or several workspaces gets a successful
+status under the command's name with a cancellation comment, and `publish` is the
+only required status check on `main` and `release-**`, so `/publish` is the
+command that unblocks such a PR even though it publishes nothing.
+`workflows/triage-prs.md` derives which command a PR needs, and posting any of
+them goes through `/mutation-gate`.
 
 | Command | Effect | Use when |
 |---|---|---|
 | `/publish` | Export and build the workspace, publish its OCI artifact, then dispatch workspace smoke tests | `publish` check is missing or failed |
 | `/update-versions` | Refresh the PR from its target release branch with common, non-workspace content | A release branch moved under the PR |
 | `/update-commit` | Re-run plugin discovery and update the workspace's source refs | The upstream commit moved |
-| `/smoketest <tag>` | Run workspace smoke tests against an RHDH tag (`pr-<n>`, `next`, or `next-<x>.<y>-<hash>`) | A published PR needs another tag or a re-run |
+| `/smoketest <tag>` | Run workspace smoke tests against an RHDH tag (`pr-<n>`, `pr-<n>-<hash>`, `next`, `next-<x>.<y>-<hash>`, or `next-<hash>`) | A published PR needs another tag or a re-run |
 | `/override-backstage` | Set the workspace's `backstage.json` compatibility version to the target branch's Backstage version | Compatibility rejects the version the source declares |
 
 ## Metadata lookup

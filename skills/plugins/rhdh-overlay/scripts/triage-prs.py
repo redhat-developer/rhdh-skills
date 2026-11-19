@@ -31,14 +31,22 @@ STALENESS_THRESHOLDS = {
 
 NEXT_ACTION = {
     "draft": "Waiting on author (draft)",
-    "multi-workspace": "Split by workspace (/publish is skipped on multi-workspace PRs)",
-    "publish-failed": "Read publish run, then /publish or fix-build",
+    "publish-failed": "Read publish run, then /publish or workflows/fix-build.md",
     "publish-missing": "Trigger /publish",
     "publish-pending": "Wait for publish",
     "checks-failed": "Fix failing checks",
     "checks-pending": "Wait for checks",
     "checks-unreadable": "Re-run triage (checks unreadable)",
     "ready": "Ready to merge",
+}
+
+# A next action that asks the reader to do nothing yet. Everything else is a
+# command or a check to fix, so it belongs in the suggested-actions list.
+WAITING_ACTIONS = {
+    "Ready to merge",
+    "Wait for publish",
+    "Wait for checks",
+    "Waiting on author (draft)",
 }
 
 
@@ -49,6 +57,13 @@ def run_gh(args, check=True):
         result = subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=60)
         if result.stdout.strip():
             return json.loads(result.stdout)
+        return None
+    except subprocess.TimeoutExpired:
+        # A slow API call must not abort the whole sweep; the caller models this
+        # as an unreadable context and reports it.
+        print(f"Timed out after 60s: {' '.join(cmd)}", file=sys.stderr)
+        if check:
+            sys.exit(1)
         return None
     except subprocess.CalledProcessError as exc:
         print(f"Error running: {' '.join(cmd)}", file=sys.stderr)
@@ -85,19 +100,29 @@ def fetch_open_prs(repo):
 
 
 def fetch_pr_context(repo, number):
-    """Fetch the checks and changed files for one PR, or None when unreadable."""
-    return run_gh(
+    """Fetch the checks and every changed file for one PR, or None when unreadable."""
+    detail = run_gh(
+        ["pr", "view", str(number), "--repo", repo, "--json", "statusCheckRollup"],
+        check=False,
+    )
+    if detail is None:
+        return None
+    # `gh pr view --json files` answers with a single page of at most 100 files.
+    # Paginate the REST endpoint so a large PR cannot hide a second workspace.
+    pages = run_gh(
         [
-            "pr",
-            "view",
-            str(number),
-            "--repo",
-            repo,
-            "--json",
-            "files,statusCheckRollup",
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repo}/pulls/{number}/files?per_page=100",
         ],
         check=False,
     )
+    if pages is None:
+        return None
+    # The REST endpoint calls the field "filename"; the report speaks "path".
+    detail["files"] = [{"path": entry["filename"]} for page in pages for entry in page]
+    return detail
 
 
 def classify_priority(labels):
@@ -186,6 +211,30 @@ def extract_workspaces(files):
     return names
 
 
+def scope_note(workspaces):
+    """Explain what /publish does for a PR that does not touch exactly one workspace.
+
+    pr-actions.yaml resolves a single workspace. A PR with zero or several
+    workspaces still gets a status: `prepare` skips the pending one and
+    `add_no_workspace_comment` records a successful one with a cancellation
+    comment. That status is the required check, so /publish unblocks the PR
+    without publishing anything.
+    """
+    if len(workspaces) == 1:
+        return ""
+    scope = "no workspace files" if not workspaces else f"{len(workspaces)} workspaces"
+    return f"{scope}: /publish is cancelled and only records the required check"
+
+
+def describe_next(pr_info):
+    """Return the next command, with the workspace-scope caveat when it applies."""
+    action = pr_info.get("next_action") or ""
+    note = pr_info.get("scope_note") or ""
+    if action and note:
+        return f"{action} ({note})"
+    return action
+
+
 def check_entries(pr):
     """Return (name, state, timestamp) for every rollup entry on the PR head."""
     entries = []
@@ -231,10 +280,6 @@ def evaluate_pr_state(pr):
         return "skip", workspaces
     if pr.get("isDraft"):
         return "draft", workspaces
-    # Workspace-scoped commands resolve one workspace and are skipped silently
-    # when the PR spans several, so no check can ever appear.
-    if len(workspaces) > 1:
-        return "multi-workspace", workspaces
     if publish == "cancelled":
         return "publish-missing", workspaces
     if publish in ("failed", "missing", "pending"):
@@ -246,30 +291,44 @@ def evaluate_pr_state(pr):
     return "ready", workspaces
 
 
-def suggest_action(pr_info):
-    """Suggest action for a PR based on its state."""
+def follow_up_actions(pr_info):
+    """Return the ownership and staleness advice for a PR, independent of its checks."""
     priority = pr_info["priority_key"]
-    assignee_status = pr_info["assignee_icon"]
     days = pr_info["days_stale"]
-
-    if priority == "skip":
-        return "No action (OCI only)"
-
     actions = []
-    next_action = NEXT_ACTION.get(pr_info["state"])
-    if next_action:
-        actions.append(next_action)
-    if assignee_status == "❌":
+    if pr_info["assignee_icon"] == "❌":
         actions.append("Assign owner")
     if days >= STALENESS_THRESHOLDS.get(priority, {}).get("alert", 14):
         actions.append("Escalate (stale)")
     elif days >= STALENESS_THRESHOLDS.get(priority, {}).get("warn", 7):
         actions.append("Ping author")
+    return actions
+
+
+def suggest_action(pr_info):
+    """Suggest action for a PR based on its state."""
+    if pr_info["priority_key"] == "skip":
+        return "No action (OCI only)"
+
+    actions = []
+    next_action = describe_next(pr_info)
+    if next_action:
+        actions.append(next_action)
+    actions.extend(follow_up_actions(pr_info))
 
     if not actions:
         actions.append("Monitor")
 
     return " + ".join(actions)
+
+
+def needs_action(pr_info):
+    """Return True when a PR has a command to run, an owner to assign, or a stale nudge."""
+    if pr_info["priority_key"] == "skip":
+        return False
+    if (pr_info.get("next_action") or "") not in WAITING_ACTIONS:
+        return True
+    return bool(follow_up_actions(pr_info))
 
 
 def build_triage(repo):
@@ -319,6 +378,8 @@ def build_triage(repo):
             "plugin": plugin,
             "workspaces": workspaces,
             "state": state,
+            "next_action": NEXT_ACTION.get(state, ""),
+            "scope_note": "" if state == "skip" else scope_note(workspaces),
             "days_stale": days,
             "stale_icon": stale_icon,
             "assignee_display": assignee_display,
@@ -427,11 +488,12 @@ def format_markdown(categorized, total, repo):
     # Unknown
     if categorized["unknown"]:
         lines.append("### ❓ Unknown — Needs Labels\n")
-        lines.append("| PR | Title | Days Stale | Author |")
-        lines.append("|----|-------|------------|--------|")
+        lines.append("| PR | Title | Days Stale | Author | Next |")
+        lines.append("|----|-------|------------|--------|------|")
         for pr in categorized["unknown"]:
             lines.append(
-                f"| #{pr['number']} | {pr['title'][:50]} | {pr['days_stale']} | @{pr['author']} |"
+                f"| #{pr['number']} | {pr['title'][:50]} | {pr['days_stale']} "
+                f"| @{pr['author']} | {describe_next(pr)} |"
             )
         lines.append("")
 
@@ -439,16 +501,17 @@ def format_markdown(categorized, total, repo):
     action_items = []
     for tier in ["critical", "medium", "low"]:
         for pr in categorized[tier]:
-            if pr["action"] != "Monitor":
+            if needs_action(pr):
                 action_items.append(pr)
 
     if action_items:
         lines.append("---\n")
         lines.append("## Suggested Actions\n")
         for i, pr in enumerate(action_items, 1):
+            day_word = "day" if pr["days_stale"] == 1 else "days"
             lines.append(
                 f"{i}. [ ] **{pr['action']}** — PR #{pr['number']} "
-                f"({pr['plugin']}, {pr['days_stale']} days stale)"
+                f"({pr['plugin']}, {pr['days_stale']} {day_word} stale)"
             )
         lines.append("")
 
