@@ -85,6 +85,15 @@ reviewed release, not to moving `main` or an old ticket snapshot:
 | `documentation` | Version-specific product contract/configuration proving the behavior remains required or is removed | A search miss or generic latest page is not current-release validation |
 | `dependency` | Released product's pinned dependency and its relevant implementation/compatibility change | An upstream fix alone does not prove the product incorporates it |
 
+**Escalation sources for unknowns.** Before any requirement or disposition is
+recorded as unknown/unclear, attempt the specific missing check through
+read-only means beyond the repositories: public CI and nightly job results
+(cite the job/build URL as `ci` evidence — for example a prow build page),
+deeper source tracing including vendored or built artifacts, package-registry
+metadata, and release records. Record what was attempted; only genuine
+absence of read-only evidence justifies an unknown. These sources widen the
+search, they never loosen the proof gates.
+
 Use `/rhdh-plugin-bug-fix` with explicit `inspection-only` scope for plugin
 inspection and an exact next check; verify the installed version supports that
 branch. Do not invent a mode or enter its default reproduction/fix branch.

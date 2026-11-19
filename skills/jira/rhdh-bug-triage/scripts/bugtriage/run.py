@@ -79,6 +79,7 @@ class RunConfig:
     evidence_dir: str = ""
     verification_dir: str = ""
     require_investigation: bool = False
+    require_fix_plan: bool = False
 
 
 @dataclass
@@ -288,6 +289,16 @@ def run(config: RunConfig) -> RunResult:
             )
             if errors:
                 raise RunError(f"investigation incomplete for {key}: " + "; ".join(errors))
+    if config.require_fix_plan:
+        from .policy import fix_plan_errors
+
+        for key in selection:
+            assessment = assessments[key]
+            errors = fix_plan_errors(
+                assessment.fix_plan, assessment.evidence, assessment.disposition
+            )
+            if errors:
+                raise RunError(f"fix plan incomplete for {key}: " + "; ".join(errors))
     collection = {}
     if config.evidence_dir:
         evidence_root = Path(config.evidence_dir)
@@ -405,6 +416,9 @@ def run(config: RunConfig) -> RunResult:
     }
     # Atomic directory creation: two callers cannot write into the same run.
     output_dir.mkdir(parents=True, exist_ok=False)
+    # report.md and proposed/ are the human-facing surface. Every machine
+    # artifact lives under audit/ so a reviewer opens exactly one file.
+    audit_dir = output_dir / "audit"
 
     report = render_report(
         packets,
@@ -424,10 +438,10 @@ def run(config: RunConfig) -> RunResult:
         release_evidence=config.release_evidence,
     )
     write_text(output_dir / "report.md", report)
-    write_json(output_dir / "sample.json", sample)
-    write_text(output_dir / "summary.csv", render_summary_csv(packets, selection))
+    write_json(audit_dir / "sample.json", sample)
+    write_text(audit_dir / "summary.csv", render_summary_csv(packets, selection))
     write_json(
-        output_dir / "packets.json",
+        audit_dir / "packets.json",
         {
             "schemaVersion": 3,
             "dryRun": True,
@@ -481,6 +495,7 @@ def run(config: RunConfig) -> RunResult:
     }
     manifest["releaseEvidence"] = config.release_evidence
     manifest["investigationRequired"] = config.require_investigation
+    manifest["fixPlanRequired"] = config.require_fix_plan
     manifest["investigationStates"] = {
         status: sum(p.investigation.get("status", "not_recorded") == status for p in packets)
         for status in ("completed", "blocked", "not_recorded")
@@ -516,7 +531,7 @@ def run(config: RunConfig) -> RunResult:
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(Path(__file__).parent.glob("*.py"))
     }
-    write_json(output_dir / "manifest.json", manifest)
+    write_json(audit_dir / "manifest.json", manifest)
 
     return RunResult(
         packets=packets,

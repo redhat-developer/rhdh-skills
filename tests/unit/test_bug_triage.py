@@ -631,8 +631,9 @@ class TestRun:
         assert len(result.packets) == 7
         assert sum(result.manifest["commentPolicy"]["counts"].values()) == 7
         assert result.manifest["commentPolicy"]["cooldownDays"] == 14
-        for name in ("report.md", "packets.json", "summary.csv", "manifest.json"):
-            assert (out / name).is_file()
+        assert (out / "report.md").is_file()
+        for name in ("packets.json", "summary.csv", "manifest.json", "sample.json"):
+            assert (out / "audit" / name).is_file()
         assert (out / "proposed" / "RHDHBUGS-1001.md").exists()
         proposal = (out / "proposed" / "RHDHBUGS-1006.md").read_text(encoding="utf-8")
         assert proposal.startswith(
@@ -640,7 +641,7 @@ class TestRun:
         )
         assert "[PR #999]" in proposal
         assert proposal.index("[PR #999]") < proposal.index("## Review details")
-        packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
+        packets = json.loads((out / "audit" / "packets.json").read_text(encoding="utf-8"))
         assert packets["dryRun"] is True
         close = [item for item in packets["packets"] if item["action"].startswith("propose_close")]
         assert {item["key"] for item in close} == {"RHDHBUGS-1006", "RHDHBUGS-1010"}
@@ -709,7 +710,7 @@ class TestEvaluate:
                 as_of="2026-11-09",
             )
         )
-        packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
+        packets = json.loads((out / "audit" / "packets.json").read_text(encoding="utf-8"))
         observed = [
             Packet(
                 key=item["key"],

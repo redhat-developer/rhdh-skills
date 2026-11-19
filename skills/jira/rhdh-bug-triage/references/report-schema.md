@@ -38,7 +38,8 @@ Each `evidence` item requires:
 ```
 
 The URL is illustrative and must be replaced by an inspected artifact. Types:
-`jira`, `pr`, `commit`, `release_note`, `code`, `doc`, `repro`, `comment`.
+`jira`, `pr`, `commit`, `release_note`, `code`, `doc`, `repro`, `comment`, `ci`
+(CI/nightly job results, for example a prow build page).
 References must be actual HTTPS URLs or Jira keys; bare SHAs/local pseudo-links
 are not definitive citations. Strength: `direct`, `strong`, `supporting`, `limited`.
 `limited` preserves a lead or access/provenance limitation with zero proof weight;
@@ -77,6 +78,35 @@ proof. Its states, dimensions and direct-citation requirements are defined in
 collected queries, candidate provenance and gaps; it is never proof. `sameRecord`
 marks self/alias comparisons, which cannot authorize duplicate closure. Existing
 policy-3 inputs without the optional block retain the existing full proof gates.
+
+## Read-only fix plan
+
+Optional assessment block, required by `run --require-fix-plan`:
+
+```json
+{
+  "approach": "Accept the notebook file-type set in the chat upload validator and share the error copy.",
+  "areas": [
+    {"repository": "owner/repo", "paths": ["plugins/chat/src/utils/attachment-utils.ts"]}
+  ],
+  "complexity": "small",
+  "refs": ["https://github.com/example/product/blob/abc123/handler.ts"]
+}
+```
+
+- `approach`: the concrete remediation approach — what a fix would change and
+  why that resolves the reported failure. For `duplicate`, `already_fixed` and
+  `no_longer_valid` verdicts, describe the resolution action instead.
+- `areas`: where a fix would land; each entry needs a `repository` and a list
+  of `paths`. Omit it when no product area applies.
+- `complexity`: `trivial`, `small`, `moderate`, `large`, or `none`.
+  `none` is only valid for the resolution-only dispositions above.
+- `refs`: evidence the assessment already cites, backing the approach.
+
+A fix plan is read-only guidance for the separately authorized fix workflow.
+It is not a change, not proof that a fix exists or works, and not closure
+permission; the definitive proof gates are unchanged. The report renders it
+per ticket and counts plans in the summary.
 
 Output `verification` retains acquired source/diff/ancestry and OCI metadata from
 `run --verification`. The CLI validates saved receipts and release identity; see
@@ -191,20 +221,25 @@ silently treating an absent global field as empty.
 
 ## Outputs and provenance
 
+The run directory has one human-facing surface: `report.md` (plus `proposed/`
+draft files). Every machine artifact lives under `audit/` so a reviewer opens
+exactly one file.
+
 - `report.md`: one reviewer-facing file with **all exact drafts** and their
-  disposition, proof/validation or uncertainty, owner when known, next step and
-  delivery reason. Suppressed/review-required drafts are clearly restricted.
+  disposition, proof/validation or uncertainty, fix plan, owner when known,
+  next step and delivery reason. Suppressed/review-required drafts are clearly
+  restricted.
 - `proposed/KEY.md`: same exact draft/reference plus local details, only for
   non-suppressed findings. Review-required files remain blocked from delivery;
   all-suppressed results may have no `proposed/` directory.
-- `packets.json`: all findings, original/rejected claims, evidence, validation,
-  proof, candidate/canonical facts, fix metadata, review/disagreement, gaps,
+- `audit/packets.json`: all findings, original/rejected claims, evidence, validation,
+  proof, fix plan, candidate/canonical facts, fix metadata, review/disagreement, gaps,
   verifier failures, `proposedComment`, `recommendedStep` and `commentPlan`.
-- `summary.csv`: one row per packet. An advisory close action is not an executed
+- `audit/summary.csv`: one row per packet. An advisory close action is not an executed
   transition; disposition and delivery remain separate.
-- `sample.json`: selection scope, selected/control entries, eligibility counts
+- `audit/sample.json`: selection scope, selected/control entries, eligibility counts
   and exclusions with reasons; retained input selection is part of the audit.
-- `manifest.json`: target release and `releaseEvidence` URL, input paths/SHA-256
+- `audit/manifest.json`: target release and `releaseEvidence` URL, input paths/SHA-256
   hashes, bundled module hashes, policy/thresholds, counts, delivery policy, collection coverage/failures
   and `writes: []`. `coverage.selectionComplete` only refers to eligible records
   in the supplied export. `corpusHasClosed` is not exhaustive corpus coverage.

@@ -16,6 +16,15 @@ exclusions are defined in the [workflow](../workflows/triage-aged-bugs.md).
 | `needs_repro` | A specific validation gap and a concrete reproduction plan, no claimed result | Inspect or run that narrowly specified check in a separately authorized environment |
 | `unclear` | Specific missing/conflicting evidence, including failed definitive gates | Resolve the single material gap identified by the investigation |
 
+`unclear` is a last resort, not a resting state. Before recording it, the
+investigator (or a dedicated resolver pass) attempts the named missing check
+through read-only means — public CI/nightly job results, deeper source tracing
+including vendored or built code, package-registry metadata, release records.
+Only when that fails may the result stay `unclear`, and the draft names what
+was attempted. The fail-closed proof gates never loosen to manufacture
+certainty: escalation changes how hard the system looks, never what counts
+as proof.
+
 For definitive validity/obsolescence, `validation.release` must equal the verified
 release under review. Its method is `code`, `runtime`, `documentation` or
 `dependency`; its summary and references must causally establish the result.
@@ -105,11 +114,18 @@ use generic "please reproduce", stale-ticket nudges or pending-work reminders.
 Legacy free-form `comment`/`recommendedStep` cannot override policy-generated text.
 Apply the workflow's single prose pass without changing verified meaning.
 
+Every investigated bug also carries a read-only `fixPlan` (see the
+[assessment schema](report-schema.md)): the remediation approach, the areas a
+fix would touch, and a complexity estimate. The plan is rendered in the report
+beside the draft, not inside the Jira comment — comments stay concise while
+the reviewer still sees exactly where a fix would land. A plan is guidance for
+the separately authorized fix workflow, never a change or closure permission.
+
 ## Delivery is separate from disposition
 
 `commentPlan.status` is `propose`, `suppress` or `review_required`; none is a write
 receipt or authorization. Every exact draft remains visible in `report.md` and
-`packets.json`, including suppressed repeats and review-required cases. Only
+`audit/packets.json`, including suppressed repeats and review-required cases. Only
 non-suppressed drafts get `proposed/KEY.md`.
 
 Identical marked advice suppresses indefinitely. Changed advice requires the

@@ -17,16 +17,23 @@ from typing import List, Optional
 
 from .collect import CollectConfig, collect
 from .comments import DEFAULT_COOLDOWN_DAYS
+from .dossier import write_dossiers
 from .evaluate import write_evaluation
 from .forge import ForgeAdapterError
-from .jira import JiraAdapterError, export_from_acli, load_tickets_from_acli, write_acli_probe
+from .jira import (
+    JiraAdapterError,
+    build_corpus,
+    export_from_acli,
+    load_tickets_from_acli,
+    write_acli_probe,
+)
 from .model import (
     DEFAULT_AGED_DAYS,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
     load_export,
 )
-from .report import write_json
+from .report import now_iso, write_json
 from .run import (
     RunConfig,
     RunError,
@@ -163,6 +170,7 @@ def command_run(args: argparse.Namespace) -> int:
             evidence_dir=args.evidence or "",
             verification_dir=args.verification or "",
             require_investigation=args.require_investigation,
+            require_fix_plan=args.require_fix_plan,
         )
     )
     counts = result.manifest["counts"]
@@ -201,7 +209,10 @@ def command_run(args: argparse.Namespace) -> int:
             f"Draft comments: {counts['draftComments']} · advisory closure recommendations: {counts['closeProposals']}"
         )
         print(f"Comment delivery: {result.manifest['commentPolicy']['counts']}")
-        print("Review report.md for every exact draft, source, and delivery restriction.")
+        print(
+            "Read report.md (the only human-facing file); packets, manifest and "
+            "machine artifacts are under audit/."
+        )
     return 0
 
 
@@ -211,6 +222,38 @@ def _count(packets, attribute: str) -> dict:
         value = getattr(packet, attribute)
         counts[value] = counts.get(value, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def command_dossier(args: argparse.Namespace) -> int:
+    written = write_dossiers(
+        input_path=args.input,
+        sample_path=args.sample,
+        output_dir=args.out,
+        evidence_dir=args.evidence or "",
+    )
+    print(f"Wrote {len(written)} investigator dossier(s) into {args.out}")
+    print("Give one dossier per fresh-context investigator; each writes assessments/KEY.json.")
+    return 0
+
+
+def command_corpus(args: argparse.Namespace) -> int:
+    if not args.search_jql and not args.full_jql:
+        raise RunError("corpus needs at least one --search-jql or --full-jql part")
+    path = Path(args.out)
+    if path.exists():
+        raise RunError(f"refusing to overwrite corpus: {path}")
+    document = build_corpus(
+        search_jqls=list(args.search_jql or []),
+        full_jqls=list(args.full_jql or []),
+        field_names=_field_names(args.field_names),
+        as_of=now_iso(),
+    )
+    write_json(path, document)
+    parts = document["provenance"]["parts"]
+    print(f"Built a {len(document['issues'])}-record corpus from {len(parts)} part(s) into {path}")
+    for part in parts:
+        print(f"  {part['level']:<13} {part['count']:>5} records — {part['jql'][:80]}")
+    return 0
 
 
 def command_evaluate(args: argparse.Namespace) -> int:
@@ -253,7 +296,10 @@ def command_template(args: argparse.Namespace) -> int:
                     "Every evidence item needs type, ref, "
                     "why, and strength (direct|strong|supporting). Do not invent a "
                     "confidence; the policy computes it. A close also needs two agreeing "
-                    "independent passes under review."
+                    "independent passes under review. Every investigated bug needs a "
+                    "fixPlan: the concrete read-only remediation approach (or the "
+                    "resolution action for duplicate/already-fixed/obsolete), the areas "
+                    "a fix would touch, and a complexity estimate."
                 ),
                 "disposition": "",
                 "duplicateOf": "",
@@ -273,6 +319,17 @@ def command_template(args: argparse.Namespace) -> int:
                     "method": "",
                     "result": "unknown",
                     "summary": "",
+                    "refs": [],
+                },
+                "fixPlan": {
+                    "approach": "",
+                    "areas": [
+                        {
+                            "repository": "owner/repo",
+                            "paths": ["path/that/would/change"],
+                        }
+                    ],
+                    "complexity": "",
                     "refs": [],
                 },
                 "fix": {
@@ -463,6 +520,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="reject placeholder/absent or invalid per-requirement investigations",
     )
     run_parser.add_argument(
+        "--require-fix-plan",
+        action="store_true",
+        help="reject assessments without concrete read-only fix guidance (fixPlan)",
+    )
+    run_parser.add_argument(
         "--comment-cooldown-days",
         type=int,
         default=DEFAULT_COOLDOWN_DAYS,
@@ -505,6 +567,41 @@ def build_parser() -> argparse.ArgumentParser:
     template_parser.add_argument("--out", required=True)
     template_parser.add_argument("--force", action="store_true")
     template_parser.set_defaults(func=command_template)
+
+    dossier_parser = subparsers.add_parser(
+        "dossier",
+        help="write one self-contained investigator file per sampled ticket",
+    )
+    dossier_parser.add_argument("--input", required=True, help="Jira JSON export")
+    dossier_parser.add_argument("--sample", required=True, help="sample manifest")
+    dossier_parser.add_argument("--out", required=True, help="fresh dossier directory")
+    dossier_parser.add_argument(
+        "--evidence", help="collection directory with per-ticket evidence files"
+    )
+    dossier_parser.set_defaults(func=command_dossier)
+
+    corpus_parser = subparsers.add_parser(
+        "corpus",
+        help="build one merged open-and-closed candidate corpus from bounded parts",
+    )
+    corpus_parser.add_argument(
+        "--search-jql",
+        action="append",
+        default=[],
+        help="fast search-level partition (repeatable); records lack links, dates and comments",
+    )
+    corpus_parser.add_argument(
+        "--full-jql",
+        action="append",
+        default=[],
+        help="full-read partition with chronology, links and fix versions (repeatable)",
+    )
+    corpus_parser.add_argument("--out", required=True, help="fresh corpus export path")
+    corpus_parser.add_argument(
+        "--field-names",
+        help="JSON field-ID to name mapping returned by the authenticated Jira adapter",
+    )
+    corpus_parser.set_defaults(func=command_corpus)
 
     check_parser = subparsers.add_parser("check", help="report capability without writing")
     check_parser.add_argument("--json", action="store_true")

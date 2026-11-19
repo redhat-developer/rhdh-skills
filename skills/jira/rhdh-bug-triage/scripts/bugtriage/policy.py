@@ -28,7 +28,7 @@ DISPOSITIONS = {
 }
 CLOSE_ACTIONS = {"propose_close_duplicate", "propose_close_fixed"}
 EVIDENCE_STRENGTHS = {"direct": 1.0, "strong": 0.8, "supporting": 0.5, "limited": 0.0}
-EVIDENCE_TYPES = {"jira", "pr", "commit", "release_note", "code", "doc", "repro", "comment"}
+EVIDENCE_TYPES = {"jira", "pr", "commit", "release_note", "code", "doc", "repro", "comment", "ci"}
 NEXT_CHECK_METHODS = {"code", "runtime", "documentation", "dependency", "artifact"}
 VALIDATION_TYPES = {
     "code": {"code", "pr", "commit"},
@@ -36,6 +36,9 @@ VALIDATION_TYPES = {
     "documentation": {"doc", "release_note"},
     "dependency": {"code", "doc", "pr", "commit", "release_note"},
 }
+# Read-only remediation guidance attached to every investigated bug. It is a
+# plan, not a change and not proof: it names where a fix would land and how.
+FIX_PLAN_COMPLEXITIES = {"trivial", "small", "moderate", "large", "none"}
 REPRO_RESULTS = {
     "",
     "not_run",
@@ -97,6 +100,7 @@ class Assessment:
     fix_evidence: Dict[str, Any] = field(default_factory=dict)
     comparisons: List[Dict[str, Any]] = field(default_factory=list)
     investigation: Dict[str, Any] = field(default_factory=dict)
+    fix_plan: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -134,6 +138,7 @@ class Packet:
     verification: Dict[str, Any] = field(default_factory=dict)
     comparisons: List[Dict[str, Any]] = field(default_factory=list)
     investigation: Dict[str, Any] = field(default_factory=dict)
+    fix_plan: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -169,6 +174,7 @@ class Packet:
             "verification": self.verification,
             "comparisons": self.comparisons,
             "investigation": self.investigation,
+            "fixPlan": self.fix_plan,
             "investigationOutcome": investigation_outcome(self),
             "sameRecord": bool(
                 any(c.get("relationship") == "same_record" for c in self.comparisons)
@@ -292,6 +298,7 @@ def parse_assessment(document: Dict[str, Any]) -> Assessment:
         agreement=review.get("agree") is True,
         comparisons=comparisons,
         investigation=document.get("investigation", {}),
+        fix_plan=document.get("fixPlan") if isinstance(document.get("fixPlan"), dict) else {},
     )
 
 
@@ -615,6 +622,61 @@ def investigation_errors(record: dict, evidence: List[Evidence], release: str) -
         errors.append(
             "blocked investigation needs a specific missing check and an unknown requirement"
         )
+    return errors
+
+
+def fix_plan_errors(
+    fix_plan: Dict[str, Any], evidence: List[Evidence], disposition: str
+) -> List[str]:
+    """Require usable read-only remediation guidance for an investigated bug.
+
+    A fix plan names where a correction would land and how; it is guidance for
+    the human or the separately authorized fix workflow, never a change, a
+    claim that the fix exists, or closure permission. Resolution-only
+    dispositions (duplicate, already fixed, obsolete) may use complexity
+    ``none`` and describe the resolution action instead of a code change.
+    """
+    if not isinstance(fix_plan, dict) or not fix_plan:
+        return ["fixPlan is missing; every investigated bug needs read-only fix guidance"]
+    errors: List[str] = []
+    approach = fix_plan.get("approach")
+    if not isinstance(approach, str) or not approach.strip():
+        errors.append("fixPlan.approach needs the concrete remediation or resolution approach")
+    complexity = fix_plan.get("complexity")
+    if complexity not in FIX_PLAN_COMPLEXITIES:
+        errors.append(
+            "fixPlan.complexity must be one of " + ", ".join(sorted(FIX_PLAN_COMPLEXITIES))
+        )
+    if (
+        disposition not in {"duplicate", "already_fixed", "no_longer_valid"}
+        and complexity == "none"
+    ):
+        errors.append(
+            "fixPlan.complexity 'none' is only for resolution-only dispositions "
+            "(duplicate, already_fixed, no_longer_valid)"
+        )
+    areas = fix_plan.get("areas", [])
+    if not isinstance(areas, list) or any(
+        not isinstance(area, dict)
+        or not isinstance(area.get("repository"), str)
+        or not str(area.get("repository", "")).strip()
+        or not isinstance(area.get("paths", []), list)
+        or any(not isinstance(path, str) or not path.strip() for path in area.get("paths", []))
+        for area in areas
+    ):
+        errors.append("fixPlan.areas entries need a repository and a list of paths")
+    refs = fix_plan.get("refs", [])
+    cited = {item.ref for item in evidence}
+    if not isinstance(refs, list) or any(
+        not isinstance(ref, str) or not valid_ref(ref) for ref in refs
+    ):
+        errors.append("fixPlan.refs must be valid Jira keys or HTTPS references")
+    else:
+        missing = [ref for ref in refs if ref not in cited]
+        if missing:
+            errors.append(
+                "fixPlan references evidence the assessment does not cite: " + ", ".join(missing)
+            )
     return errors
 
 
@@ -1189,6 +1251,7 @@ def evaluate(
         packet.fix_evidence = dict(assessment.fix_evidence)
         packet.comparisons = [dict(item) for item in assessment.comparisons]
         packet.investigation = assessment.investigation
+        packet.fix_plan = dict(assessment.fix_plan)
         packet.repro = {"result": assessment.repro_result, "release": assessment.repro_release}
         packet.invalid_evidence = assessment.invalid_evidence
         packet.independent_passes, packet.agreement = (

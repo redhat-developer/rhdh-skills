@@ -39,9 +39,18 @@ entry point for the end-to-end agent workflow and runnable commands.
 
 ## Operating contract
 
-- **Investigate every selected bug.** Missing, malformed or unknown assessments
-  block the run. An honestly investigated `unclear` result is valid; an untouched
-  template is not an investigation. No arbitrary closure quota or forced positives.
+- **Investigate every selected bug, as a team.** Fresh-context investigators
+  work in parallel, one bug each, from self-contained dossiers. Missing,
+  malformed or unknown assessments block the run. An honestly investigated
+  `unclear` result is valid; an untouched template is not an investigation. No
+  arbitrary closure quota or forced positives.
+- **Escalate before recording an unknown.** Before any requirement or
+  disposition lands on unknown/unclear, attempt the specific missing check
+  through read-only means — CI/nightly job results on the public web, deeper
+  source tracing including vendored or built code, package-registry metadata,
+  release records. Record unknown only when the read-only evidence genuinely
+  does not exist, naming what was attempted. `unclear` is rare, not the resting
+  state; the fail-closed proof gates never loosen to manufacture certainty.
 - **Validate the actual release.** Resolve a released product with `/rhdh-context`
   and inspect current-release code, runtime evidence, documentation or dependencies.
   An open Jira status or no PR search hit does not establish `still_valid`.
@@ -51,6 +60,12 @@ entry point for the end-to-end agent workflow and runnable commands.
   path, inspect candidate corrections and test every reported requirement.
   Follow [bug verification](references/bug-verification.md). A specialist skill
   may assist; its absence is not a substitute for this investigation.
+- **Leave fix guidance on every bug.** Each investigated assessment carries a
+  `fixPlan`: the concrete remediation approach, the repository and paths a fix
+  would touch, and a complexity estimate (resolution-only dispositions describe
+  the resolution action with complexity `none`). A plan is guidance for the
+  separately authorized fix workflow — never a change, a claim that a fix
+  exists, or closure permission.
 - **Preview all findings.** Show every exact draft and its delivery status in
   `report.md`, including `suppress` and `review_required`; only non-suppressed
   drafts get `proposed/KEY.md`. Do not turn uncertainty into generic reproduction
@@ -91,8 +106,18 @@ Compose through interfaces, never another skill's files or scripts:
 Use `python3 scripts/triage.py` from the installed skill directory.
 `scripts/run_poc.py` remains a compatibility alias, not a separate workflow.
 The [workflow](workflows/triage-aged-bugs.md) documents `fetch`, `select`,
-`collect`, `template`, agent adjudication, `run` and `evaluate` in order.
-No CLI command supplies the agent's semantic judgment.
+`corpus`, `collect`, `dossier`, `template`, the investigator team, `run` and
+`evaluate` in order. No CLI command supplies the agent's semantic judgment.
+
+- `corpus` builds the merged open-and-closed candidate base in one step from
+  disjoint partition queries: fast search-level parts plus optional full-read
+  parts carrying chronology, links and fix versions.
+- `dossier` writes one self-contained investigator file per sampled ticket, so
+  each fresh-context subagent reads its single bug instead of the whole export.
+- `run` writes `report.md` and `proposed/` for humans; every machine artifact
+  (packets, manifest, summary, sample copy) lands under `audit/`. Pass
+  `--require-investigation --require-fix-plan` so blocked investigations and
+  missing fix guidance fail closed.
 
 Default scope is open, non-customer bugs aged at least 90 days with known,
 comparable affects versions **all strictly older** than the verified release.
@@ -105,10 +130,10 @@ stratified sample is 12. Neither flag proves the export covers the whole backlog
 
 Complete only after every selected issue has been investigated and its exact
 draft is present in the report, with validation or a specific evidence gap, one
-next step, ownership when known and a delivery status. Retain genuine reviewer
-disagreements, selection exclusions, input hashes, collection failures and honest
-corpus coverage in the audit. Keep local reports and private Jira exports outside
-the PR. `manifest.json` must have `writes: []`.
+next step, a fix plan, ownership when known and a delivery status. Retain genuine
+reviewer disagreements, selection exclusions, input hashes, collection failures
+and honest corpus coverage in the audit. Keep local reports and private Jira
+exports outside the PR. `manifest.json` must have `writes: []`.
 
 Return the selected count, disposition/delivery counts, the single `report.md`
 path and important coverage limits. State explicitly: nothing was posted to Jira,

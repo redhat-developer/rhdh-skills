@@ -119,6 +119,7 @@ def render_report(
         f"{sum(p.action in CLOSE_ACTIONS for p in packets)} advisory closure recommendation(s).",
         "",
         f"- Delivery: {delivery['propose']} proposed; {delivery['review_required']} require history/proof review; {delivery['suppress']} suppressed.",
+        f"- Read-only fix plans attached: {sum(bool(p.fix_plan.get('approach')) for p in packets)} of {len(packets)}. Plans are guidance for the separately authorized fix workflow, not changes or closure permission.",
         f"- Agent report-identity comparisons supported: {sum(c.get('relationship') == 'duplicate_supported' for p in packets for c in p.comparisons)}; scoped fixes verified: {sum(p.fix_evidence.get('state') == 'verified_for_stated_scope' for p in packets)}; supported subsets/mitigations: {sum(p.fix_evidence.get('state') == 'partial_fix_supported' for p in packets)}. These are not closure counts.",
         f"- Investigation states: {investigations}. Blocked checks are not completed verification.",
         f"- Scoped investigation outcomes: {outcomes}. These do not certify runtime or released-artifact identity beyond the stated scope.",
@@ -157,6 +158,18 @@ def render_report(
         ]
         if packet.notes:
             lines += [f"**Reviewer context:** {packet.notes}", ""]
+        if packet.fix_plan:
+            plan = packet.fix_plan
+            lines += [
+                "**Fix plan (read-only guidance, not a change or closure permission):** "
+                + str(plan.get("approach", "not stated")),
+                "",
+            ]
+            for area in plan.get("areas", []) or []:
+                if isinstance(area, dict):
+                    paths = ", ".join(area.get("paths", []) or [])
+                    lines += [f"- Area: {area.get('repository', 'unknown')} — {paths}"]
+            lines += [f"- Complexity: {plan.get('complexity', 'unknown')}", ""]
         if packet.verification:
             v = packet.verification
             lines += [

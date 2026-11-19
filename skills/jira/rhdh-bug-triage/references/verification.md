@@ -62,7 +62,7 @@ facts or reviewers; perform and retain the actual source inspection separately.
    because a request is old. Missing/truncated history requires review.
 5. Reject nonempty output-directory reuse without changing existing contents.
    Missing assessments cannot create a success report or preserve stale proposals.
-6. Assert `manifest.json` has `writes: []`; CLI help exposes no `post`, apply or
+6. Assert `audit/manifest.json` has `writes: []`; CLI help exposes no `post`, apply or
    other mutation command. Mock external calls and assert only read operations.
    End-to-end agent review must also confirm no remote writer or cluster mutation
    is invoked through a composed skill.
@@ -75,7 +75,7 @@ facts or reviewers; perform and retain the actual source inspection separately.
 
 ## Evaluation and live shadow review
 
-Run `evaluate --packets REVIEW/packets.json --truth labels.json --strict` through
+Run `evaluate --packets REVIEW/audit/packets.json --truth labels.json --strict` through
 `scripts/triage.py` using independently established labels. Strict failure must
 cover false duplicate/fixed closure advice, wrong canonical, **false still-valid
 or other definitive conclusions**, unlabelled packets and labels absent from

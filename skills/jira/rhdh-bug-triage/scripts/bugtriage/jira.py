@@ -77,8 +77,18 @@ def _run_acli(args: List[str], timeout: int = 120) -> str:
     return completed.stdout
 
 
-def search_acli(jql: str, limit: Optional[int] = None, timeout: int = 180) -> List[Dict[str, Any]]:
-    """Run a read-only JQL search. ``limit`` caps rows; omit it to paginate."""
+def search_acli(
+    jql: str,
+    limit: Optional[int] = None,
+    timeout: int = 180,
+    fields: str = "key,summary",
+) -> List[Dict[str, Any]]:
+    """Run a read-only JQL search. ``limit`` caps rows; omit it to paginate.
+
+    ``fields`` names the search-level fields to return; the deployment
+    restricts which fields a search may return, so callers pass what the
+    adapter allows (full reads are the complete path).
+    """
     args = [
         "jira",
         "workitem",
@@ -86,7 +96,7 @@ def search_acli(jql: str, limit: Optional[int] = None, timeout: int = 180) -> Li
         "--jql",
         jql,
         "--fields",
-        "key,summary",
+        fields,
         "--json",
     ]
     if limit is None:
@@ -279,6 +289,80 @@ def load_tickets_from_acli(
     jql: str, limit: Optional[int] = None, field_names: Optional[Dict[str, str]] = None
 ) -> List[Ticket]:
     return normalize_export(export_from_acli(jql, limit=limit, field_names=field_names))
+
+
+# Search-level records carry the fields the deployment allows a search to
+# return; the rest (chronology, links, fix versions, comments) needs full
+# reads, which the corpus builder records per part instead of hiding.
+CORPUS_SEARCH_FIELDS = "key,summary,description,status,labels,issuetype,assignee,priority,reporter"
+CORPUS_SEARCH_GAPS = (
+    "search-level records lack created, issuelinks, fixVersions, versions, "
+    "resolution and comments; rank leads only, hydrate material candidates"
+)
+
+
+def build_corpus(
+    search_jqls: List[str],
+    full_jqls: List[str],
+    field_names: Optional[Dict[str, str]] = None,
+    as_of: str = "",
+) -> Dict[str, Any]:
+    """Build one merged open-and-closed corpus from bounded read-only parts.
+
+    Search-level parts are fast and cover whole partitions; full-read parts
+    carry chronology, links and fix versions where the fix-first route needs
+    them. Every part's query, level and gaps are recorded; duplicate keys
+    across parts are refused rather than silently merged.
+    """
+    issues: List[Dict[str, Any]] = []
+    seen: Dict[str, str] = {}
+    parts: List[Dict[str, Any]] = []
+    merged_names = dict(field_names or {})
+    for jql in search_jqls:
+        records = search_acli(jql, fields=CORPUS_SEARCH_FIELDS)
+        for record in records:
+            key = record.get("key")
+            if key in seen:
+                raise JiraAdapterError(f"corpus parts overlap on {key}; use disjoint queries")
+            seen[key] = "search-level"
+            issues.append(record)
+        parts.append(
+            {
+                "jql": jql,
+                "level": "search-level",
+                "count": len(records),
+                "gaps": CORPUS_SEARCH_GAPS,
+            }
+        )
+    for jql in full_jqls:
+        document = export_from_acli(jql, field_names=field_names)
+        for record in document["issues"]:
+            key = record.get("key")
+            if key in seen:
+                raise JiraAdapterError(f"corpus parts overlap on {key}; use disjoint queries")
+            seen[key] = "full-reads"
+            issues.append(record)
+        merged_names = merge_field_names(merged_names, document.get("fieldNames") or {})
+        parts.append(
+            {
+                "jql": jql,
+                "level": "full-reads",
+                "count": len(document["issues"]),
+                "adapter": "acli",
+            }
+        )
+    return {
+        "issues": issues,
+        "fieldNames": merged_names,
+        "provenance": {
+            "asOf": as_of,
+            "parts": parts,
+            "coverage": (
+                "bounded, explicitly queried partitions; not an exhaustive "
+                "duplicate corpus unless a part's source proves otherwise"
+            ),
+        },
+    }
 
 
 def write_acli_probe() -> Dict[str, Any]:

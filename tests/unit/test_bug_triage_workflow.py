@@ -111,7 +111,7 @@ def test_end_to_end_uncertainty_has_exact_comment_not_an_empty_closure_report(in
             assert "> " + line in report
     proposal = (result.output_dir / "proposed/RHDHBUGS-101.md").read_text()
     assert proposal.startswith(packet.proposed_comment)
-    saved = json.loads((result.output_dir / "packets.json").read_text())
+    saved = json.loads((result.output_dir / "audit" / "packets.json").read_text())
     assert saved["packets"][0]["proposedComment"] == packet.proposed_comment
     assert result.manifest["counts"]["draftComments"] == 1
     assert result.manifest["counts"]["closeProposals"] == 0
