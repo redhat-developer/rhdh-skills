@@ -21,7 +21,7 @@ const {
   resolveBumpBase,
   wantsDualLockfileBump,
 } = await import(resolve(scripts, 'release-1.10-dual-lockfile.js'));
-const { leftoverVersions, versionIsPatched } = await import(
+const { leftoverVersions, cveLeftoverCleared, versionIsPatched } = await import(
   resolve(scripts, 'cve-version-status.js')
 );
 
@@ -211,5 +211,14 @@ describe('version-line awareness', () => {
     assert.deepEqual(leftoverVersions(semver, alerts, ['5.0.0', '3.8.10']), [
       '5.0.0',
     ]);
+    assert.equal(
+      cveLeftoverCleared(semver, alerts, ['5.0.0'], ['3.8.10', '5.6.1']),
+      true,
+    );
+    assert.equal(
+      cveLeftoverCleared(semver, alerts, ['5.0.0'], ['5.0.0', '3.8.10']),
+      false,
+    );
+    assert.equal(cveLeftoverCleared(semver, [], ['5.0.0'], ['3.8.10']), null);
   });
 });
