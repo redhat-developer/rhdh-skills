@@ -4,7 +4,7 @@ A source supports only the claim another reviewer can actually verify from it.
 Collect cheap leads first, then open the decisive artifacts. The agent owns that
 inspection; flags and the offline policy checker cannot establish external truth.
 
-## Jira report and corpus
+## The Jira report and the comparison list
 
 Invoke `/rhdh-jira-api` for field IDs, authenticated reads, search/view support
 and pagination. Supported search fields followed by full issue views are the
@@ -27,7 +27,7 @@ The read CLI accepts adapter-resolved mapping JSON via `--field-names` on `fetch
 and live `select`; exported `fieldNames` retain that metadata. Never substitute
 invented tenant IDs or infer completeness from the mapping alone.
 
-Use a separate corpus of open **and closed** related reports. A canonical may
+Use a separate list of open **and closed** related reports. A closed original may
 already be closed. Retrieve full candidates, verify chronology and follow
 duplicate chains. Record query, retrieval date, counts and missing fields; do not
 call the selected sample or an open-only export a complete duplicate search.
@@ -85,7 +85,7 @@ reviewed release, not to moving `main` or an old ticket snapshot:
 | `documentation` | Version-specific product contract/configuration proving the behavior remains required or is removed | A search miss or generic latest page is not current-release validation |
 | `dependency` | Released product's pinned dependency and its relevant implementation/compatibility change | An upstream fix alone does not prove the product incorporates it |
 
-**Escalation sources for unknowns.** Before any requirement or disposition is
+**Escalation sources for unknowns.** Before any requirement or verdict is
 recorded as unknown/unclear, attempt the specific missing check through
 read-only means beyond the repositories: public CI and nightly job results
 (cite the job/build URL as `ci` evidence — for example a prow build page),
@@ -107,8 +107,8 @@ Definitive `still_valid` needs cited `persists` validation. Definitive
 `no_longer_valid` needs cited `resolved` validation and the whole-issue
 scope-removal reason. Open status, age, silence, old affects versions, empty
 fixVersions and no PR match support neither conclusion. Distinguish "not found
-in the searched corpus" from "does not exist". See the
-[rubric](disposition-rubric.md) for decision gates.
+in the list we searched" from "it does not exist". See the
+[rubric](verdicts.md) for decision gates.
 
 ## Citation quality and conflicts
 

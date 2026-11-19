@@ -1,4 +1,4 @@
-"""All-disposition dry-run decisions and evidence-bounded comment planning."""
+"""All-verdict dry-run decisions and evidence-bounded comment planning."""
 
 import copy
 import json
@@ -54,10 +54,10 @@ def ticket(**changes):
     return normalize_issue(fields)
 
 
-def assessment(disposition="still_valid", **changes):
+def assessment(verdict="still_valid", **changes):
     document = {
         "key": "RHDHBUGS-1",
-        "disposition": disposition,
+        "verdict": verdict,
         "evidence": [
             {
                 "type": "code",
@@ -104,7 +104,7 @@ def test_current_release_validation_supports_truthful_still_valid(method, kind):
     finding.validation["method"] = method
     finding.evidence[0].type = kind
     packet = evaluate(issue, [], finding, RELEASE)
-    assert packet.disposition == "still_valid"
+    assert packet.verdict == "still_valid"
     assert packet.action == "comment_only"
     assert not verify_packet(packet, issue)
     assert finding.evidence[0].why in packet.proposed_comment
@@ -140,7 +140,7 @@ def test_one_direct_url_does_not_certify_current_validity(bad):
     finding.repro_result, finding.repro_release = "reproduced", "1.8.0"
     packet = evaluate(ticket(), [], finding, RELEASE)
     assert packet.confidence == 0.98  # Citation strength, not factual reliability.
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert packet.proposed_comment
     assert "persists on release" not in packet.proposed_comment
@@ -151,7 +151,7 @@ def test_status_old_versions_and_no_fix_match_are_not_validity_proof():
     issue = ticket(versions=["1.4.0"], fixVersions=["1.5.0"])
     finding = assessment(validation={}, notes="No PR search matches; issue is open.")
     packet = evaluate(issue, [], finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert "unfixed" not in packet.proposed_comment.lower()
     assert "no pr" not in packet.proposed_comment.lower()
     assert "Next, inspect" in packet.recommended_step
@@ -163,14 +163,14 @@ def test_status_old_versions_and_no_fix_match_are_not_validity_proof():
     [
         None,
         parse_assessment({"key": "RHDHBUGS-1"}),
-        parse_assessment({"key": "RHDHBUGS-1", "disposition": "still_valid"}),
-        parse_assessment({"key": "RHDHBUGS-2", "disposition": "already_fixed"}),
+        parse_assessment({"key": "RHDHBUGS-1", "verdict": "still_valid"}),
+        parse_assessment({"key": "RHDHBUGS-2", "verdict": "already_fixed"}),
     ],
 )
 def test_missing_or_mismatched_assessment_is_an_honest_jira_bounded_draft(finding):
     issue = ticket()
     packet = evaluate(issue, [], finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert packet.gaps
     assert "https://redhat.atlassian.net/browse/" + issue.key in packet.proposed_comment
@@ -179,15 +179,15 @@ def test_missing_or_mismatched_assessment_is_an_honest_jira_bounded_draft(findin
     assert packet.proposed_comment.count("Recommended next step:") == 1
 
 
-@pytest.mark.parametrize("disposition", ["unclear", "needs_repro"])
-def test_uncertainty_has_source_summary_and_one_agent_owned_next_step(disposition):
+@pytest.mark.parametrize("verdict", ["unclear", "needs_repro"])
+def test_uncertainty_has_source_summary_and_one_agent_owned_next_step(verdict):
     finding = assessment(
-        disposition, validation={}, recommendedStep="Ask Team X to create a PR and backport it."
+        verdict, validation={}, recommendedStep="Ask Team X to create a PR and backport it."
     )
     issue = ticket(assignee="A Known Assignee", team="Catalog")
     packet = evaluate(issue, [], finding, RELEASE)
     assert packet.action == "comment_only"
-    assert packet.disposition == disposition
+    assert packet.verdict == verdict
     assert finding.evidence[0].why in packet.proposed_comment
     assert packet.recommended_step.startswith("Next,")
     assert SOURCE in packet.recommended_step
@@ -208,11 +208,11 @@ def test_unclear_preserves_checked_validation_without_claiming_no_check_occurred
     )
     packet = evaluate(ticket(), [], finding, RELEASE)
     assert packet.policy_version == 3
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert "no definitive triage conclusion is established" in packet.proposed_comment
     assert finding.validation["summary"] in packet.proposed_comment
     assert "no conclusive current-release validation was supplied" not in packet.proposed_comment
-    assert "Confidence: not established" in packet.proposed_comment
+    assert "Evidence score: not established" in packet.proposed_comment
     assert "not a probability" in packet.proposed_comment
     assert SOURCE in packet.recommended_step
     assert "I will" not in packet.proposed_comment
@@ -238,13 +238,13 @@ def obsolete_assessment():
 def test_no_longer_valid_requires_resolved_current_scope_removal_not_closure():
     issue, finding = ticket(), obsolete_assessment()
     packet = evaluate(issue, [], finding, RELEASE)
-    assert packet.disposition == "no_longer_valid"
+    assert packet.verdict == "no_longer_valid"
     assert packet.action == "comment_only"
-    assert "Scope removal:" in packet.proposed_comment
+    assert "Why it is gone:" in packet.proposed_comment
     assert "close" not in packet.recommended_step.lower()
     for changed in [replace(finding, proof={}), replace(finding, validation={})]:
         fallback = evaluate(issue, [], changed, RELEASE)
-        assert fallback.disposition == "unclear"
+        assert fallback.verdict == "unclear"
         assert fallback.proposed_comment
 
 
@@ -284,7 +284,7 @@ def test_high_lexical_match_and_link_do_not_supply_missing_same_trigger_proof():
     finding.proof["sameTrigger"] = None
     packet = evaluate(issue, candidates, finding, RELEASE)
     assert packet.explicit_duplicate_link
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert any("sameTrigger" in error for error in packet.verification_errors)
 
@@ -296,7 +296,7 @@ def test_failed_close_gate_becomes_unclear_without_dangerous_old_prose(kind):
     finding.recommended_step = "Create a PR and close the unrelated issue."
     finding.evidence[0].why = "DANGEROUS unverified old conclusion."
     packet = evaluate(issue, candidates, finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert packet.verification_errors
     assert packet.proposed_comment
@@ -316,7 +316,7 @@ def test_legacy_current_repro_cannot_be_ignored_for_resolved_findings(kind, repr
         issue, candidates, finding = ticket(), [], obsolete_assessment()
     finding.repro_result, finding.repro_release = repro_result, RELEASE
     packet = evaluate(issue, candidates, finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert any("repro" in error for error in packet.verification_errors)
 
@@ -344,10 +344,10 @@ def test_equivalent_current_repro_releases_cannot_bypass_contradictions(alias, k
         finding = assessment() if kind == "still_valid" else obsolete_assessment()
     finding.repro_result, finding.repro_release = repro_result, alias
     packet = evaluate(issue, candidates, finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert any("contradict" in error for error in packet.verification_errors)
-    assert "Confidence: not established" in packet.proposed_comment
+    assert "Evidence score: not established" in packet.proposed_comment
     assert "not a probability" in packet.proposed_comment
     assert "The reported failure is resolved by" not in packet.proposed_comment
     assert "The reported failure persists on release" not in packet.proposed_comment
@@ -358,7 +358,7 @@ def test_unparseable_release_tuples_do_not_manufacture_a_contradiction(repro_rel
     finding = assessment()
     finding.repro_result, finding.repro_release = "not_reproduced", repro_release
     packet = evaluate(ticket(), [], finding, "")
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.verification_errors
     assert not any("contradict" in error for error in packet.verification_errors)
 
@@ -373,7 +373,7 @@ def test_historical_repro_does_not_override_current_release_evidence(kind):
     finding.repro_result = "not_reproduced" if kind == "still_valid" else "reproduced"
     finding.repro_release = "1.8.0"
     packet = evaluate(issue, candidates, finding, RELEASE)
-    assert packet.disposition == kind
+    assert packet.verdict == kind
     assert not packet.verification_errors
 
 
@@ -381,17 +381,17 @@ def test_current_structured_validation_overrules_old_fixed_claim():
     issue, candidates, finding = close_case("already_fixed")
     finding.validation = {**assessment().validation, "refs": [finding.evidence[0].ref]}
     packet = evaluate(issue, candidates, finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert "The reported failure is resolved" not in packet.proposed_comment
 
 
-@pytest.mark.parametrize("disposition", ["still_valid", "no_longer_valid"])
-def test_current_validation_does_not_override_review_disagreement(disposition):
-    finding = assessment() if disposition == "still_valid" else obsolete_assessment()
+@pytest.mark.parametrize("verdict", ["still_valid", "no_longer_valid"])
+def test_current_validation_does_not_override_review_disagreement(verdict):
+    finding = assessment() if verdict == "still_valid" else obsolete_assessment()
     finding.independent_passes, finding.agreement = 2, False
     packet = evaluate(ticket(), [], finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert "disagree" in packet.proposed_comment
     assert "persists on release" not in packet.proposed_comment
@@ -406,7 +406,7 @@ def test_omitted_current_release_never_certifies_a_conclusion(kind):
         issue, candidates, finding = ticket(), [], assessment()
     packet = evaluate(issue, candidates, finding)
     assert packet.current_release == ""
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert "authoritative release source" in packet.recommended_step
 
@@ -415,7 +415,7 @@ def test_omitted_current_release_never_certifies_a_conclusion(kind):
 def test_placeholder_status_is_not_known_status(status):
     issue = ticket(status=status)
     packet = evaluate(issue, [], assessment(), RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert plan_comment(issue, packet, assessment(), NOW)["status"] == "review_required"
 
 
@@ -437,7 +437,7 @@ def test_incomplete_ticket_does_not_receive_confident_findings_or_post_eligibili
     else:
         setattr(issue, missing, "")
     packet = evaluate(issue, candidates, finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert plan_comment(issue, packet, finding, NOW)["status"] == "review_required"
     assert packet.proposed_comment
@@ -458,7 +458,7 @@ def test_missing_mapped_customer_field_blocks_close_advice_and_delivery(kind):
     assert any("customfield_10749" in gap for gap in partial.read_gaps)
     assert any("customer-field" in error for error in input_errors(partial))
     packet = evaluate(partial, candidates, finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert any("customer-field" in error for error in packet.verification_errors)
     assert plan_comment(partial, packet, finding, NOW)["status"] == "review_required"
@@ -477,7 +477,7 @@ def test_private_validity_draft_survives_unknown_customer_context_but_delivery_i
     assert input_errors(issue)
     assert not input_errors(issue, require_customer_coverage=False)
     packet = evaluate(issue, [], finding, RELEASE)
-    assert packet.disposition == kind
+    assert packet.verdict == kind
     assert packet.action == "comment_only"
     assert not packet.verification_errors
     assert not verify_packet(packet, issue)
@@ -504,7 +504,7 @@ def test_minimal_complete_comments_do_not_prove_status_or_customer_coverage():
     issue = normalize_issue({"key": "RHDHBUGS-1006", "comments": [], "commentsComplete": True})
     _, _, finding = close_case("already_fixed")
     packet = evaluate(issue, [], finding, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert plan_comment(issue, packet, finding, NOW)["status"] == "review_required"
 

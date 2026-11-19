@@ -20,7 +20,6 @@ from bugtriage.policy import (  # noqa: E402
     load_assessment,
     parse_assessment,
 )
-from bugtriage.report import render_packet  # noqa: E402
 
 NOW = datetime(2026, 11, 13, tzinfo=timezone.utc)
 
@@ -70,7 +69,7 @@ def previous(ticket, reference, days=20, comment_id="10"):
 
 def changed_history(case, days=20):
     ticket, packet, assessment = case
-    old_assessment = Assessment(key=ticket.key, disposition="unclear")
+    old_assessment = Assessment(key=ticket.key, verdict="unclear")
     old = evaluate(ticket, [], old_assessment, "2.1.0")
     reference = plan_comment(ticket, old, old_assessment, NOW)["reference"]
     previous(ticket, reference, days)
@@ -97,7 +96,6 @@ def test_first_comment_is_only_a_local_proposal(case):
     attach_comment_plan(ticket, packet, assessment, NOW, 14)
     assert packet.comment_plan["status"] == "propose"
     assert MARKER_PREFIX in packet.proposed_comment
-    assert render_packet(packet, ticket).startswith(packet.proposed_comment)
     # Running a dry run does not become posting history.
     assert ticket.comments == []
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
@@ -186,9 +184,9 @@ def test_unfetched_mapped_support_field_blocks_fixed_advice_and_delivery(case):
     assert ticket.customer_fields_complete is False
     assert ticket.customer_signals == []
     packet = evaluate(ticket, [], assessment, "2.1.0")
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
-    assert "Disposition: unclear" in packet.proposed_comment
+    assert "Verdict: unclear" in packet.proposed_comment
     assert "close " not in packet.recommended_step.lower()
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "review_required"
 
@@ -253,7 +251,7 @@ def test_obsolete_claim_without_current_release_scope_validation_is_unclear(case
     ticket, _, _ = case
     assessment = Assessment(
         key=ticket.key,
-        disposition="no_longer_valid",
+        verdict="no_longer_valid",
         evidence=[
             Evidence(
                 "doc",
@@ -267,8 +265,8 @@ def test_obsolete_claim_without_current_release_scope_validation_is_unclear(case
     )
     packet = evaluate(ticket, [], assessment, "2.1.0")
     assert packet.action == "comment_only"
-    assert packet.disposition == "unclear"
-    assert "Disposition: unclear" in packet.proposed_comment
+    assert packet.verdict == "unclear"
+    assert "Verdict: unclear" in packet.proposed_comment
     assert "close " not in packet.recommended_step.lower()
     assert "\nProof:" not in packet.proposed_comment
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
@@ -279,14 +277,14 @@ def test_unclear_draft_cannot_turn_legacy_advice_into_a_human_reproduction_reque
     assessment = parse_assessment(
         {
             "key": ticket.key,
-            "disposition": "unclear",
+            "verdict": "unclear",
             "recommendedStep": "Ask Documentation to verify the published title procedure.",
         }
     )
     packet = evaluate(ticket, [], assessment, "2.1.0")
     assert packet.action == "comment_only"
-    assert packet.disposition == "unclear"
-    assert "Disposition: unclear" in packet.proposed_comment
+    assert packet.verdict == "unclear"
+    assert "Verdict: unclear" in packet.proposed_comment
     assert packet.recommended_step
     assert "Ask Documentation" not in packet.recommended_step
     assert "Ask Documentation" not in packet.proposed_comment

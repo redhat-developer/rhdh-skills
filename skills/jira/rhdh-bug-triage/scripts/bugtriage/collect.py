@@ -25,7 +25,7 @@ class CollectConfig:
     forge_cache: str = ""
     use_gh: bool = False
     repos: Optional[List[str]] = None
-    corpus_path: str = ""
+    backlog_path: str = ""
     jira_search: bool = False
     max_queries: int = 4
     query_limit: int = 20
@@ -37,7 +37,7 @@ def collect(config: CollectConfig) -> Dict[str, str]:
     tickets = {ticket.key: ticket for ticket in load_export(config.input_path)}
     sample = load_sample_manifest(config.sample_path)
     cache = load_cache(config.forge_cache)
-    corpus = load_export(config.corpus_path or config.input_path)
+    backlog = load_export(config.backlog_path or config.input_path)
     output = Path(config.output_dir)
     if output.exists():
         raise RunError("evidence directory already exists; use a fresh directory")
@@ -60,7 +60,7 @@ def collect(config: CollectConfig) -> Dict[str, str]:
         evidence["collectedAt"] = now_iso()
         evidence["discovery"] = discover(
             ticket,
-            corpus,
+            backlog,
             live=config.jira_search,
             max_queries=config.max_queries,
             query_limit=config.query_limit,
@@ -79,7 +79,7 @@ def collect(config: CollectConfig) -> Dict[str, str]:
             "generatedAt": now_iso(),
             "dryRun": True,
             "forge": "gh" if config.use_gh else "cache-only",
-            "corpus": config.corpus_path or config.input_path,
+            "backlog": config.backlog_path or config.input_path,
             "jiraSearch": config.jira_search,
             "tickets": [{"key": key, "path": path} for key, path in sorted(written.items())],
         },

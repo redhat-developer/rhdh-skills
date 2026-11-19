@@ -1,7 +1,7 @@
-"""Self-contained per-ticket dossiers for fresh-context investigator agents.
+"""Self-contained per-ticket briefs for fresh-context investigator agents.
 
 One ticket's material - facts, report, discussion, collected leads - rendered
-as a single markdown file. An investigator subagent reads exactly one dossier
+as a single markdown file. An investigator subagent reads exactly one brief
 instead of a multi-megabyte export, which keeps its context small and its
 judgement independent of the other tickets in the sample.
 """
@@ -19,29 +19,29 @@ from .run import RunError, load_sample_manifest
 INVESTIGATOR_BRIEF = """\
 ## Your task (investigator)
 
-You are investigating this one bug read-only, end to end. Produce, in
+You own this one bug, read-only, end to end. Write what you find in
 `assessments/{key}.json`:
 
-1. **Mechanism and root cause** - how the reported inputs reach the failure,
-   traced in the actual release sources, not just restated from the report.
-2. **Requirement checks** - every acceptance requirement observed as
-   satisfied, violated or unknown, with direct method-matching citations.
-3. **Relations** - comparisons against the duplicate/related candidates
-   below (and any better candidate you find), with citations of both reports.
-4. **Validation on the exact release** - code, runtime, documentation or
-   dependency evidence bound to the release under review.
-5. **A fix plan** - the concrete read-only remediation approach: where a fix
-   would land (repository and paths), what it would change, and a complexity
-   estimate. For duplicate/already-fixed/obsolete verdicts, describe the
+1. **What actually goes wrong** — trace how the reported steps reach the
+   failure in the release's own source code. Do not just restate the report.
+2. **What you checked** — every promise the bug makes (each acceptance
+   requirement), marked passed, failed or unknown, each with a link that
+   proves it.
+3. **How it relates to other bugs** — compare it against the candidates
+   listed below (and any better one you find), citing both tickets.
+4. **Does it still happen in the release under review?** — answer with code,
+   docs, dependency or runtime evidence tied to that exact release.
+5. **A fix plan** — what a fix would change, where it would land (repository
+   and file paths), and how big it is (trivial/small/moderate/large). If the
+   verdict is duplicate, already fixed or no longer valid, describe the
    resolution action instead and use complexity `none`.
 
-**Escalate before recording an unknown.** If a requirement or the disposition
-would land on unknown/unclear, first attempt the specific missing check
-through read-only means - CI/nightly job results on the web, deeper source
-tracing including vendored or built code, package-registry metadata, release
-records. Only record unknown when the read-only evidence genuinely does not
-exist, and name exactly what was attempted. Never fabricate a result, and
-never claim a runtime check that was not performed."""
+**Try to settle every unknown before writing it down.** If a check or the
+verdict is heading for "unknown" or "unclear", first try the specific missing
+check read-only: nightly test results on the public web, deeper digging into
+vendored or built code, package registries, release records. Only write
+"unknown" when that evidence genuinely does not exist — and say what you
+tried. Never invent a result, and never claim you ran something you didn't."""
 
 
 def _facts(ticket: Ticket) -> List[str]:
@@ -66,7 +66,7 @@ def _facts(ticket: Ticket) -> List[str]:
     return lines
 
 
-def render_dossier(
+def render_brief(
     ticket: Ticket, evidence: Optional[Dict[str, Any]], sample_entry: Dict[str, Any]
 ) -> str:
     lines: List[str] = [
@@ -117,13 +117,13 @@ def render_dossier(
     return "\n".join(lines)
 
 
-def write_dossiers(
+def write_briefs(
     input_path: str,
     sample_path: str,
     output_dir: str,
     evidence_dir: str = "",
 ) -> Dict[str, str]:
-    """Write one dossier per sampled ticket; return the written paths."""
+    """Write one brief per sampled ticket; return the written paths."""
     tickets = {ticket.key: ticket for ticket in load_export(input_path)}
     sample = load_sample_manifest(sample_path)
     if evidence_dir:
@@ -132,7 +132,7 @@ def write_dossiers(
             raise RunError(f"evidence directory does not exist: {evidence_dir!r}")
     output = Path(output_dir)
     if output.exists():
-        raise RunError("dossier directory already exists; use a fresh directory")
+        raise RunError("brief directory already exists; use a fresh directory")
     output.mkdir(parents=True, exist_ok=False)
     written: Dict[str, str] = {}
     for entry in sample.get("tickets", []):
@@ -146,6 +146,6 @@ def write_dossiers(
             if path.is_file():
                 record = json.loads(path.read_text(encoding="utf-8"))
         path = output / f"{key}.md"
-        write_text(path, render_dossier(ticket, record, entry))
+        write_text(path, render_brief(ticket, record, entry))
         written[key] = str(path)
     return written

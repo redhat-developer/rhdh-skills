@@ -293,21 +293,21 @@ def load_tickets_from_acli(
 
 # Search-level records carry the fields the deployment allows a search to
 # return; the rest (chronology, links, fix versions, comments) needs full
-# reads, which the corpus builder records per part instead of hiding.
-CORPUS_SEARCH_FIELDS = "key,summary,description,status,labels,issuetype,assignee,priority,reporter"
-CORPUS_SEARCH_GAPS = (
+# reads, which the backlog builder records per part instead of hiding.
+BACKLOG_SEARCH_FIELDS = "key,summary,description,status,labels,issuetype,assignee,priority,reporter"
+BACKLOG_SEARCH_GAPS = (
     "search-level records lack created, issuelinks, fixVersions, versions, "
     "resolution and comments; rank leads only, hydrate material candidates"
 )
 
 
-def build_corpus(
+def build_backlog(
     search_jqls: List[str],
     full_jqls: List[str],
     field_names: Optional[Dict[str, str]] = None,
     as_of: str = "",
 ) -> Dict[str, Any]:
-    """Build one merged open-and-closed corpus from bounded read-only parts.
+    """Build one merged open-and-closed backlog from bounded read-only parts.
 
     Search-level parts are fast and cover whole partitions; full-read parts
     carry chronology, links and fix versions where the fix-first route needs
@@ -319,11 +319,11 @@ def build_corpus(
     parts: List[Dict[str, Any]] = []
     merged_names = dict(field_names or {})
     for jql in search_jqls:
-        records = search_acli(jql, fields=CORPUS_SEARCH_FIELDS)
+        records = search_acli(jql, fields=BACKLOG_SEARCH_FIELDS)
         for record in records:
             key = record.get("key")
             if key in seen:
-                raise JiraAdapterError(f"corpus parts overlap on {key}; use disjoint queries")
+                raise JiraAdapterError(f"backlog parts overlap on {key}; use disjoint queries")
             seen[key] = "search-level"
             issues.append(record)
         parts.append(
@@ -331,7 +331,7 @@ def build_corpus(
                 "jql": jql,
                 "level": "search-level",
                 "count": len(records),
-                "gaps": CORPUS_SEARCH_GAPS,
+                "gaps": BACKLOG_SEARCH_GAPS,
             }
         )
     for jql in full_jqls:
@@ -339,7 +339,7 @@ def build_corpus(
         for record in document["issues"]:
             key = record.get("key")
             if key in seen:
-                raise JiraAdapterError(f"corpus parts overlap on {key}; use disjoint queries")
+                raise JiraAdapterError(f"backlog parts overlap on {key}; use disjoint queries")
             seen[key] = "full-reads"
             issues.append(record)
         merged_names = merge_field_names(merged_names, document.get("fieldNames") or {})
@@ -359,7 +359,7 @@ def build_corpus(
             "parts": parts,
             "coverage": (
                 "bounded, explicitly queried partitions; not an exhaustive "
-                "duplicate corpus unless a part's source proves otherwise"
+                "duplicate backlog unless a part's source proves otherwise"
             ),
         },
     }

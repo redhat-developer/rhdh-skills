@@ -391,12 +391,12 @@ def score_candidate(query: Ticket, candidate: Ticket) -> DuplicateCandidate:
 
 def rank_candidates(
     query: Ticket,
-    corpus: Iterable[Ticket],
+    backlog: Iterable[Ticket],
     limit: int = 3,
     min_score: float = MIN_CANDIDATE_SCORE,
 ) -> List[DuplicateCandidate]:
     scored = []
-    for candidate in corpus:
+    for candidate in backlog:
         if {candidate.key, *candidate.former_keys} & {query.key, *query.former_keys}:
             continue
         result = score_candidate(query, candidate)

@@ -1,7 +1,7 @@
 """Evaluation harness for a dry-run triage pass.
 
 Ground truth is a small JSON map supplied by the reviewer. The harness reports
-coverage, decision-ready rate, precision/recall for the closeable dispositions,
+coverage, decision-ready rate, precision/recall for the closeable verdicts,
 and — most importantly — every false close proposal. A false close is a hard
 failure even when every other number looks good.
 """
@@ -106,9 +106,9 @@ def load_truth(path: str) -> Dict[str, Dict[str, str]]:
     for key, value in document.items():
         if not isinstance(value, dict):
             raise ValueError(f"invalid truth label for {key}")
-        disposition = str(value.get("disposition") or "").strip().lower()
-        disposition = DISPOSITION_ALIASES.get(disposition, disposition)
-        if disposition not in {
+        verdict = str(value.get("verdict") or "").strip().lower()
+        verdict = DISPOSITION_ALIASES.get(verdict, verdict)
+        if verdict not in {
             "duplicate",
             "already_fixed",
             "still_valid",
@@ -116,16 +116,16 @@ def load_truth(path: str) -> Dict[str, Dict[str, str]]:
             "needs_repro",
             "unclear",
         }:
-            raise ValueError(f"unknown truth disposition for {key}: {disposition!r}")
+            raise ValueError(f"unknown truth verdict for {key}: {verdict!r}")
         truth[key] = {
-            "disposition": disposition,
+            "verdict": verdict,
             "duplicateOf": str(value.get("duplicateOf") or "").strip(),
         }
     return truth
 
 
 def _is_close_for(packet: Packet, truth: Dict[str, str]) -> bool:
-    expected = CLOSE_FOR_DISPOSITION.get(truth["disposition"])
+    expected = CLOSE_FOR_DISPOSITION.get(truth["verdict"])
     if expected is None:
         return False
     if packet.action != expected:
@@ -164,7 +164,7 @@ def evaluate(packets: Iterable[Packet], truth: Dict[str, Dict[str, str]]) -> Eva
         gaps += len(packet.gaps)
         if packet.action in CLOSE_ACTIONS:
             decision_ready += 1
-        if packet.disposition not in ("unclear", "needs_repro"):
+        if packet.verdict not in ("unclear", "needs_repro"):
             classified += 1
         if packet.action in CLOSE_ACTIONS:
             close_proposals += 1
@@ -174,21 +174,21 @@ def evaluate(packets: Iterable[Packet], truth: Dict[str, Dict[str, str]]) -> Eva
                         "key": key,
                         "action": packet.action,
                         "target": packet.target,
-                        "expected": expected["disposition"],
+                        "expected": expected["verdict"],
                     }
                 )
-        if packet.disposition != expected["disposition"]:
+        if packet.verdict != expected["verdict"]:
             mismatches.append(
                 {
                     "key": key,
-                    "observed": packet.disposition,
-                    "expected": expected["disposition"],
+                    "observed": packet.verdict,
+                    "expected": expected["verdict"],
                 }
             )
         if packet.action not in CLOSE_ACTIONS:
             abstained += 1
         for label in CLOSE_FOR_DISPOSITION:
-            if expected["disposition"] == label:
+            if expected["verdict"] == label:
                 support[label] += 1
             proposes_label = packet.action == CLOSE_FOR_DISPOSITION[label]
             if proposes_label:
@@ -196,9 +196,9 @@ def evaluate(packets: Iterable[Packet], truth: Dict[str, Dict[str, str]]) -> Eva
             correct_target = label != "duplicate" or packet.target == expected.get(
                 "duplicateOf", ""
             )
-            if expected["disposition"] == label and proposes_label and correct_target:
+            if expected["verdict"] == label and proposes_label and correct_target:
                 true_positive[label] += 1
-            elif expected["disposition"] == label:
+            elif expected["verdict"] == label:
                 false_negative[label] += 1
                 if proposes_label:
                     false_positive[label] += 1
@@ -252,7 +252,7 @@ def render_evaluation(evaluation: Evaluation, *, strict: bool = False) -> str:
         f"| Coverage | {evaluation.coverage:.0%} |",
         f"| Decision-ready | {evaluation.decision_ready}/{evaluation.matched} "
         f"({evaluation.decision_ready_rate:.0%}) |",
-        f"| Classified disposition | {evaluation.classified}/{evaluation.matched} "
+        f"| Classified verdict | {evaluation.classified}/{evaluation.matched} "
         f"({evaluation.classified_rate:.0%}) |",
         f"| Close proposals | {evaluation.close_proposals} |",
         f"| False close proposals | {len(evaluation.false_closes)} |",
@@ -315,7 +315,7 @@ def write_evaluation(
             key=item["key"],
             summary=item.get("summary", ""),
             status=item.get("status", ""),
-            disposition=item.get("disposition", "unclear"),
+            verdict=item.get("verdict", "unclear"),
             confidence=float(item.get("confidence", 0.0)),
             confidence_basis=item.get("confidenceBasis", []),
             action=item.get("action", "unclear"),

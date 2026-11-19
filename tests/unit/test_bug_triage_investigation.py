@@ -103,11 +103,11 @@ def test_unknown_check_is_blocked_not_completed_and_names_its_missing_check():
     assert investigation_errors(data, EVIDENCE, "2.1.0")
 
 
-def packet(data, disposition="unclear", **extra):
+def packet(data, verdict="unclear", **extra):
     assessment = parse_assessment(
         {
             "key": "RHDHBUGS-1",
-            "disposition": disposition,
+            "verdict": verdict,
             "evidence": [e.to_dict() for e in EVIDENCE],
             "investigation": data,
             **extra,
@@ -119,8 +119,8 @@ def packet(data, disposition="unclear", **extra):
 
 
 def test_scoped_diagnosis_survives_unrelated_closure_gate_failure():
-    result = packet(record(), disposition="already_fixed")
-    assert result.disposition == "unclear"
+    result = packet(record(), verdict="already_fixed")
+    assert result.verdict == "unclear"
     assert result.action == "comment_only"
     assert result.verification_errors
     assert investigation_outcome(result) == "requirement_violated"
@@ -152,7 +152,7 @@ def test_unknown_requirement_does_not_conceal_a_positive_counterexample():
 
 def test_scoped_success_is_not_automatic_closure_or_runtime_verification():
     result = packet(record("satisfied"))
-    assert result.disposition == "unclear"
+    assert result.verdict == "unclear"
     assert result.action == "comment_only"
     assert investigation_outcome(result) == "requirements_satisfied_in_stated_scope"
     assert result.validation == {}

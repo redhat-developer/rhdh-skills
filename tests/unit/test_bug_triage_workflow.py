@@ -70,7 +70,7 @@ def inputs(tmp_path):
         json.dumps(
             {
                 "key": "RHDHBUGS-101",
-                "disposition": "unclear",
+                "verdict": "unclear",
                 "evidence": [
                     {
                         "type": "jira",
@@ -101,7 +101,7 @@ def test_end_to_end_uncertainty_has_exact_comment_not_an_empty_closure_report(in
     monkeypatch.setattr(subprocess, "run", unexpected_external_call)
     result = run(inputs)
     packet = result.packets[0]
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert packet.proposed_comment
     assert packet.comment_plan["status"] == "propose"
@@ -109,9 +109,7 @@ def test_end_to_end_uncertainty_has_exact_comment_not_an_empty_closure_report(in
     for line in packet.proposed_comment.splitlines():
         if line:
             assert "> " + line in report
-    proposal = (result.output_dir / "proposed/RHDHBUGS-101.md").read_text()
-    assert proposal.startswith(packet.proposed_comment)
-    saved = json.loads((result.output_dir / "audit" / "packets.json").read_text())
+    saved = json.loads((result.output_dir / "packets.json").read_text())
     assert saved["packets"][0]["proposedComment"] == packet.proposed_comment
     assert result.manifest["counts"]["draftComments"] == 1
     assert result.manifest["counts"]["closeProposals"] == 0
@@ -134,7 +132,7 @@ def test_missing_one_assessment_blocks_incomplete_triage(inputs):
 
 def test_unfilled_template_is_not_a_completed_investigation(inputs):
     Path(inputs.assessments_dir, "RHDHBUGS-101.json").write_text(
-        json.dumps({"key": "RHDHBUGS-101", "disposition": "", "evidence": []})
+        json.dumps({"key": "RHDHBUGS-101", "verdict": "", "evidence": []})
     )
     with pytest.raises(RunError, match="unfilled template"):
         run(inputs)
@@ -243,7 +241,7 @@ def test_failed_searches_and_bounded_coverage_survive_into_report(inputs, tmp_pa
     inputs.evidence_dir = str(evidence)
     result = run(inputs)
     report = (result.output_dir / "report.md").read_text()
-    assert "1 failed/invalid" in report
+    assert "1 failed or invalid" in report
     assert result.manifest["coverage"]["corpusExhaustive"] is False
     assert result.manifest["coverage"]["assessedIssues"] == 1
 
@@ -262,13 +260,13 @@ def test_no_mutating_cli_operation_exists(command):
 
 
 def test_strict_evaluation_fails_vacuous_success_and_false_validity():
-    truth = {"RHDHBUGS-101": {"disposition": "already_fixed", "duplicateOf": ""}}
+    truth = {"RHDHBUGS-101": {"verdict": "already_fixed", "duplicateOf": ""}}
     assert not evaluate([], truth).strict_passed
     packet = Packet(
         key="RHDHBUGS-101",
         summary="",
         status="New",
-        disposition="still_valid",
+        verdict="still_valid",
         confidence=0.98,
         confidence_basis=[],
         action="comment_only",
@@ -283,7 +281,7 @@ def test_strict_evaluation_fails_vacuous_success_and_false_validity():
 
 def test_malformed_ground_truth_is_not_ignored(tmp_path):
     path = tmp_path / "truth.json"
-    path.write_text(json.dumps({"RHDHBUGS-101": {"disposition": "probably fixed"}}))
+    path.write_text(json.dumps({"RHDHBUGS-101": {"verdict": "probably fixed"}}))
     with pytest.raises(ValueError, match="unknown truth"):
         load_truth(str(path))
 
@@ -293,7 +291,7 @@ def test_resolved_documentation_with_missing_fix_history_does_not_recheck_persis
     document = parse_assessment(
         {
             "key": "RHDHBUGS-101",
-            "disposition": "unclear",
+            "verdict": "unclear",
             "evidence": [
                 {
                     "type": "doc",
@@ -312,7 +310,7 @@ def test_resolved_documentation_with_missing_fix_history_does_not_recheck_persis
         }
     )
     packet = evaluate_packet(load_export(inputs.input_path)[0], [], document, RELEASE)
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert next_step_kind(packet) == "identify_fix_provenance"
     assert source in packet.recommended_step
     assert "not established" in packet.proposed_comment
@@ -325,7 +323,7 @@ def test_key_shaped_terminology_does_not_invent_jira_citations(inputs, term):
     assessment = parse_assessment(
         {
             "key": ticket.key,
-            "disposition": "unclear",
+            "verdict": "unclear",
             "evidence": [
                 {
                     "type": "jira",
@@ -349,7 +347,7 @@ def test_limited_sources_preserve_validation_boundaries_without_proof_authority(
     assessment = parse_assessment(
         {
             "key": ticket.key,
-            "disposition": "unclear",
+            "verdict": "unclear",
             "evidence": [{"type": "code", "ref": source, "strength": "limited", "why": limitation}],
             "validation": {
                 "method": "code",
@@ -364,11 +362,11 @@ def test_limited_sources_preserve_validation_boundaries_without_proof_authority(
     assert not packet.invalid_evidence
     assert packet.evidence[0].strength == "limited"
     assert packet.confidence == 0
-    assert packet.disposition == "unclear" and packet.action == "comment_only"
+    assert packet.verdict == "unclear" and packet.action == "comment_only"
     assert limitation in packet.proposed_comment
     assert "result: unknown" in packet.proposed_comment
     assert source in packet.proposed_comment
-    assert "not accepted proof" in packet.proposed_comment
+    assert "Validation attempt (not proof)" in packet.proposed_comment
 
 
 def test_uncertain_cited_question_is_preserved_without_becoming_action_execution(inputs):
@@ -379,7 +377,7 @@ def test_uncertain_cited_question_is_preserved_without_becoming_action_execution
     )
     document = {
         "key": ticket.key,
-        "disposition": "unclear",
+        "verdict": "unclear",
         "evidence": [
             {
                 "type": "code",
@@ -422,7 +420,7 @@ def test_malformed_next_question_cannot_override_safe_recommendation(inputs, cha
         parse_assessment(
             {
                 "key": ticket.key,
-                "disposition": "unclear",
+                "verdict": "unclear",
                 "nextCheck": check,
                 "evidence": [
                     {
@@ -452,7 +450,7 @@ def test_limited_validation_and_question_cannot_salvage_a_definitive_claim(input
         parse_assessment(
             {
                 "key": ticket.key,
-                "disposition": "still_valid",
+                "verdict": "still_valid",
                 "evidence": [
                     {"type": "code", "ref": source, "strength": "limited", "why": unsupported}
                 ],
@@ -469,7 +467,7 @@ def test_limited_validation_and_question_cannot_salvage_a_definitive_claim(input
         RELEASE,
     )
     assert packet.verification_errors
-    assert packet.disposition == "unclear" and packet.action == "comment_only"
+    assert packet.verdict == "unclear" and packet.action == "comment_only"
     assert unsupported not in packet.proposed_comment
     assert question not in packet.proposed_comment
 

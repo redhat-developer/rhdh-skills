@@ -37,8 +37,8 @@ def evaluate(ticket, candidates, assessment):
 
 def assert_unclear_draft(packet):
     assert packet.action == "comment_only"
-    assert packet.disposition == "unclear"
-    assert "Disposition: unclear" in packet.proposed_comment
+    assert packet.verdict == "unclear"
+    assert "Verdict: unclear" in packet.proposed_comment
     assert "Recommended next step:" in packet.proposed_comment
     assert packet.recommended_step
     assert "close " not in packet.recommended_step.lower()
@@ -67,26 +67,26 @@ def test_positive_controls_have_agreed_shape_and_ignore_legacy_mutation_receipts
     assert packet.proposed_comment.startswith("Re: [" + ticket.key + "]")
     assert "Recommended next step:" in packet.proposed_comment
     assert "Proof:" in packet.proposed_comment
-    assert "Confidence:" in packet.proposed_comment
+    assert "Evidence score:" in packet.proposed_comment
     assert "Closing another" not in packet.proposed_comment
     assert "unrelated issue" not in packet.proposed_comment
 
 
-@pytest.mark.parametrize("disposition", ["still_valid", "no_longer_valid", "unclear", ""])
-def test_validity_claims_without_current_release_validation_produce_unclear_drafts(disposition):
+@pytest.mark.parametrize("verdict", ["still_valid", "no_longer_valid", "unclear", ""])
+def test_validity_claims_without_current_release_validation_produce_unclear_drafts(verdict):
     ticket, candidates, document = case("already_fixed")
-    document["disposition"] = disposition
+    document["verdict"] = verdict
     packet = evaluate(ticket, candidates, parse_assessment(document))
     attach_comment_plan(ticket, packet, parse_assessment(document), NOW, 14)
     assert_unclear_draft(packet)
     assert packet.comment_plan["status"] == "propose"
-    if disposition in ("still_valid", "no_longer_valid", ""):
+    if verdict in ("still_valid", "no_longer_valid", ""):
         assert packet.gaps
 
 
 def test_legacy_needs_repro_without_evidence_is_unclear_not_a_human_reproduction_ping():
     ticket, candidates, document = case("already_fixed")
-    document["disposition"] = "needs_repro"
+    document["verdict"] = "needs_repro"
     document["evidence"] = []
     packet = evaluate(ticket, candidates, parse_assessment(document))
     assert_unclear_draft(packet)
@@ -336,7 +336,7 @@ def test_explicit_unclear_assessments_produce_drafts_without_human_investigation
     assessments.mkdir()
     for ticket in load_export(str(FIXTURES / "issues.json")):
         (assessments / f"{ticket.key}.json").write_text(
-            json.dumps({"key": ticket.key, "disposition": "unclear", "evidence": []})
+            json.dumps({"key": ticket.key, "verdict": "unclear", "evidence": []})
         )
     result = run(
         RunConfig(
@@ -353,8 +353,8 @@ def test_explicit_unclear_assessments_produce_drafts_without_human_investigation
         assert_unclear_draft(packet)
         assert "ask " not in packet.recommended_step.lower()
         assert "reproduce" not in packet.recommended_step.lower()
-    assert len(list((output / "proposed").glob("*.md"))) == 5
     report = (output / "report.md").read_text()
+    assert report.count("### RHDHBUGS-") == 5
     assert all("### " + p.key in report for p in result.packets)
     assert result.manifest["counts"]["abstained"] == 0
     assert result.manifest["counts"]["surfacedRecommendations"] == 5
@@ -385,7 +385,7 @@ def test_strict_evaluation_allows_honest_uncertainty_without_counting_a_fixed_pr
     document["fix"]["merged"] = False
     packet = evaluate(ticket, candidates, parse_assessment(document))
     assert_unclear_draft(packet)
-    truth = {packet.key: {"disposition": "already_fixed"}}
+    truth = {packet.key: {"verdict": "already_fixed"}}
     result = score_run([packet], truth)
     assert result.abstained == 1
     assert result.predicted["already_fixed"] == 0
@@ -403,7 +403,7 @@ def test_wrong_canonical_target_is_a_false_close_not_a_precision_success():
     ticket, candidates, document = case("duplicate")
     packet = evaluate(ticket, candidates, parse_assessment(document))
     result = score_run(
-        [packet], {packet.key: {"disposition": "duplicate", "duplicateOf": "RHDHBUGS-9999"}}
+        [packet], {packet.key: {"verdict": "duplicate", "duplicateOf": "RHDHBUGS-9999"}}
     )
     assert len(result.false_closes) == 1
     assert result.precision["duplicate"] == 0
@@ -437,10 +437,8 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
         )
     )
     report = (output / "report.md").read_text()
-    assert len(list((output / "proposed").glob("*.md"))) == 2
+    assert report.count("### RHDHBUGS-") == len(result.packets)
     for packet in result.packets:
-        proposed = (output / "proposed" / (packet.key + ".md")).read_text()
-        assert proposed.split("\n---\n", 1)[0].strip() == packet.proposed_comment
         section = report.split("### " + packet.key + " —", 1)[1].split("\n### ", 1)[0]
         quoted = "\n".join(
             line[2:] if line.startswith("> ") else ""
@@ -574,7 +572,7 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
     assessments = tmp_path / "assessments"
     assessments.mkdir()
     (assessments / "RHDHBUGS-100.json").write_text(
-        json.dumps({"key": "RHDHBUGS-100", "disposition": "unclear", "evidence": []})
+        json.dumps({"key": "RHDHBUGS-100", "verdict": "unclear", "evidence": []})
     )
     for source, target in [("RHDHBUGS-300", "RHDHBUGS-200"), ("RHDHBUGS-200", "RHDHBUGS-100")]:
         encoded = (
@@ -596,5 +594,5 @@ def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_
     packets = {p.key: p for p in result.packets}
     assert packets["RHDHBUGS-200"].action == "propose_close_duplicate"
     assert_unclear_draft(packets["RHDHBUGS-300"])
-    assert (output / "proposed/RHDHBUGS-300.md").exists()
-    assert (output / "proposed/RHDHBUGS-200.md").exists()
+    report = (output / "report.md").read_text(encoding="utf-8")
+    assert "RHDHBUGS-300" in report and "RHDHBUGS-200" in report

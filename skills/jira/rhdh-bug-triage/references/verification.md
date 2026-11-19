@@ -18,7 +18,7 @@ the [schema](report-schema.md) owns fields and migration.
 Test both positive and negative paths. A run producing only uncertain drafts
 does not demonstrate that valid duplicate/fixed findings can pass.
 
-Audit the exact generated comments, not only dispositions: no invented Jira
+Audit the exact generated comments, not only verdicts: no invented Jira
 links from CVE/hash terms; no dropped evidence or source/runtime limitations;
 fresh-install qualifications stay visible; limited leads retain zero proof
 weight. A specific cited next-investigation question must not bypass a failed
@@ -26,12 +26,12 @@ definitive gate or become a command to post, close, fix, or backport.
 
 | Area | Required checks |
 |---|---|
-| Positive duplicate | Older authoritative target, same failure/trigger/required fix, direct citations, evidence-derived confidence at least 0.85 and two real independent reviews produce the correct canonical recommendation, including a low-lexical-similarity pair. |
+| Positive duplicate | Older authoritative target, same failure/trigger/required fix, direct citations, evidence-derived confidence at least 0.85 and two real independent reviews produce the correct recommendation of which tracker to keep, including a low-lexical-similarity pair. |
 | Positive fixed | Matching incorporated artifact covers the whole issue, shipped carrying release and exact target ancestry, cited validation and independent agreement produce the correct fixed recommendation. |
 | Hard negatives | Similar title/different trigger or fix; inward duplicate link; newer/undated/customer target; duplicate chain; conflicting cluster; partial fix; closed-unmerged or unreleased PR; older-stream fix absent from target; contradictory runtime evidence; copied review flags. |
 | Current validity | Cited exact-release `persists` succeeds; cited `resolved` plus whole-scope removal supports obsolete. Open status, no PR hit, missing/wrong-release/uncited validation or non-repro without cause must not become definitive validity. |
 | Selection | Age exactly 90 days; younger/missing age; all affects older; mixed older/equal/newer; missing/ambiguous/non-comparable affects; `all-open` bypasses only age/affects; customer/Done always excluded; default 12 versus `--all`; reasons retained. |
-| Investigation gate | Missing directory/file, mismatched key, blank/unknown disposition and malformed inputs fail before a successful report. An honestly investigated uncertainty is supported; a template is not adjudication. |
+| Investigation gate | Missing directory/file, mismatched key, blank/unknown verdict and malformed inputs fail before a successful report. An honestly investigated uncertainty is supported; a template is not adjudication. |
 | Requirement verification | `--require-investigation` rejects absent/not-started records, missing observations/citations, mismatched release and false completion with unknown requirements. Positive/negative checks need direct method-matching evidence. A specific blocked check is visible; a valid source diagnosis survives unrelated closure gates. |
 | Read adapters | Search-to-full-view fallback, pagination/partial envelope rejection, deployment-specific customer mappings, missing fields, ADF hidden Jira/PR/support links, and exact Jira-key boundaries. |
 | Collection audit | Successful zero matches versus rate limits/permission/invalid responses/cache-only reads; actual repository scope; linked-key truncation/unsearched keys; no fabricated exhaustive coverage. |
@@ -48,7 +48,7 @@ facts or reviewers; perform and retain the actual source inspection separately.
    including `unclear`/`needs_repro`. The report includes **every** draft and
    delivery status. Report, packet and any proposal file contain the same body
    and stable reference; no rejected proof reappears as a factual assertion.
-2. Drafts identify the issue, bounded disposition, cited evidence, exact-release
+2. Drafts identify the issue, bounded verdict, cited evidence, exact-release
    validation or specific unknown, ownership when known and one recommendation.
    No invented runtime result, generic reproduction ping, closure announcement,
    forced positive or assignment invented from an inference.
@@ -77,15 +77,15 @@ facts or reviewers; perform and retain the actual source inspection separately.
 
 Run `evaluate --packets REVIEW/audit/packets.json --truth labels.json --strict` through
 `scripts/triage.py` using independently established labels. Strict failure must
-cover false duplicate/fixed closure advice, wrong canonical, **false still-valid
+cover false duplicate/fixed closure advice, wrong tracker kept, **false still-valid
 or other definitive conclusions**, unlabelled packets and labels absent from
 packets. Empty labels or a tiny labelled subset must not pass as full coverage.
 Report support, precision/recall, uncertainty and both directions of coverage;
 no minimum close rate is required and no score is a calibrated probability.
 
 For a live shadow run, retain the verified release record/date, selection scope,
-corpus/query limits, input hashes, read/collection errors, independent reviewer
-provenance/disagreement and an exact-comment safety review. Use a fresh local
+query limits for the comparison list, input hashes, read/collection errors, independent reviewer
+where the data came from, any disagreement, and a safety review of the exact comments. Use a fresh local
 output directory outside the PR; do not commit private Jira dumps or tracking
 reports. Review every selected bug, not just apparent positives. A live shadow
 report measures this snapshot; it is not grounds to certify universal accuracy,
@@ -103,11 +103,11 @@ hard negatives, closed-copy comment evidence, conflicting pointers, alias/self
 identity, and fix-first neighbours that share only generic error words. Exercise
 failed, empty, capped and unexecuted queries, successful/failed hydration and
 budgets (failed reads consume budget too). A successful script exit is not a
-semantic duplicate/fix adjudication.
+deciding duplicates and fixes.
 
-For live development replays, freeze seeds, corpus, selection and limits; save
+For live development replays, freeze seeds, comparison list, selection and limits; save
 each collection and run in a fresh private directory. Compare route/candidate
-provenance, not just closure counts. Retain baseline retrieval successes: a known
+where the data came from, not just close counts. Retain baseline retrieval successes: a known
 pair already ranked first is not a newly discovered duplicate. Targeted exposed
 leads are regression cases, not blind discovery accuracy. Fewer leads is a
 workload measure, not measured precision without labels for the remaining leads.

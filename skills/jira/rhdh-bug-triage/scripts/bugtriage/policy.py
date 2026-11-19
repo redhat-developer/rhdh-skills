@@ -18,7 +18,7 @@ from .model import JIRA_KEY_RE, Ticket, parse_datetime
 
 POLICY_VERSION = 3
 FIXED_CLOSE_THRESHOLD = 0.80
-DISPOSITIONS = {
+VERDICTS = {
     "duplicate",
     "already_fixed",
     "still_valid",
@@ -72,7 +72,7 @@ class Evidence:
 @dataclass
 class Assessment:
     key: str
-    disposition: str = ""
+    verdict: str = ""
     duplicate_of: str = ""
     evidence: List[Evidence] = field(default_factory=list)
     fix_pr: str = ""
@@ -108,7 +108,7 @@ class Packet:
     key: str
     summary: str
     status: str
-    disposition: str
+    verdict: str
     confidence: float
     confidence_basis: List[str]
     action: str
@@ -145,7 +145,7 @@ class Packet:
             "key": self.key,
             "summary": self.summary,
             "status": self.status,
-            "disposition": self.disposition,
+            "verdict": self.verdict,
             "confidence": round(self.confidence, 3),
             "confidenceBasis": self.confidence_basis,
             "action": self.action,
@@ -233,9 +233,9 @@ def parse_assessment(document: Dict[str, Any]) -> Assessment:
     key = str(document.get("key") or "").strip()
     if not JIRA_KEY_RE.fullmatch(key):
         raise ValueError("assessment has no valid issue key")
-    disposition = str(document.get("disposition") or "").strip().lower()
-    if disposition and disposition not in DISPOSITIONS:
-        raise ValueError(f"unknown disposition {disposition!r}")
+    verdict = str(document.get("verdict") or "").strip().lower()
+    if verdict and verdict not in VERDICTS:
+        raise ValueError(f"unknown verdict {verdict!r}")
     evidence, invalid = [], []
     for item in document.get("evidence") or []:
         parsed = _evidence_from(item)
@@ -267,7 +267,7 @@ def parse_assessment(document: Dict[str, Any]) -> Assessment:
     passes = review.get("independentPasses", 0)
     return Assessment(
         key=key,
-        disposition=disposition,
+        verdict=verdict,
         duplicate_of=str(document.get("duplicateOf") or "").strip(),
         evidence=evidence,
         invalid_evidence=invalid,
@@ -365,7 +365,7 @@ def ref_link(ref: str, label: str = "") -> str:
 def _proof_errors(packet: Packet) -> List[str]:
     errors = []
     cited = {item.ref: item for item in packet.evidence}
-    for name in PROOF_FIELDS.get(packet.disposition, ()):
+    for name in PROOF_FIELDS.get(packet.verdict, ()):
         claim = packet.proof.get(name)
         if (
             not isinstance(claim, dict)
@@ -491,7 +491,7 @@ def _fix_evidence_errors(packet: Packet) -> List[str]:
             return ["fixEvidence was assessed; insufficient proof must use not_established"]
         return (
             ["already_fixed conflicts with unverified fixEvidence.state"]
-            if packet.disposition == "already_fixed"
+            if packet.verdict == "already_fixed"
             else []
         )
     errors = []
@@ -516,7 +516,7 @@ def _fix_evidence_errors(packet: Packet) -> List[str]:
         or not all(supported(claim) for claim in covered)
     ):
         errors.append("fixEvidence working subset needs positive, directly cited coverage evidence")
-    if state == "partial_fix_supported" and packet.disposition == "already_fixed":
+    if state == "partial_fix_supported" and packet.verdict == "already_fixed":
         errors.append("partial fix does not establish whole-issue resolution")
     if state == "verified_for_stated_scope":
         for dimension in ("incorporation", "validation"):
@@ -625,15 +625,13 @@ def investigation_errors(record: dict, evidence: List[Evidence], release: str) -
     return errors
 
 
-def fix_plan_errors(
-    fix_plan: Dict[str, Any], evidence: List[Evidence], disposition: str
-) -> List[str]:
+def fix_plan_errors(fix_plan: Dict[str, Any], evidence: List[Evidence], verdict: str) -> List[str]:
     """Require usable read-only remediation guidance for an investigated bug.
 
     A fix plan names where a correction would land and how; it is guidance for
     the human or the separately authorized fix workflow, never a change, a
     claim that the fix exists, or closure permission. Resolution-only
-    dispositions (duplicate, already fixed, obsolete) may use complexity
+    verdicts (duplicate, already fixed, obsolete) may use complexity
     ``none`` and describe the resolution action instead of a code change.
     """
     if not isinstance(fix_plan, dict) or not fix_plan:
@@ -647,12 +645,9 @@ def fix_plan_errors(
         errors.append(
             "fixPlan.complexity must be one of " + ", ".join(sorted(FIX_PLAN_COMPLEXITIES))
         )
-    if (
-        disposition not in {"duplicate", "already_fixed", "no_longer_valid"}
-        and complexity == "none"
-    ):
+    if verdict not in {"duplicate", "already_fixed", "no_longer_valid"} and complexity == "none":
         errors.append(
-            "fixPlan.complexity 'none' is only for resolution-only dispositions "
+            "fixPlan.complexity 'none' is only for resolution-only verdicts "
             "(duplicate, already_fixed, no_longer_valid)"
         )
     areas = fix_plan.get("areas", [])
@@ -714,36 +709,36 @@ def verify_packet(packet: Packet, ticket: Ticket) -> List[str]:
             if isinstance(requirements, list)
             else set()
         )
-        if packet.disposition == "already_fixed" and results != {"satisfied"}:
+        if packet.verdict == "already_fixed" and results != {"satisfied"}:
             errors.append(
                 "whole-fix recommendation contradicts unsatisfied investigation requirements"
             )
-        if packet.disposition == "still_valid" and "violated" not in results:
+        if packet.verdict == "still_valid" and "violated" not in results:
             errors.append("still-valid finding needs a violated investigation requirement")
     for comparison in packet.comparisons:
         errors.extend(_comparison_errors(packet, comparison))
     if packet.key != ticket.key:
         errors.append("packet does not match the issue under review")
     if packet.action == "comment_only":
-        if packet.disposition not in DISPOSITIONS - {"duplicate", "already_fixed"}:
+        if packet.verdict not in VERDICTS - {"duplicate", "already_fixed"}:
             errors.append("duplicate/fixed findings require the full advisory proof gate")
-        if packet.disposition in ("still_valid", "no_longer_valid"):
+        if packet.verdict in ("still_valid", "no_longer_valid"):
             errors.extend(input_errors(ticket, require_customer_coverage=False))
             if packet.invalid_evidence:
                 errors.append("invalid evidence must be reconciled before a validity finding")
             errors.extend(
                 _validation_errors(
-                    packet, "persists" if packet.disposition == "still_valid" else "resolved"
+                    packet, "persists" if packet.verdict == "still_valid" else "resolved"
                 )
             )
             errors.extend(
                 _contradiction_errors(
-                    packet, "persists" if packet.disposition == "still_valid" else "resolved"
+                    packet, "persists" if packet.verdict == "still_valid" else "resolved"
                 )
             )
             if packet.independent_passes > 0 and packet.agreement is not True:
                 errors.append("independent reviews disagree; validity remains unclear")
-            if packet.disposition == "no_longer_valid":
+            if packet.verdict == "no_longer_valid":
                 errors.extend(_proof_errors(packet))
                 if not any(
                     item.type in ("code", "doc", "release_note", "commit")
@@ -752,8 +747,8 @@ def verify_packet(packet: Packet, ticket: Ticket) -> List[str]:
                     errors.append("no-longer-valid finding needs direct scope-removal evidence")
         return errors
     expected = {"duplicate": "propose_close_duplicate", "already_fixed": "propose_close_fixed"}
-    if packet.action not in CLOSE_ACTIONS or packet.action != expected.get(packet.disposition):
-        return errors + ["unsupported triage action/disposition"]
+    if packet.action not in CLOSE_ACTIONS or packet.action != expected.get(packet.verdict):
+        return errors + ["unsupported triage action/verdict"]
     errors.extend(input_errors(ticket))
     if _release_tuple(packet.current_release) is None:
         errors.append("release under review is not numerically comparable")
@@ -772,12 +767,12 @@ def verify_packet(packet: Packet, ticket: Ticket) -> List[str]:
     if packet.independent_passes < 2 or packet.agreement is not True:
         errors.append("close proposal lacks two agreeing independent passes")
     threshold = (
-        DUPLICATE_CLOSE_THRESHOLD if packet.disposition == "duplicate" else FIXED_CLOSE_THRESHOLD
+        DUPLICATE_CLOSE_THRESHOLD if packet.verdict == "duplicate" else FIXED_CLOSE_THRESHOLD
     )
     if not math.isfinite(packet.confidence) or not threshold <= packet.confidence <= 0.98:
         errors.append(f"confidence does not meet the {threshold:.2f} close gate")
     errors.extend(_proof_errors(packet))
-    if packet.disposition == "duplicate":
+    if packet.verdict == "duplicate":
         target = next((c for c in packet.duplicate_candidates if c.key == packet.target), None)
         if not JIRA_KEY_RE.fullmatch(packet.target) or packet.target == ticket.key:
             errors.append("duplicate needs one distinct canonical issue")
@@ -902,7 +897,7 @@ def verify_packet(packet: Packet, ticket: Ticket) -> List[str]:
 def _usable_next_check(packet: Packet) -> bool:
     """A cited investigation question is not proof or an executable instruction."""
     check = packet.next_check
-    if packet.disposition != "unclear" or packet.verification_errors or not check:
+    if packet.verdict != "unclear" or packet.verification_errors or not check:
         return False
     question = check.get("question")
     refs = check.get("refs")
@@ -926,20 +921,20 @@ def next_step_kind(packet: Packet) -> str:
     """Stable intent for generated advice; free-form assessment advice is untrusted."""
     if _release_tuple(packet.current_release) is None:
         return "identify_current_release"
-    if packet.disposition == "duplicate":
+    if packet.verdict == "duplicate":
         return "review_duplicate_recommendation"
-    if packet.disposition == "already_fixed":
+    if packet.verdict == "already_fixed":
         return "review_fixed_recommendation"
-    if packet.disposition == "still_valid":
+    if packet.verdict == "still_valid":
         return "trace_validated_failure"
-    if packet.disposition == "no_longer_valid":
+    if packet.verdict == "no_longer_valid":
         return "review_scope_removal"
-    if packet.disposition == "needs_repro":
+    if packet.verdict == "needs_repro":
         return "validate_reported_trigger"
     if _usable_next_check(packet):
         return f"investigate_{packet.next_check['method']}"
     if (
-        packet.disposition == "unclear"
+        packet.verdict == "unclear"
         and packet.validation.get("result") == "resolved"
         and not _validation_errors(packet)
     ):
@@ -1053,16 +1048,27 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         return ""
     lines = [f"Re: {ref_link(ticket.key)} — {_linked_text(ticket.summary)}", ""]
     investigated = investigation_outcome(packet) not in ("not_recorded", "invalid")
+    plain_outcome = {
+        "requirements_satisfied_in_stated_scope": "every check passed, within the scope we looked at",
+        "requirement_violated": "a check failed",
+        "not_determined": "not settled",
+        "not_recorded": "not recorded",
+        "invalid": "invalid",
+    }
     if investigated:
         record = packet.investigation
+        status_word = (
+            "complete" if record["status"] == "completed" else "stopped at a missing check"
+        )
         lines += [
-            f"Investigation: {record['status']} — {_linked_text(record['scope'])}",
+            f"Investigation: {status_word} — {_linked_text(record['scope'])}",
             "",
-            f"Scoped finding: {investigation_outcome(packet)} (separate from advisory closure and delivery).",
+            f"What the checks settled: {plain_outcome.get(investigation_outcome(packet), investigation_outcome(packet))} "
+            "(this is separate from whether to close the bug or post this comment).",
             "",
-            f"Failure mechanism: {_linked_text(record['mechanism'])}",
+            f"What goes wrong: {_linked_text(record['mechanism'])}",
             "",
-            "Requirement checks:",
+            "What we checked:",
         ]
         for requirement in record["requirements"]:
             lines.append(
@@ -1070,7 +1076,7 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
                 + "; ".join(ref_link(ref) for ref in requirement["refs"])
             )
         if record["status"] == "blocked":
-            lines += ["", f"Remaining verification blocker: {_linked_text(record['blocker'])}"]
+            lines += ["", f"Still missing: {_linked_text(record['blocker'])}"]
         lines.append("")
     verdicts = {
         "duplicate": f"The reported failure duplicates {ref_link(packet.target)}.",
@@ -1086,19 +1092,19 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         "needs_repro": "Current-release behavior needs validation; the outcome is unknown.",
         "unclear": "The evidence is incomplete or conflicting; no definitive triage conclusion is established.",
     }
-    if investigated and packet.disposition == "unclear":
+    if investigated and packet.verdict == "unclear":
         verdicts["unclear"] = (
-            "No advisory closure recommendation is confirmed; the findings and any remaining verification blocker are stated above."
+            "No close recommendation is confirmed; the findings and anything still missing are stated above."
         )
     lines += [
-        f"Disposition: {packet.disposition} — {verdicts[packet.disposition]}",
+        f"Verdict: {packet.verdict} — {verdicts[packet.verdict]}",
         "",
         "Evidence:",
     ]
     lines.append(f"- {ref_link(ticket.key)} — Jira reports: {_linked_text(ticket.summary)}")
     # Failed gates must not leak an unverified old proof or its conclusion via
     # evidence.why. Those assertions remain available in the local audit.
-    limited = bool(packet.verification_errors) and packet.disposition == "unclear"
+    limited = bool(packet.verification_errors) and packet.verdict == "unclear"
     for item in sorted(packet.evidence, key=lambda item: (item.ref, item.type, item.why)):
         summary = (
             f"Supplied {item.type} citation; the claimed conclusion has not passed verification."
@@ -1107,7 +1113,7 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         )
         qualifier = "Limited source (not proof)" if item.strength == "limited" else "Source summary"
         lines.append(f"- {ref_link(item.ref)} — {qualifier}: {summary}")
-    if packet.disposition in ("unclear", "needs_repro"):
+    if packet.verdict in ("unclear", "needs_repro"):
         # Collection/reporting may append unrelated data gaps after evaluation;
         # those do not change the adjudication or its deterministic draft.
         reasons = packet.verification_errors or [
@@ -1149,7 +1155,7 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         cited = {item.ref for item in packet.evidence}
         lines += [
             "",
-            f"{'Validation' if accepted else 'Validation account (not accepted proof)'}: "
+            f"{'Validation' if accepted else 'Validation attempt (not proof)'}: "
             f"{_linked_text(str(validation.get('method') or 'unknown method'))} on release "
             f"{_linked_text(str(validation.get('release') or 'unknown'))}; "
             f"result: {validation['result'] if accepted else 'unknown'} — "
@@ -1165,15 +1171,15 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         "sameFailure": "Same failure",
         "sameTrigger": "Same trigger",
         "sameFix": "Same required fix",
-        "canonical": "Canonical tracker",
-        "fixMatches": "Matching implementation",
-        "releaseContains": "Released inclusion",
+        "canonical": "Report to keep open",
+        "fixMatches": "The fix",
+        "releaseContains": "In the release",
         "validation": "Validation",
-        "scopeRemoval": "Scope removal",
+        "scopeRemoval": "Why it is gone",
     }
-    if packet.disposition in PROOF_FIELDS:
+    if packet.verdict in PROOF_FIELDS:
         lines += ["", "Proof:"]
-    for name in PROOF_FIELDS.get(packet.disposition, ()):
+    for name in PROOF_FIELDS.get(packet.verdict, ()):
         claim = packet.proof[name]
         lines.append(
             f"- {labels[name]}: {_linked_text(claim['summary'])} "
@@ -1184,12 +1190,12 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         f"Recommended next step: {_next_step(packet)}",
         "",
         (
-            "Confidence: not established for a definitive conclusion; current-release uncertainty remains (not a probability)."
-            if packet.disposition in ("unclear", "needs_repro")
+            "Evidence score: not established — the checks did not settle this, and the release under review was not fully verified. (The score measures citation strength, not a probability.)"
+            if packet.verdict in ("unclear", "needs_repro")
             and not (investigated and packet.investigation["status"] == "completed")
-            else "Confidence: findings are limited to the cited scope; advisory closure remains unconfirmed (not a probability)."
-            if packet.disposition == "unclear"
-            else f"Confidence: {packet.confidence:.2f} (structural evidence-policy score; not a probability or factual guarantee)."
+            else "Evidence score: findings are limited to the cited scope; the close recommendation is not confirmed. (The score measures citation strength, not a probability.)"
+            if packet.verdict == "unclear"
+            else f"Evidence score: {packet.confidence:.2f} — a measure of how strong the citations are, not a probability."
         ),
     ]
     return "\n".join(lines)
@@ -1202,11 +1208,7 @@ def evaluate(
     current_release: str = "",
     verification: Optional[Dict[str, Any]] = None,
 ) -> Packet:
-    disposition = (
-        assessment.disposition
-        if assessment and assessment.disposition in DISPOSITIONS
-        else "unclear"
-    )
+    verdict = assessment.verdict if assessment and assessment.verdict in VERDICTS else "unclear"
     matched = assessment is not None and assessment.key == ticket.key
     evidence = (
         [item for item in assessment.evidence if _evidence_from(item.to_dict()) is not None]
@@ -1218,7 +1220,7 @@ def evaluate(
         key=ticket.key,
         summary=ticket.summary,
         status=ticket.status,
-        disposition=disposition,
+        verdict=verdict,
         confidence=confidence,
         confidence_basis=basis,
         action="comment_only",
@@ -1230,7 +1232,7 @@ def evaluate(
         verification=verification or {},
     )
     if ticket.customer_signals or ticket.is_done:
-        packet.disposition, packet.action = "unclear", "abstain"
+        packet.verdict, packet.action = "unclear", "abstain"
         packet.gaps.append(
             "customer-linked or completed ticket is outside aged non-customer triage scope"
         )
@@ -1238,7 +1240,7 @@ def evaluate(
             packet.gaps.append("assessment does not match the issue under review")
         return packet
     if not matched:
-        packet.disposition = "unclear"
+        packet.verdict = "unclear"
         if assessment is None:
             packet.gaps.append("no assessment supplied; current-release validation was not checked")
         else:
@@ -1258,21 +1260,21 @@ def evaluate(
             assessment.independent_passes,
             assessment.agreement,
         )
-    if matched and not assessment.disposition:
-        packet.gaps.append("assessment has no disposition; current-release outcome is unknown")
+    if matched and not assessment.verdict:
+        packet.gaps.append("assessment has no verdict; current-release outcome is unknown")
     if matched and not packet.evidence:
         packet.gaps.append("assessment has no valid evidence; current-release outcome is unknown")
-        packet.disposition = "unclear"
+        packet.verdict = "unclear"
     if matched and assessment.independent_passes > 0 and assessment.agreement is not True:
         packet.gaps.append(
             "independent reviews disagree or have not agreed; outcome remains unclear"
         )
-        if disposition in ("unclear", "needs_repro"):
-            packet.disposition = "unclear"
-    if matched and packet.invalid_evidence and disposition in ("unclear", "needs_repro"):
+        if verdict in ("unclear", "needs_repro"):
+            packet.verdict = "unclear"
+    if matched and packet.invalid_evidence and verdict in ("unclear", "needs_repro"):
         packet.gaps.append("invalid evidence must be reconciled before drawing a conclusion")
-        packet.disposition = "unclear"
-    if matched and disposition == "duplicate":
+        packet.verdict = "unclear"
+    if matched and verdict == "duplicate":
         packet.target = assessment.duplicate_of
         packet.explicit_duplicate_link = any(
             link.key == packet.target
@@ -1282,9 +1284,9 @@ def evaluate(
         )
         # Candidate scores rank retrieval only. Different wording is not a veto
         # on complete, directly cited semantic proof and agreeing reviews.
-        packet.disposition = "duplicate"
+        packet.verdict = "duplicate"
         packet.action = "propose_close_duplicate"
-    elif matched and disposition == "already_fixed":
+    elif matched and verdict == "already_fixed":
         packet.fix = dict(
             pr=assessment.fix_pr,
             commit=assessment.fix_commit,
@@ -1295,7 +1297,7 @@ def evaluate(
             reviewRelease=assessment.fix_review_release,
             containedInReviewRelease=assessment.fix_contained_in_review,
         )
-        packet.disposition = "already_fixed"
+        packet.verdict = "already_fixed"
         packet.action = "propose_close_fixed"
     packet.verification_errors = verify_packet(packet, ticket)
     if packet.verification_errors:
@@ -1309,8 +1311,8 @@ def evaluate(
                     relationship="insufficient_evidence",
                     summary="Supplied comparison failed structural checks; inspect verificationErrors.",
                 )
-        packet.disposition, packet.action = "unclear", "comment_only"
-    if packet.disposition == "needs_repro" and not packet.validation:
+        packet.verdict, packet.action = "unclear", "comment_only"
+    if packet.verdict == "needs_repro" and not packet.validation:
         packet.gaps.append("no cited current-release validation result was supplied")
     packet.recommended_step = _next_step(packet)
     packet.proposed_comment = recommendation_comment(packet, ticket)

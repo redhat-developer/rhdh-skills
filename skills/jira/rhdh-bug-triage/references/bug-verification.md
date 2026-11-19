@@ -54,7 +54,7 @@ the exact missing check in `blocker`. Do not narrow the scope to conceal an
 unverified original requirement. A violated requirement can establish that a
 complete fix is absent even while other checks remain blocked; it does not
 establish all runtime consequences. The schema records these checks separately
-from advisory disposition and delivery.
+from advisory verdict and delivery.
 
 Keep these corrections in future investigations: a configuration switch does
 not prove response/error propagation; opt-in caching does not prove safe default

@@ -1,3 +1,3 @@
 interface:
   display_name: "RHDH Bug Triage"
-  short_description: "Draft evidence-led triage for every selected bug; never post"
+  short_description: "Read every picked bug, draft the verdict and comment; never post"

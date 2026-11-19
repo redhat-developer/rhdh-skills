@@ -2,7 +2,7 @@
 
 `verify` acquires source/release/artifact evidence through read-only adapters.
 It does **not** diagnose by matching strings, execute product code/tests or assign
-a fix disposition. The agent still compares actual changes and final code against
+a fix verdict. The agent still compares actual changes and final code against
 each acceptance requirement, using `/rhdh-plugin-bug-fix`'s explicit
 `inspection-only` branch for plugin diagnosis when available.
 
@@ -53,7 +53,7 @@ reads actual PR state/diffs, and compares each real merge commit to the resolved
 target. `contained`, `absent`, `unknown`, and `not_a_merged_fix` remain distinct.
 A source-contained change is not automatically artifact-contained or correct.
 
-## Optional exact OCI metadata provenance
+## Optional: tying a released image back to its source
 
 Each issue may add `artifacts` entries with:
 

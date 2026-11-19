@@ -1,6 +1,6 @@
 {
   "key": "RHDHBUGS-1006",
-  "disposition": "already_fixed",
+  "verdict": "already_fixed",
   "evidence": [
     {
       "type": "pr",

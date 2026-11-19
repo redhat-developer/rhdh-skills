@@ -98,7 +98,7 @@ def plan_comment(
     identity = {
         "key": packet.key,
         "release": packet.current_release,
-        "disposition": packet.disposition,
+        "verdict": packet.verdict,
         "target": packet.target,
         "fix": {
             name: packet.fix.get(name, "") for name in ("pr", "commit", "release", "reviewRelease")
@@ -108,7 +108,7 @@ def plan_comment(
         },
         "proof": sorted(
             name
-            for name in PROOF_FIELDS.get(packet.disposition, ())
+            for name in PROOF_FIELDS.get(packet.verdict, ())
             if isinstance(packet.proof.get(name), dict)
             and isinstance(packet.proof[name].get("summary"), str)
             and packet.proof[name]["summary"].strip()
@@ -166,7 +166,7 @@ def plan_comment(
         for ref in [ticket.key, packet.target, *[item.ref for item in packet.evidence]]
         if re.fullmatch(r"[A-Z][A-Z0-9_]+-\d+", ref)
     )
-    # A target citation is useful only after the disposition policy selected it.
+    # A target citation is useful only after the verdict policy selected it.
     if not citations or any(url not in allowed for url in citations):
         return decision(
             "review_required", "Comment needs linked evidence from the packet; check its citations."

@@ -1,9 +1,7 @@
-"""Exact dry-run comment previews, with decisions separate from delivery."""
+"""The one report a human reads: every draft comment, decision and limit."""
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,47 +24,12 @@ def _delivery(packet: Packet) -> List[str]:
     plan = packet.comment_plan
     if not plan:
         return []
-    return [f"**Comment delivery:** `{plan['status']}` — {plan['reason']}", ""]
-
-
-def render_packet(
-    packet: Packet,
-    ticket: Ticket,
-    *,
-    kind: str = "aged",
-    stratum: str = "",
-    control_label: str = "",
-    as_of: Optional[datetime] = None,
-    generated_at: Optional[str] = None,
-) -> str:
-    if not surfaced(packet):
-        return ""
-    lines = [
-        packet.proposed_comment,
-        "",
-        "---",
-        "",
-        "## Review details",
-        "",
-        DRY_RUN_BANNER,
-        "",
-        f"**Action:** `{packet.action}` · **Human gate:** required",
-        "",
-        f"**Owner:** {ticket.team or 'not established'}; {ticket.assignee or 'unassigned'}.",
-        "",
-        f"**Release under review:** {packet.current_release}.",
-        "",
-        f"**Sample:** {kind}" + (f" ({control_label})" if control_label else "") + ".",
-        "",
-        *_delivery(packet),
-    ]
-    if packet.notes:
-        lines += [f"**Review note:** {packet.notes}", ""]
-    if packet.gaps:
-        lines += ["**Audit gaps:**", *[f"- {gap}" for gap in packet.gaps], ""]
-    if generated_at:
-        lines += [f"Generated {generated_at}.", ""]
-    return "\n".join(lines)
+    plain_status = {
+        "propose": "ready for a human to review and post",
+        "review_required": "on hold until someone checks the ticket's past comments",
+        "suppress": "not repeated — the same advice was already given earlier",
+    }.get(plan["status"], plan["status"])
+    return [f"**Posting this comment:** {plain_status} — {plan['reason']}", ""]
 
 
 def render_report(
@@ -79,11 +42,11 @@ def render_report(
     jql: str,
     sample_size: int,
     control_count: int,
-    corpus_size: int,
+    backlog_size: int,
     excluded: List[Dict[str, str]],
     selection: Dict[str, Dict[str, Any]],
     thresholds: Dict[str, float],
-    corpus_has_closed: bool = True,
+    backlog_has_closed: bool = True,
     coverage: Optional[Dict[str, Any]] = None,
     release_evidence: str = "",
 ) -> str:
@@ -112,29 +75,30 @@ def render_report(
         "",
         DRY_RUN_BANNER,
         "",
-        "Each selected issue appears below, including blocked checks. A draft is not permission to post. "
-        "Suppressed drafts are shown for inspection only; they must not be sent again.",
+        "Every bug we reviewed appears below, including the ones where a check could not be finished. "
+        "A draft comment is not permission to post it. Suppressed drafts (advice already given earlier) "
+        "are shown for inspection only and must not be sent again.",
         "",
-        f"**Bottom line:** {len(packets)} reviewed; {drafts} comment draft(s); "
-        f"{sum(p.action in CLOSE_ACTIONS for p in packets)} advisory closure recommendation(s).",
+        f"**Bottom line:** {len(packets)} bugs reviewed; {drafts} comment drafts; "
+        f"{sum(p.action in CLOSE_ACTIONS for p in packets)} recommendation(s) to close a bug.",
         "",
-        f"- Delivery: {delivery['propose']} proposed; {delivery['review_required']} require history/proof review; {delivery['suppress']} suppressed.",
-        f"- Read-only fix plans attached: {sum(bool(p.fix_plan.get('approach')) for p in packets)} of {len(packets)}. Plans are guidance for the separately authorized fix workflow, not changes or closure permission.",
-        f"- Agent report-identity comparisons supported: {sum(c.get('relationship') == 'duplicate_supported' for p in packets for c in p.comparisons)}; scoped fixes verified: {sum(p.fix_evidence.get('state') == 'verified_for_stated_scope' for p in packets)}; supported subsets/mitigations: {sum(p.fix_evidence.get('state') == 'partial_fix_supported' for p in packets)}. These are not closure counts.",
-        f"- Investigation states: {investigations}. Blocked checks are not completed verification.",
-        f"- Scoped investigation outcomes: {outcomes}. These do not certify runtime or released-artifact identity beyond the stated scope.",
-        f"- Reviewed: {len(packets)} ({control_count} Control tickets). Scope: {coverage.get('scope', 'aged')}.",
-        f"- Corpus: {corpus_size} tickets; release under review: {current_release}.",
-        f"- Product release evidence: {release_evidence or 'not supplied'}.",
-        f"- Selection: {coverage.get('selectedIssues', len(packets))} of {coverage.get('eligibleIssues', 'unknown')} eligible; {len(excluded)} excluded with reasons in sample.json.",
-        "- Corpus retrieval is bounded unless its source proves otherwise; including some closed tickets is not exhaustive coverage.",
+        f"- Comments ready for a human to review and post (`propose`): {delivery['propose']}. On hold until the ticket's past comments are checked (`review_required`): {delivery['review_required']}. Already suggested before, so not repeated (`suppress`): {delivery['suppress']}.",
+        f"- Fix plans written: {sum(bool(p.fix_plan.get('approach')) for p in packets)} of {len(packets)}. A plan says where a fix would go — it is not a change and not permission to close the bug.",
+        f"- Comparisons with other bugs that the evidence supports: {sum(c.get('relationship') == 'duplicate_supported' for p in packets for c in p.comparisons)}. Fixes fully verified in their stated scope: {sum(p.fix_evidence.get('state') == 'verified_for_stated_scope' for p in packets)}. Partial fixes: {sum(p.fix_evidence.get('state') == 'partial_fix_supported' for p in packets)}. None of these are closures.",
+        f"- Investigations finished: {investigations['completed']}; stopped at a missing check: {investigations['blocked']}. A stopped check is not a finished one.",
+        f"- What the checks found: passed {outcomes['requirements_satisfied_in_stated_scope']}, failed {outcomes['requirement_violated']}, not settled {outcomes['not_determined']}. This only covers the scope each investigator looked at.",
+        f"- Reviewed: {len(packets)} bugs ({control_count} of them control bugs with known answers). Scope: {'bugs at least 90 days old' if coverage.get('scope', 'aged') == 'aged' else 'all open bugs'}.",
+        f"- Bugs searched for duplicates and fixes: {backlog_size}. Release under review: {current_release}.",
+        f"- Proof of that release: {release_evidence or 'not supplied'}.",
+        f"- Picked {coverage.get('selectedIssues', len(packets))} of {coverage.get('eligibleIssues', 'unknown')} eligible bugs; {len(excluded)} were excluded, with reasons in packets.json.",
+        "- We only searched the bugs listed above; that list is not the whole tracker, and 'no match found' never proves a bug is unique.",
         "",
-        "## Exact comment previews",
+        "## The exact comments we would post",
         "",
     ]
     if not packets:
         lines += [
-            "No issues matched the eligibility rules. No issues were silently marked triaged.",
+            "No bugs matched the rules for this run. Nothing was silently marked as triaged.",
             "",
         ]
     for packet in packets:
@@ -149,74 +113,76 @@ def render_report(
         if packet.proposed_comment:
             lines += [f"> {line}" if line else ">" for line in packet.proposed_comment.splitlines()]
         else:
-            lines += ["No comment draft: customer/completed/ineligible issue or unsafe inputs."]
+            lines += [
+                "No comment draft: this bug is customer-linked, already closed, or the inputs were unsafe."
+            ]
         lines += [
             "",
-            "**Dry-run restriction:** do not post this preview. Any later approved handoff is comment-only; "
-            "transitions, closures, fixes, PRs, and backports are out of scope.",
+            "**Not posted:** this is a preview. Even after approval, the only action is posting the comment — "
+            "closing, fixing, PRs and backports are separate, explicitly approved work.",
             "",
         ]
         if packet.notes:
-            lines += [f"**Reviewer context:** {packet.notes}", ""]
+            lines += [f"**Notes for the reviewer:** {packet.notes}", ""]
         if packet.fix_plan:
             plan = packet.fix_plan
             lines += [
-                "**Fix plan (read-only guidance, not a change or closure permission):** "
+                "**Fix plan (guidance only — not a change, not permission to close):** "
                 + str(plan.get("approach", "not stated")),
                 "",
             ]
             for area in plan.get("areas", []) or []:
                 if isinstance(area, dict):
                     paths = ", ".join(area.get("paths", []) or [])
-                    lines += [f"- Area: {area.get('repository', 'unknown')} — {paths}"]
-            lines += [f"- Complexity: {plan.get('complexity', 'unknown')}", ""]
+                    lines += [f"- Where: {area.get('repository', 'unknown')} — {paths}"]
+            lines += [f"- Size of the fix: {plan.get('complexity', 'unknown')}", ""]
         if packet.verification:
             v = packet.verification
             lines += [
-                f"**Verification acquisition:** `{v['status']}`; acceptance still requires source inspection.",
+                "**Source snapshots taken (hashed copies of what we read):** "
+                "a human still has to read them before accepting anything.",
                 "",
             ]
             for repository in v["repositories"]:
                 lines.append(
-                    f"- Source: {repository['repository']} @ `{repository['revision'] or 'unresolved'}` (requested `{repository['requestedRef']}`)."
+                    f"- Source: {repository['repository']} @ `{repository['revision'] or 'unresolved'}` (asked for `{repository['requestedRef']}`)."
                 )
                 for pull in repository["pullRequests"]:
                     lines.append(
-                        f"  - {pull['ref']}: `{pull['containment']}`; actual diff {'read' if pull.get('diff') is not None else 'unavailable'}."
+                        f"  - {pull['ref']}: `{pull['containment']}`; the actual diff {'was read' if pull.get('diff') is not None else 'was not available'}."
                     )
             for artifact in v["artifacts"]:
                 lines.append(
-                    f"- Artifact: {artifact['releaseReference']}; source binding `{artifact['sourceBinding']}`; {len(artifact['objects'])} digest-checked metadata objects read."
+                    f"- Released image: {artifact['releaseReference']}; ties back to the source: `{artifact['sourceBinding']}`; {len(artifact['objects'])} checksum-checked metadata objects read."
                 )
-            lines += ["", "**Acquisition/provenance gaps:** " + "; ".join(v["gaps"]), ""]
+            lines += ["", "**Gaps in what we could fetch:** " + "; ".join(v["gaps"]), ""]
         for comparison in packet.comparisons:
             lines += [
-                f"**Report comparison (agent assessment, not closure permission):** {comparison.get('key')}: `{comparison.get('relationship')}` — {comparison.get('summary')}",
+                f"**Compared with {comparison.get('key')}** (`{comparison.get('relationship')}`) — {comparison.get('summary')} "
+                "This comparison is our judgement, not permission to close anything.",
                 "",
             ]
         if packet.fix_evidence:
             lines += [
-                f"**Scoped fix state:** `{packet.fix_evidence.get('state', 'not_assessed')}` (separate from closure eligibility).",
+                f"**How much of the fix is proven:** `{packet.fix_evidence.get('state', 'not_assessed')}` (separate from whether the bug may be closed).",
                 "",
-            ]
-            lines += [f"**Scenario:** {packet.fix_evidence.get('scenario', 'not established')}", ""]
-            lines += [
-                "**Unverified requirements:** "
-                + "; ".join(packet.fix_evidence.get("unverified", [])),
+                f"**The scope that was checked:** {packet.fix_evidence.get('scenario', 'not established')}",
+                "",
+                "**Not yet verified:** " + "; ".join(packet.fix_evidence.get("unverified", [])),
                 "",
             ]
             for claim in packet.fix_evidence.get("covered", []):
                 if isinstance(claim, dict):
                     lines += [
-                        f"- Scoped coverage account: {claim.get('summary', '')}; refs: {claim.get('refs', [])}"
+                        f"- What is covered: {claim.get('summary', '')}; sources: {claim.get('refs', [])}"
                     ]
             lines.append("")
         discovery = packet.discovery
         if discovery:
-            lines += ["**Discovery leads (not verdicts):**", ""]
+            lines += ["**Leads found while searching (leads, not verdicts):**", ""]
             for lead in discovery.get("leads", []):
                 lines.append(
-                    f"- {lead['key']}: {', '.join(lead['foundBy'])}"
+                    f"- {lead['key']}: found by {', '.join(lead['foundBy'])}"
                     + ("; " + "; ".join(lead["warnings"]) if lead.get("warnings") else "")
                 )
             queries = discovery.get("collection", discovery).get("queries", [])
@@ -226,7 +192,7 @@ def render_report(
             }
             lines += [
                 "",
-                f"**Jira discovery coverage:** {outcomes}. Failed, capped and unrun queries are not zero matches.",
+                f"**Jira searches:** {outcomes}. A failed, cut-short or never-run search is not the same as 'nothing found'.",
                 "",
             ]
         if packet.gaps:
@@ -236,81 +202,45 @@ def render_report(
             searches = collected.get("searches", [])
             failures = sum(s.get("status") != "success" for s in searches)
             lines += [
-                f"**Forge coverage:** {collected.get('searchMode', 'unknown')}; {len(searches)} queries, {failures} failed/invalid. Failed queries are not zero matches.",
+                f"**GitHub searches:** {collected.get('searchMode', 'unknown')}; {len(searches)} queries, {failures} failed or invalid. A failed search is not 'nothing found'.",
                 "",
             ]
         lines += ["---", ""]
     lines += [
-        "## Method and limits",
+        "## How this run worked, and what it cannot promise",
         "",
-        f"- Selection query: `{jql}`.",
-        f"- Close thresholds: duplicate {thresholds['duplicate']:.2f}; already fixed {thresholds['fixed']:.2f}.",
-        "- Closure advice needs cited claim-by-claim proof and two agreeing independent reviews. "
-        "Similarity and a high score alone are insufficient.",
-        "- Duplicate canonical selection uses actual creation timestamps, not key order or recency. "
-        "Newer or undated canonical targets require separate human selection and are not proposed here.",
-        "- A fix must cover the whole reported failure, be merged/incorporated, and have direct released-inclusion evidence "
-        "no newer than the release under review. Partial or unreleased fixes are not recommendations.",
-        "- Confidence is a citation-strength policy score, not a calibrated probability or a guarantee. "
-        "Reviewers must read the cited artifacts; code inspection is not a runtime reproduction.",
-        "- Open status and lack of a fix search hit do not prove a bug still exists. Still-valid/obsolete claims need exact-release validation.",
-        "- Customer-linked and completed issues cannot receive automated comments.",
-        "- Suppression is a no-op, not a reminder or a reason to notify anyone.",
-        "- Missing data and disagreement are reported as uncertainty, not silently hidden. No generic reproduction pings or reminders.",
-        "- Assessments are agent judgments over cited snapshots. Structural checks and independent reviewers do not guarantee factual correctness or 100% accuracy.",
-        f"- Generated {generated_at}; no external writes.",
+        f"- Bugs were picked with this query: `{jql}`.",
+        f"- A bug is only recommended for closing when the evidence score is at least {thresholds['duplicate']:.2f} for duplicates "
+        f"or {thresholds['fixed']:.2f} for already-fixed bugs — and even then only with cited proof for each claim and two "
+        "independent reviews that agree. Looking similar or scoring high is never enough.",
+        "- When two bugs look like duplicates, the older report is the one to keep. We check real creation dates, "
+        "not issue numbers. If the candidate is newer or undated, a human picks; we do not propose it.",
+        "- Calling a bug 'already fixed' means: the fix covers the whole reported problem, it is merged, and there is "
+        "direct proof it shipped in the release under review (or an earlier one). A partial fix, or one that has not "
+        "shipped yet, is never a close recommendation.",
+        "- The evidence score measures how strong the citations are. It is not a probability and not a guarantee. "
+        "Reviewers must open the cited links; reading code is not the same as running it.",
+        "- A bug being open, or our search finding no fix, does not prove the bug still exists. 'Still valid' and "
+        "'no longer valid' both need evidence tied to the exact release under review.",
+        "- Customer-linked and already-closed bugs never get automated comments.",
+        "- 'Suppressed' means we stay silent because the same advice was already given. It does not mean anyone gets notified.",
+        "- Missing data and disagreement are written down as uncertainty, never hidden. We do not send generic "
+        "'please reproduce' pings or reminders.",
+        "- The assessments are agent judgements over cited snapshots. Structure checks and independent reviewers "
+        "reduce mistakes; they do not guarantee correctness.",
+        f"- Generated {generated_at}; nothing was written to Jira.",
     ]
     lines.append(
-        "- Duplicate retrieval included open and closed reports."
-        if corpus_has_closed
-        else "- The corpus has **no closed tickets**: closed canonical reports were unreachable. "
-        "Use a broader open-and-closed export; absence of a match is not evidence of uniqueness."
+        "- The search for duplicates covered both open and closed bugs."
+        if backlog_has_closed
+        else "- **The bug list we searched had no closed bugs**, so a closed original would have been invisible. "
+        "Search a list that includes closed bugs; finding no match does not prove this bug is unique."
     )
     if excluded:
-        lines += [f"- {len(excluded)} selection exclusion(s) are recorded in the sample manifest."]
-    return "\n".join(lines) + "\n"
-
-
-def render_summary_csv(packets: List[Packet], selection: Dict[str, Dict[str, Any]]) -> str:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(
-        [
-            "key",
-            "kind",
-            "controlLabel",
-            "stratum",
-            "status",
-            "disposition",
-            "confidence",
-            "action",
-            "target",
-            "recommendedStep",
-            "evidenceCount",
-            "gapCount",
-            "customerLinked",
+        lines += [
+            f"- {len(excluded)} bug(s) were excluded from selection; the reasons are in packets.json."
         ]
-    )
-    for packet in packets:
-        entry = selection.get(packet.key, {})
-        writer.writerow(
-            [
-                packet.key,
-                entry.get("kind", "aged"),
-                entry.get("controlLabel", ""),
-                entry.get("stratum", ""),
-                packet.status,
-                packet.disposition,
-                f"{packet.confidence:.2f}",
-                packet.action,
-                packet.target,
-                packet.recommended_step,
-                len(packet.evidence),
-                len(packet.gaps),
-                "yes" if packet.customer_signals else "no",
-            ]
-        )
-    return buffer.getvalue()
+    return "\n".join(lines) + "\n"
 
 
 def render_manifest(
@@ -323,8 +253,8 @@ def render_manifest(
     sample_path: str,
     assessments_path: str,
     output_path: str,
-    corpus_size: int,
-    corpus_has_closed: bool = True,
+    backlog_size: int,
+    backlog_has_closed: bool = True,
     sample_size: int,
     control_count: int,
     packets: List[Packet],
@@ -341,8 +271,8 @@ def render_manifest(
         "inputs": {"export": input_path, "sample": sample_path, "assessments": assessments_path},
         "output": output_path,
         "jql": jql,
-        "corpusSize": corpus_size,
-        "corpusHasClosed": corpus_has_closed,
+        "backlogSize": backlog_size,
+        "backlogHasClosed": backlog_has_closed,
         "sampleSize": sample_size,
         "controlCount": control_count,
         "thresholds": thresholds,

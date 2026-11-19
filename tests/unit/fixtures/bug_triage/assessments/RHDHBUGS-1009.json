@@ -1,6 +1,6 @@
 {
   "key": "RHDHBUGS-1009",
-  "disposition": "still_valid",
+  "verdict": "still_valid",
   "evidence": [
     {
       "type": "repro",

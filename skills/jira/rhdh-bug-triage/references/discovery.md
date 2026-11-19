@@ -1,22 +1,22 @@
 # Discovery and scoped fix evidence
 
-Discovery produces **leads**, not dispositions, evidence confidence or closure
+Discovery produces **leads**, not verdicts, evidence confidence or closure
 permission. Run every route even when another found an apparently strong match:
 
 | Route | Evidence to investigate |
 |---|---|
 | Link graph | Direct links in both directions and duplicate chains up to three edges; retain unresolved keys, reversed pointers, creation-time conflicts and closed copies with fix evidence. Links can be wrong. |
 | Burst | Reports within one hour with overlapping content; preserve both attachments. A burst is not duplicate proof. |
-| Open/closed corpus | Rank the two partitions separately; some closed tickets do not establish exhaustive history. |
+| Open/closed partition | Rank the two partitions separately; some closed tickets do not establish exhaustive history. |
 | Comments | Seed and graph-partner comments: pointers, fix claims, uncertainty and contradictory follow-ups. Do not expand every weak lexical neighbour's comment graph. |
 | Defect searches | Separately search keys/verified aliases, specific identifiers and multiword phrases. Scoring tokens such as “each” or bare HTTP numbers are not live queries. |
 | Fix-first | Closed, versioned trackers with PRs and overlapping reports/links. Merge, released inclusion and coverage remain unverified. |
 
-`collect --corpus broad-export.json` records routes in each evidence file's
+`collect --backlog backlog.json` records routes in each evidence file's
 `discovery`. Add `--jira-search` for live reads; `--max-queries`, `--query-limit`
 and `--hydrate-limit` bound work **per seed**. Otherwise queries are only planned.
-`run` performs local routes, retains collected query provenance, incorporates
-hydrated candidate records and exposes nonlexical candidates for adjudication.
+`run` performs local routes, keeps the record of which queries ran, incorporates
+fully reads promising candidates and surfaces the ones keyword search missed, for the investigator to judge.
 It never writes assessments or assigns verdicts from discovery scores.
 
 Query outcomes: `returned`, `empty`, `capped`, `failed`, `not_run`. Reaching the
@@ -38,7 +38,7 @@ duplicate; packets/candidates mark same-record identity and reject its closure.
 
 ## Relationship vocabulary for investigation
 
-These labels explain comparisons; they are not additional dispositions:
+These labels explain comparisons; they are not additional verdicts:
 
 Optional assessment `comparisons` is a list of objects with candidate `key`,
 `relationship`, causal/missing-fact `summary` and cited `refs`. Positive
@@ -49,7 +49,7 @@ These are agent comparisons, never independent review or closure permission.
 
 - `same_record`: two identifiers for one tracker; not a duplicate action.
 - `duplicate_supported`: evidence establishes the same failure, trigger and
-  required correction; canonical selection and closure are separate gates.
+  required correction; choosing which tracker to keep, and closing anything, are separate gates.
 - `different`: positive evidence establishes distinct defects.
 - `related_only`: shared area/symptom established, equivalence not established.
 - `insufficient_evidence`: relationship cannot be determined; name the missing fact.
@@ -107,7 +107,7 @@ default-behavior fix nor the absence of other possible fixes.
 
 Run artifacts retain evidence and query outcomes. Treat prior findings as cached
 evidence, not durable truth. Recheck on release, source/artifact, dependency,
-configuration, linked evidence, policy or corpus changes. There is no automatic
+configuration, linked evidence, policy or comparison-list changes. There is no automatic
 verdict reuse or private backlog ledger in the implementation repository.
 
 Use [verification acquisition](verification-acquisition.md) to make actual source,

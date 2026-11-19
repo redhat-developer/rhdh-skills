@@ -198,7 +198,7 @@ def test_incomplete_verification_cannot_become_positive_fix_state(state):
     assessment = parse_assessment(
         {
             "key": "RHDHBUGS-2",
-            "disposition": "unclear",
+            "verdict": "unclear",
             "evidence": [
                 {
                     "type": "jira",
@@ -220,7 +220,7 @@ def test_positive_subset_is_preserved_without_full_fix_or_closure():
     assessment = parse_assessment(
         {
             "key": "RHDHBUGS-2",
-            "disposition": "unclear",
+            "verdict": "unclear",
             "evidence": [
                 {
                     "type": "repro",
@@ -244,7 +244,7 @@ def test_positive_subset_is_preserved_without_full_fix_or_closure():
     )
     packet = evaluate(ticket(), [], assessment, "2.1.0")
     assert packet.fix_evidence["state"] == "partial_fix_supported"
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
 
 
@@ -252,7 +252,7 @@ def test_assessed_fix_is_not_encoded_as_unassessed():
     assessment = parse_assessment(
         {
             "key": "RHDHBUGS-2",
-            "disposition": "unclear",
+            "verdict": "unclear",
             "fixEvidence": {
                 "state": "not_assessed",
                 "validation": {"summary": "Examined but missing proof"},
@@ -268,7 +268,7 @@ def test_same_record_cannot_pass_duplicate_gate_even_if_explicitly_supplied():
     packet = evaluate(
         seed,
         [score_candidate(seed, ticket("RHIDP-1"))],
-        parse_assessment({"key": seed.key, "disposition": "duplicate", "duplicateOf": "RHIDP-1"}),
+        parse_assessment({"key": seed.key, "verdict": "duplicate", "duplicateOf": "RHIDP-1"}),
         "2.1.0",
     )
     assert any("same record" in error for error in packet.verification_errors)
@@ -281,7 +281,7 @@ def test_duplicate_report_identity_is_preserved_without_canonical_closure():
     assessment = parse_assessment(
         {
             "key": seed.key,
-            "disposition": "unclear",
+            "verdict": "unclear",
             "evidence": [
                 {
                     "type": "jira",
@@ -303,7 +303,7 @@ def test_duplicate_report_identity_is_preserved_without_canonical_closure():
     )
     packet = evaluate(seed, [score_candidate(seed, other)], assessment, "2.1.0")
     assert packet.comparisons[0]["relationship"] == "duplicate_supported"
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
     assert not packet.independent_passes
 
@@ -313,7 +313,7 @@ def test_positive_comparison_without_both_sources_is_rejected():
     assessment = parse_assessment(
         {
             "key": seed.key,
-            "disposition": "unclear",
+            "verdict": "unclear",
             "comparisons": [
                 {
                     "key": "RHDHBUGS-1",
@@ -335,7 +335,7 @@ def test_fix_only_self_comparison_is_not_a_duplicate_recommendation():
     assessment = parse_assessment(
         {
             "key": seed.key,
-            "disposition": "unclear",
+            "verdict": "unclear",
             "comparisons": [
                 {
                     "key": seed.key,
@@ -353,8 +353,8 @@ def test_fix_only_self_comparison_is_not_a_duplicate_recommendation():
 def test_public_pipeline_includes_nonlexical_linked_candidate_and_does_not_invent_verdict(tmp_path):
     source = tmp_path / "input.json"
     source.write_text(json.dumps({"issues": [record()]}))
-    corpus = tmp_path / "corpus.json"
-    corpus.write_text(
+    backlog = tmp_path / "backlog.json"
+    backlog.write_text(
         json.dumps(
             {
                 "issues": [
@@ -374,7 +374,7 @@ def test_public_pipeline_includes_nonlexical_linked_candidate_and_does_not_inven
         json.dumps(
             {
                 "key": "RHDHBUGS-2",
-                "disposition": "unclear",
+                "verdict": "unclear",
                 "notes": "Report compared, ownership and cause remain unknown",
             }
         )
@@ -384,7 +384,7 @@ def test_public_pipeline_includes_nonlexical_linked_candidate_and_does_not_inven
             input_path=str(source),
             output_dir=str(tmp_path / "run"),
             assessments_dir=str(assessments),
-            corpus_path=str(corpus),
+            backlog_path=str(backlog),
             scope="all-open",
             all_tickets=True,
             current_release="2.1.0",
@@ -395,5 +395,5 @@ def test_public_pipeline_includes_nonlexical_linked_candidate_and_does_not_inven
     packet = result.packets[0]
     assert "link_graph" in leads(packet.discovery)["RHDHBUGS-1"]["foundBy"]
     assert "RHDHBUGS-1" in {candidate.key for candidate in packet.duplicate_candidates}
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert result.manifest["writes"] == []

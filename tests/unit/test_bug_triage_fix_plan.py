@@ -84,16 +84,16 @@ def test_fix_plan_refs_must_be_cited_evidence():
 
 def test_complexity_none_is_only_for_resolution_dispositions():
     resolution = plan(approach="Close as a duplicate of the canonical report.", complexity="none")
-    for disposition in ("duplicate", "already_fixed", "no_longer_valid"):
-        assert fix_plan_errors(resolution, EVIDENCE, disposition) == []
-    for disposition in ("still_valid", "needs_repro", "unclear"):
-        assert fix_plan_errors(resolution, EVIDENCE, disposition)
+    for verdict in ("duplicate", "already_fixed", "no_longer_valid"):
+        assert fix_plan_errors(resolution, EVIDENCE, verdict) == []
+    for verdict in ("still_valid", "needs_repro", "unclear"):
+        assert fix_plan_errors(resolution, EVIDENCE, verdict)
 
 
 def test_parse_assessment_reads_fix_plan():
     document = {
         "key": "RHDHBUGS-1010",
-        "disposition": "still_valid",
+        "verdict": "still_valid",
         "evidence": [
             {"type": "code", "ref": SOURCE, "why": "Whitelist unchanged.", "strength": "direct"}
         ],
@@ -105,7 +105,7 @@ def test_parse_assessment_reads_fix_plan():
 
 
 def test_parse_assessment_tolerates_absent_fix_plan():
-    assessment = parse_assessment({"key": "RHDHBUGS-1010", "disposition": "unclear"})
+    assessment = parse_assessment({"key": "RHDHBUGS-1010", "verdict": "unclear"})
     assert assessment.fix_plan == {}
 
 
@@ -119,7 +119,7 @@ def test_packet_carries_fix_plan_and_report_renders_it(tmp_path):
     assessment = parse_assessment(
         {
             "key": "RHDHBUGS-1010",
-            "disposition": "still_valid",
+            "verdict": "still_valid",
             "evidence": [
                 {"type": "code", "ref": SOURCE, "why": "Whitelist unchanged.", "strength": "direct"}
             ],
@@ -137,21 +137,21 @@ def test_packet_carries_fix_plan_and_report_renders_it(tmp_path):
         jql="project = RHDHBUGS",
         sample_size=1,
         control_count=0,
-        corpus_size=1,
+        backlog_size=1,
         excluded=[],
         selection={"RHDHBUGS-1010": {"kind": "aged"}},
         thresholds={"duplicate": 0.85, "fixed": 0.80},
     )
-    assert "Fix plan (read-only guidance" in report
+    assert "Fix plan (guidance only" in report
     assert "attachment-utils.ts" in report
-    assert "Complexity: small" in report
-    assert "Read-only fix plans attached: 1 of 1" in report
+    assert "Size of the fix: small" in report
+    assert "Fix plans written: 1 of 1" in report
 
 
 def _assessment_with_plan(key: str, with_plan: bool) -> dict:
     document = {
         "key": key,
-        "disposition": "still_valid",
+        "verdict": "still_valid",
         "evidence": [
             {"type": "code", "ref": SOURCE, "why": "Whitelist unchanged.", "strength": "direct"}
         ],
@@ -216,5 +216,5 @@ class TestRequireFixPlan:
     def test_run_with_fix_plan_succeeds_and_records_the_flag(self, tmp_path):
         result = run(self._config(tmp_path, with_plan=True))
         assert result.manifest["fixPlanRequired"] is True
-        assert (result.output_dir / "audit" / "manifest.json").is_file()
+        assert (result.output_dir / "packets.json").is_file()
         assert (result.output_dir / "report.md").is_file()

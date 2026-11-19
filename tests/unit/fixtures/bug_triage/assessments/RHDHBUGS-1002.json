@@ -1,6 +1,6 @@
 {
   "key": "RHDHBUGS-1002",
-  "disposition": "duplicate",
+  "verdict": "duplicate",
   "duplicateOf": "RHDHBUGS-1001",
   "evidence": [
     {

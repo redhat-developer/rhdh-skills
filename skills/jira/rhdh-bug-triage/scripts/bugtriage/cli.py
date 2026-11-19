@@ -15,14 +15,14 @@ from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
+from .brief import write_briefs
 from .collect import CollectConfig, collect
 from .comments import DEFAULT_COOLDOWN_DAYS
-from .dossier import write_dossiers
 from .evaluate import write_evaluation
 from .forge import ForgeAdapterError
 from .jira import (
     JiraAdapterError,
-    build_corpus,
+    build_backlog,
     export_from_acli,
     load_tickets_from_acli,
     write_acli_probe,
@@ -110,7 +110,7 @@ def command_select(args: argparse.Namespace) -> int:
     else:
         print(
             f"Selected {len(sample['tickets'])} ticket(s) from "
-            f"{sample['eligibleCount']} eligible in a corpus of {len(tickets)}."
+            f"{sample['eligibleCount']} eligible in a backlog of {len(tickets)}."
         )
         for entry in sample["tickets"]:
             kind = entry["kind"] + (
@@ -131,7 +131,7 @@ def command_collect(args: argparse.Namespace) -> int:
             forge_cache=args.forge_cache,
             use_gh=args.gh,
             repos=args.repo,
-            corpus_path=args.corpus or "",
+            backlog_path=args.backlog or "",
             jira_search=args.jira_search,
             max_queries=args.max_queries,
             query_limit=args.query_limit,
@@ -161,7 +161,7 @@ def command_run(args: argparse.Namespace) -> int:
             size=args.size,
             seed=args.seed,
             controls=_controls(args.control),
-            corpus_path=args.corpus or "",
+            backlog_path=args.backlog or "",
             jql=args.jql or "",
             comment_cooldown_days=args.comment_cooldown_days,
             scope=args.scope,
@@ -184,7 +184,7 @@ def command_run(args: argparse.Namespace) -> int:
         "customerLinked": counts["customerLinked"],
         "surfacedRecommendations": counts["surfacedRecommendations"],
         "abstained": counts["abstained"],
-        "dispositions": _count(result.packets, "disposition"),
+        "verdicts": _count(result.packets, "verdict"),
         "actions": _count(result.packets, "action"),
         "draftComments": counts["draftComments"],
         "delivery": result.manifest["commentPolicy"]["counts"],
@@ -199,19 +199,19 @@ def command_run(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(summary, indent=2))
     else:
-        print(f"DRY RUN complete: {counts['packets']} ticket(s) in {result.output_dir}")
+        print(f"Dry run finished: {counts['packets']} bug(s) in {result.output_dir}")
         print("Nothing was posted to Jira; no bugs were closed and no PRs were created.")
         for packet in result.packets:
             print(
-                f"  {packet.key}  {packet.disposition}  delivery={packet.comment_plan.get('status', 'unknown')}"
+                f"  {packet.key}  {packet.verdict}  delivery={packet.comment_plan.get('status', 'unknown')}"
             )
         print(
             f"Draft comments: {counts['draftComments']} · advisory closure recommendations: {counts['closeProposals']}"
         )
         print(f"Comment delivery: {result.manifest['commentPolicy']['counts']}")
         print(
-            "Read report.md (the only human-facing file); packets, manifest and "
-            "machine artifacts are under audit/."
+            "Open report.md — it is the only file to read. packets.json holds the "
+            "same findings for the system, with a meta block that records inputs and hashes."
         )
     return 0
 
@@ -224,25 +224,25 @@ def _count(packets, attribute: str) -> dict:
     return dict(sorted(counts.items()))
 
 
-def command_dossier(args: argparse.Namespace) -> int:
-    written = write_dossiers(
+def command_brief(args: argparse.Namespace) -> int:
+    written = write_briefs(
         input_path=args.input,
         sample_path=args.sample,
         output_dir=args.out,
         evidence_dir=args.evidence or "",
     )
-    print(f"Wrote {len(written)} investigator dossier(s) into {args.out}")
-    print("Give one dossier per fresh-context investigator; each writes assessments/KEY.json.")
+    print(f"Wrote {len(written)} investigator brief(s) into {args.out}")
+    print("Give one brief per fresh-context investigator; each writes assessments/KEY.json.")
     return 0
 
 
-def command_corpus(args: argparse.Namespace) -> int:
+def command_backlog(args: argparse.Namespace) -> int:
     if not args.search_jql and not args.full_jql:
-        raise RunError("corpus needs at least one --search-jql or --full-jql part")
+        raise RunError("backlog needs at least one --search-jql or --full-jql part")
     path = Path(args.out)
     if path.exists():
-        raise RunError(f"refusing to overwrite corpus: {path}")
-    document = build_corpus(
+        raise RunError(f"refusing to overwrite backlog: {path}")
+    document = build_backlog(
         search_jqls=list(args.search_jql or []),
         full_jqls=list(args.full_jql or []),
         field_names=_field_names(args.field_names),
@@ -250,7 +250,7 @@ def command_corpus(args: argparse.Namespace) -> int:
     )
     write_json(path, document)
     parts = document["provenance"]["parts"]
-    print(f"Built a {len(document['issues'])}-record corpus from {len(parts)} part(s) into {path}")
+    print(f"Built a {len(document['issues'])}-record backlog from {len(parts)} part(s) into {path}")
     for part in parts:
         print(f"  {part['level']:<13} {part['count']:>5} records — {part['jql'][:80]}")
     return 0
@@ -291,17 +291,20 @@ def command_template(args: argparse.Namespace) -> int:
             {
                 "key": key,
                 "_instructions": (
-                    "Triage every selected issue. Unknown is a result, not silence. "
-                    "Still-valid/obsolete require validation on the exact release under review. "
-                    "Every evidence item needs type, ref, "
-                    "why, and strength (direct|strong|supporting). Do not invent a "
-                    "confidence; the policy computes it. A close also needs two agreeing "
-                    "independent passes under review. Every investigated bug needs a "
-                    "fixPlan: the concrete read-only remediation approach (or the "
-                    "resolution action for duplicate/already-fixed/obsolete), the areas "
-                    "a fix would touch, and a complexity estimate."
+                    "Investigate this bug until you can fill in every field below. "
+                    "'Unknown' is an honest answer, but only after you have tried to "
+                    "settle it read-only. Saying a bug is still valid (or no longer "
+                    "valid) requires evidence tied to the exact release under review. "
+                    "Every piece of evidence needs a type, a link or issue key, a "
+                    "sentence on why it matters, and a strength (direct|strong|"
+                    "supporting). Never make up a confidence number — the tool "
+                    "computes it from your citations. Recommending a close also needs "
+                    "two independent reviews that agree. Every bug needs a fixPlan: "
+                    "what a fix would change, where it would land, and how big it is "
+                    "(for duplicate/already-fixed/no-longer-valid, describe the "
+                    "resolution action instead and use complexity 'none')."
                 ),
-                "disposition": "",
+                "verdict": "",
                 "duplicateOf": "",
                 "comparisons": [],
                 "investigation": {
@@ -421,22 +424,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 3")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    fetch_parser = subparsers.add_parser(
-        "fetch", help="export full Jira records using read-only authenticated reads"
-    )
+    fetch_parser = subparsers.add_parser("fetch", help="download full Jira records (read-only)")
     fetch_parser.add_argument("--jql", required=True)
     fetch_parser.add_argument("--out", required=True)
     fetch_parser.add_argument(
         "--field-names",
-        help="JSON field-ID to name mapping returned by the authenticated Jira adapter",
+        help="JSON mapping of custom-field IDs to their names, resolved through Jira",
     )
     fetch_parser.set_defaults(func=command_fetch)
 
-    select_parser = subparsers.add_parser("select", help="build a stratified sample manifest")
+    select_parser = subparsers.add_parser(
+        "select", help="pick which bugs to review, spread across teams"
+    )
     select_parser.add_argument("--source", choices=("export", "acli"), default="export")
     select_parser.add_argument("--input", help="Jira JSON export")
     select_parser.add_argument(
-        "--field-names", help="tenant field-ID map for live acli reads; exports carry fieldNames"
+        "--field-names", help="field-ID map for live Jira reads; exports carry their own"
     )
     select_parser.add_argument("--jql", help="JQL for acli or for the manifest record")
     select_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
@@ -445,53 +448,62 @@ def build_parser() -> argparse.ArgumentParser:
     select_parser.add_argument("--current-release", required=True)
     select_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")
     select_parser.add_argument(
-        "--all", action="store_true", help="select every eligible issue, not a sample"
+        "--all", action="store_true", help="review every eligible bug, not just a sample"
     )
     select_parser.add_argument(
         "--control",
         action="append",
-        help="control key, optionally KEY=label (repeatable)",
+        help="a bug with a known answer, to check us; KEY=label (repeatable)",
     )
     select_parser.add_argument("--as-of", default="", help="YYYY-MM-DD; defaults to today")
     select_parser.add_argument("--out", help="write the manifest here")
     select_parser.add_argument("--json", action="store_true")
     select_parser.set_defaults(func=command_select)
 
-    collect_parser = subparsers.add_parser("collect", help="collect PR and link evidence")
+    collect_parser = subparsers.add_parser(
+        "collect", help="search GitHub and Jira for leads on each picked bug"
+    )
     collect_parser.add_argument("--input", required=True, help="Jira JSON export")
     collect_parser.add_argument("--sample", required=True, help="sample manifest")
     collect_parser.add_argument("--out", required=True, help="evidence directory")
     collect_parser.add_argument("--forge-cache", default="", help="offline gh PR cache")
-    collect_parser.add_argument("--corpus", help="bounded open-and-closed candidate export")
+    collect_parser.add_argument(
+        "--backlog", help="the list of open and closed bugs to search for duplicates and fixes"
+    )
     collect_parser.add_argument(
         "--jira-search",
         action="store_true",
-        help="execute separate defect-card JQL reads (default: plans only)",
+        help="run the planned Jira searches too (default: only plan them)",
     )
     collect_parser.add_argument(
-        "--max-queries", type=int, default=4, help="live query budget per issue"
+        "--max-queries", type=int, default=4, help="how many Jira searches to run per bug"
     )
     collect_parser.add_argument("--query-limit", type=int, default=20)
     collect_parser.add_argument(
-        "--hydrate-limit", type=int, default=10, help="new full candidate reads per issue"
+        "--hydrate-limit",
+        type=int,
+        default=10,
+        help="how many promising candidates to fully read per bug",
     )
     collect_parser.add_argument(
-        "--field-names", help="tenant field-ID mapping for candidate full reads"
+        "--field-names", help="field-ID map used when fully reading candidates"
     )
     collect_parser.add_argument(
         "--repo",
         action="append",
-        help="repository to search; repeat for the resolved product, docs and plugin repositories",
+        help="repository to search; repeat for each repo the product uses",
     )
     collect_parser.add_argument(
         "--gh",
         action="store_true",
-        help="allow read-only gh calls for PR state (default: cache only)",
+        help="search GitHub live with gh (default: use the local cache only)",
     )
     collect_parser.add_argument("--json", action="store_true")
     collect_parser.set_defaults(func=command_collect)
 
-    run_parser = subparsers.add_parser("run", help="evaluate assessments and render a report")
+    run_parser = subparsers.add_parser(
+        "run", help="check the assessments and write report.md + packets.json"
+    )
     run_parser.add_argument("--input", required=True, help="Jira JSON export")
     run_parser.add_argument("--sample", help="sample manifest; omit to select in memory")
     run_parser.add_argument(
@@ -499,12 +511,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--out", required=True, help="output directory")
     run_parser.add_argument(
-        "--current-release", required=True, help="verified released product version under review"
+        "--current-release",
+        required=True,
+        help="the released product version we are checking bugs against",
     )
     run_parser.add_argument(
         "--release-evidence",
         required=True,
-        help="HTTPS product release record (verified by the agent)",
+        help="web link that proves that version shipped (checked first)",
     )
     run_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")
     run_parser.add_argument("--all", action="store_true")
@@ -512,35 +526,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence", help="collection directory, retained in the audit with search failures"
     )
     run_parser.add_argument(
-        "--verification", help="integrity-checked source/release/artifact receipt directory"
+        "--verification", help="folder of hashed source snapshots from the verify step"
     )
     run_parser.add_argument(
         "--require-investigation",
         action="store_true",
-        help="reject placeholder/absent or invalid per-requirement investigations",
+        help="refuse to run unless every check in each assessment was actually done",
     )
     run_parser.add_argument(
         "--require-fix-plan",
         action="store_true",
-        help="reject assessments without concrete read-only fix guidance (fixPlan)",
+        help="refuse to run unless every bug has a fix plan",
     )
     run_parser.add_argument(
         "--comment-cooldown-days",
         type=int,
         default=DEFAULT_COOLDOWN_DAYS,
-        help="minimum days between triage comments; pending/unchanged recommendations still suppress",
+        help="minimum days between comments on one bug; unchanged advice is never repeated",
     )
     run_parser.add_argument("--as-of", default="")
     run_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
     run_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)
     run_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     run_parser.add_argument("--control", action="append", help="control key, KEY=label")
-    run_parser.add_argument("--corpus", help="larger export for duplicate retrieval")
+    run_parser.add_argument("--backlog", help="larger export for duplicate retrieval")
     run_parser.add_argument("--jql", help="record the selection JQL in the report")
     run_parser.add_argument("--json", action="store_true")
     run_parser.set_defaults(func=command_run)
 
-    eval_parser = subparsers.add_parser("evaluate", help="score packets against ground truth")
+    eval_parser = subparsers.add_parser(
+        "evaluate", help="score the results against bugs with known answers"
+    )
     eval_parser.add_argument("--packets", required=True)
     eval_parser.add_argument("--truth", required=True)
     eval_parser.add_argument("--out", help="write the evaluation markdown here")
@@ -555,55 +571,59 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument(
         "--plan",
         required=True,
-        help="explicit per-issue requirements and source/artifact read plan",
+        help="which sources to read and what to check, per bug",
     )
-    verify_parser.add_argument("--out", required=True, help="fresh private verification directory")
+    verify_parser.add_argument(
+        "--out", required=True, help="a new, empty folder for the hashed snapshots"
+    )
     verify_parser.set_defaults(func=command_verify)
 
     template_parser = subparsers.add_parser(
-        "template", help="write assessment templates for a sample"
+        "template", help="write a fill-in file for each picked bug"
     )
     template_parser.add_argument("--sample", required=True)
     template_parser.add_argument("--out", required=True)
     template_parser.add_argument("--force", action="store_true")
     template_parser.set_defaults(func=command_template)
 
-    dossier_parser = subparsers.add_parser(
-        "dossier",
-        help="write one self-contained investigator file per sampled ticket",
+    brief_parser = subparsers.add_parser(
+        "brief",
+        help="write one self-contained file per picked bug, for its investigator",
     )
-    dossier_parser.add_argument("--input", required=True, help="Jira JSON export")
-    dossier_parser.add_argument("--sample", required=True, help="sample manifest")
-    dossier_parser.add_argument("--out", required=True, help="fresh dossier directory")
-    dossier_parser.add_argument(
+    brief_parser.add_argument("--input", required=True, help="Jira JSON export")
+    brief_parser.add_argument("--sample", required=True, help="sample manifest")
+    brief_parser.add_argument("--out", required=True, help="fresh brief directory")
+    brief_parser.add_argument(
         "--evidence", help="collection directory with per-ticket evidence files"
     )
-    dossier_parser.set_defaults(func=command_dossier)
+    brief_parser.set_defaults(func=command_brief)
 
-    corpus_parser = subparsers.add_parser(
-        "corpus",
-        help="build one merged open-and-closed candidate corpus from bounded parts",
+    backlog_parser = subparsers.add_parser(
+        "backlog",
+        help="build the list of bugs to search for duplicates and fixes, in one step",
     )
-    corpus_parser.add_argument(
+    backlog_parser.add_argument(
         "--search-jql",
         action="append",
         default=[],
-        help="fast search-level partition (repeatable); records lack links, dates and comments",
+        help="fast partition to search (repeatable); records lack links, dates and comments",
     )
-    corpus_parser.add_argument(
+    backlog_parser.add_argument(
         "--full-jql",
         action="append",
         default=[],
-        help="full-read partition with chronology, links and fix versions (repeatable)",
+        help="fully-read partition with dates, links and fix versions (repeatable)",
     )
-    corpus_parser.add_argument("--out", required=True, help="fresh corpus export path")
-    corpus_parser.add_argument(
+    backlog_parser.add_argument("--out", required=True, help="fresh backlog export path")
+    backlog_parser.add_argument(
         "--field-names",
-        help="JSON field-ID to name mapping returned by the authenticated Jira adapter",
+        help="JSON mapping of custom-field IDs to their names, resolved through Jira",
     )
-    corpus_parser.set_defaults(func=command_corpus)
+    backlog_parser.set_defaults(func=command_backlog)
 
-    check_parser = subparsers.add_parser("check", help="report capability without writing")
+    check_parser = subparsers.add_parser(
+        "check", help="show what this tool can reach, without writing anything"
+    )
     check_parser.add_argument("--json", action="store_true")
     check_parser.add_argument("--allow-missing", action="store_true")
     check_parser.set_defaults(func=command_check)

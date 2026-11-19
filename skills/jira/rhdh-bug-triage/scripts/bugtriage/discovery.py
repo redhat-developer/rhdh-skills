@@ -81,7 +81,7 @@ def query_plan(ticket: Ticket) -> list[dict]:
 
 def discover(
     ticket: Ticket,
-    corpus: Iterable[Ticket],
+    backlog: Iterable[Ticket],
     *,
     live: bool = False,
     max_queries: int = 4,
@@ -96,8 +96,8 @@ def discover(
     """
     if max_queries < 0 or query_limit < 1 or hydrate_limit < 0:
         raise ValueError("discovery limits must be nonnegative; query limit must be positive")
-    corpus = list(corpus)
-    by_key = {item.key: item for item in corpus}
+    backlog = list(backlog)
+    by_key = {item.key: item for item in backlog}
     by_key[ticket.key] = ticket
     leads: dict[str, dict] = {}
     signals = []
@@ -133,7 +133,7 @@ def discover(
             edges = [(link.key, link.type, link.direction) for link in node.links]
             edges += [
                 (other.key, link.type, "reverse:" + link.direction)
-                for other in corpus
+                for other in backlog
                 for link in other.links
                 if link.key == key
             ]
@@ -154,7 +154,7 @@ def discover(
         gaps.append("duplicate graph depth limit reached; remaining trackers require inspection")
 
     created = parse_datetime(ticket.created)
-    for other in corpus:
+    for other in backlog:
         when = parse_datetime(other.created)
         if other.key == ticket.key or not created or not when:
             continue
@@ -170,7 +170,7 @@ def discover(
 
     for done, route in [(False, "open_corpus"), (True, "closed_corpus")]:
         for candidate in rank_candidates(
-            ticket, [item for item in corpus if item.is_done == done], limit=10
+            ticket, [item for item in backlog if item.is_done == done], limit=10
         ):
             add(
                 candidate.key,
@@ -261,7 +261,7 @@ def discover(
             )
 
     # Fix -> report direction, even if a link/lexical route already found it.
-    for fixed in corpus:
+    for fixed in backlog:
         if (
             fixed.key == ticket.key
             or not fixed.is_done

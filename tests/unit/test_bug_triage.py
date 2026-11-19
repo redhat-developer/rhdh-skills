@@ -51,9 +51,7 @@ from bugtriage.policy import (  # noqa: E402
 from bugtriage.policy import evaluate as evaluate_packet  # noqa: E402
 from bugtriage.report import (  # noqa: E402
     render_manifest,
-    render_packet,
     render_report,
-    render_summary_csv,
 )
 from bugtriage.run import (  # noqa: E402
     RunConfig,
@@ -86,16 +84,16 @@ def assessment_directory(tmp_path):
         document = (
             json.loads(source.read_text())
             if source.exists()
-            else {"key": ticket.key, "disposition": "unclear", "evidence": []}
+            else {"key": ticket.key, "verdict": "unclear", "evidence": []}
         )
         (directory / f"{ticket.key}.json").write_text(json.dumps(document))
     return str(directory)
 
 
 def assert_unclear_draft(packet):
-    assert packet.disposition == "unclear"
+    assert packet.verdict == "unclear"
     assert packet.action == "comment_only"
-    assert "Disposition: unclear" in packet.proposed_comment
+    assert "Verdict: unclear" in packet.proposed_comment
     assert "Recommended next step:" in packet.proposed_comment
     assert packet.recommended_step
     assert "close " not in packet.recommended_step.lower()
@@ -353,9 +351,9 @@ class TestPolicy:
     def test_still_valid_has_a_current_release_validation_draft(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1001.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1001"], [], assessment, CURRENT_RELEASE)
-        assert packet.disposition == "still_valid"
+        assert packet.verdict == "still_valid"
         assert packet.action == "comment_only"
-        assert "Disposition: still_valid" in packet.proposed_comment
+        assert "Verdict: still_valid" in packet.proposed_comment
         assert "runtime on release 2.1.0" in packet.proposed_comment
         assert packet.recommended_step
         assert "close " not in packet.recommended_step.lower()
@@ -381,7 +379,7 @@ class TestPolicy:
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
         packet = evaluate_packet(ticket, [candidate], assessment, CURRENT_RELEASE)
         assert packet.explicit_duplicate_link is False
-        assert packet.disposition == "duplicate"
+        assert packet.verdict == "duplicate"
         assert packet.action == "propose_close_duplicate"
         assert packet.confidence >= DUPLICATE_CLOSE_THRESHOLD
         assert packet.target == canonical.key
@@ -420,7 +418,7 @@ class TestPolicy:
         ticket.links.append(Link(type="Duplicate", key="RHDHBUGS-1001"))
         assessment = Assessment(
             key=ticket.key,
-            disposition="duplicate",
+            verdict="duplicate",
             duplicate_of="RHDHBUGS-1001",
             evidence=[
                 Evidence(
@@ -449,7 +447,7 @@ class TestPolicy:
     def test_released_fix_with_pr_closes(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, CURRENT_RELEASE)
-        assert packet.disposition == "already_fixed"
+        assert packet.verdict == "already_fixed"
         assert packet.action == "propose_close_fixed"
         assert "2.1.0" in packet.proposed_comment
 
@@ -461,7 +459,7 @@ class TestPolicy:
 
     def test_unclear_assessment_has_a_bounded_draft(self):
         ticket = by_key()["RHDHBUGS-1007"]
-        assessment = Assessment(key=ticket.key, disposition="unclear", evidence=[])
+        assessment = Assessment(key=ticket.key, verdict="unclear", evidence=[])
         packet = evaluate_packet(ticket, [], assessment, CURRENT_RELEASE)
         assert_unclear_draft(packet)
 
@@ -469,7 +467,7 @@ class TestPolicy:
         ticket = by_key()["RHDHBUGS-1001"]
         assessment = Assessment(
             key=ticket.key,
-            disposition="still_valid",
+            verdict="still_valid",
             evidence=[
                 Evidence(
                     type="jira",
@@ -513,7 +511,7 @@ class TestPolicy:
             key="RHDHBUGS-1",
             summary="x",
             status="Backlog",
-            disposition="already_fixed",
+            verdict="already_fixed",
             confidence=0.95,
             confidence_basis=[],
             action="propose_close_fixed",
@@ -536,26 +534,21 @@ class TestReport:
         candidates = rank_candidates(by_key()["RHDHBUGS-1010"], fixture_tickets(), limit=3)
         return evaluate_packet(by_key()["RHDHBUGS-1010"], candidates, assessment, CURRENT_RELEASE)
 
-    def test_packet_marks_dry_run_and_never_posts(self):
-        rendered = render_packet(self._packet(), by_key()["RHDHBUGS-1010"])
-        assert "Dry run" in rendered
-        assert rendered.startswith(self._packet().proposed_comment)
-        assert "## Review details" in rendered
-        assert "Closing as" not in rendered
-        assert "Recommended next step:" in rendered
-        assert "Proof:" in rendered
-        assert "https://redhat.atlassian.net/browse/RHDHBUGS-1009" in rendered
-        assert "propose_close_duplicate" in rendered
-        assert "```" not in rendered
-        assert "human gate" in rendered.lower()
+    def test_comment_marks_dry_run_and_never_posts(self):
+        comment = self._packet().proposed_comment
+        assert "Recommended next step:" in comment
+        assert "Proof:" in comment
+        assert "https://redhat.atlassian.net/browse/RHDHBUGS-1009" in comment
+        assert self._packet().action == "propose_close_duplicate"
+        assert "```" not in comment
+        assert "closing as" not in comment.lower()
 
     def test_fixed_comment_links_the_pr_and_release(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1006.json"))
         packet = evaluate_packet(by_key()["RHDHBUGS-1006"], [], assessment, CURRENT_RELEASE)
-        rendered = render_packet(packet, by_key()["RHDHBUGS-1006"])
-        assert "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)" in rendered
-        assert "https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0" in rendered
-        assert rendered.startswith(packet.proposed_comment)
+        comment = packet.proposed_comment
+        assert "[PR #999](https://github.com/redhat-developer/rhdh/pull/999)" in comment
+        assert "https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0" in comment
 
     def test_batch_report_has_method_and_controls(self):
         packet = self._packet()
@@ -568,7 +561,7 @@ class TestReport:
             jql="project = RHDHBUGS",
             sample_size=1,
             control_count=1,
-            corpus_size=12,
+            backlog_size=12,
             excluded=[],
             selection={
                 "RHDHBUGS-1010": {
@@ -580,15 +573,9 @@ class TestReport:
             thresholds={"duplicate": 0.85, "fixed": 0.80, "obsolete": 0.80},
         )
         assert "Dry run" in rendered
-        assert "Control" in rendered
+        assert "control bugs" in rendered
         assert "0.85" in rendered
         assert "nothing was posted" in rendered.lower()
-
-    def test_csv_has_one_row_per_packet(self):
-        packet = self._packet()
-        csv_text = render_summary_csv([packet], {"RHDHBUGS-1010": {"kind": "control"}})
-        assert len(csv_text.strip().splitlines()) == 2
-        assert "RHDHBUGS-1010" in csv_text
 
     def test_manifest_declares_no_writes(self):
         packet = self._packet()
@@ -601,7 +588,7 @@ class TestReport:
             sample_path="sample.json",
             assessments_path="assessments",
             output_path="out",
-            corpus_size=12,
+            backlog_size=12,
             sample_size=1,
             control_count=1,
             packets=[packet],
@@ -631,18 +618,14 @@ class TestRun:
         assert len(result.packets) == 7
         assert sum(result.manifest["commentPolicy"]["counts"].values()) == 7
         assert result.manifest["commentPolicy"]["cooldownDays"] == 14
-        assert (out / "report.md").is_file()
-        for name in ("packets.json", "summary.csv", "manifest.json", "sample.json"):
-            assert (out / "audit" / name).is_file()
-        assert (out / "proposed" / "RHDHBUGS-1001.md").exists()
-        proposal = (out / "proposed" / "RHDHBUGS-1006.md").read_text(encoding="utf-8")
-        assert proposal.startswith(
-            next(p.proposed_comment for p in result.packets if p.key == "RHDHBUGS-1006")
-        )
-        assert "[PR #999]" in proposal
-        assert proposal.index("[PR #999]") < proposal.index("## Review details")
-        packets = json.loads((out / "audit" / "packets.json").read_text(encoding="utf-8"))
+        # Two files, by design: the human report and the machine record.
+        assert sorted(path.name for path in out.iterdir()) == ["packets.json", "report.md"]
+        packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
         assert packets["dryRun"] is True
+        assert packets["meta"]["writes"] == []
+        assert packets["meta"]["counts"]["packets"] == 7
+        report = (out / "report.md").read_text(encoding="utf-8")
+        assert "[PR #999]" in report
         close = [item for item in packets["packets"] if item["action"].startswith("propose_close")]
         assert {item["key"] for item in close} == {"RHDHBUGS-1006", "RHDHBUGS-1010"}
         assert all(item["evidence"] for item in close)
@@ -710,13 +693,13 @@ class TestEvaluate:
                 as_of="2026-11-09",
             )
         )
-        packets = json.loads((out / "audit" / "packets.json").read_text(encoding="utf-8"))
+        packets = json.loads((out / "packets.json").read_text(encoding="utf-8"))
         observed = [
             Packet(
                 key=item["key"],
                 summary=item["summary"],
                 status=item["status"],
-                disposition=item["disposition"],
+                verdict=item["verdict"],
                 confidence=item["confidence"],
                 confidence_basis=item["confidenceBasis"],
                 action=item["action"],
@@ -743,7 +726,7 @@ class TestEvaluate:
             key="RHDHBUGS-1001",
             summary="still valid",
             status="Backlog",
-            disposition="still_valid",
+            verdict="still_valid",
             confidence=0.8,
             confidence_basis=[],
             action="comment_only",
@@ -753,7 +736,7 @@ class TestEvaluate:
             current_release=CURRENT_RELEASE,
             target="",
         )
-        result = evaluate([packet], {"RHDHBUGS-1001": {"disposition": "still_valid"}})
+        result = evaluate([packet], {"RHDHBUGS-1001": {"verdict": "still_valid"}})
         rendered = render_evaluation(result)
         assert "`duplicate`" not in rendered
         assert "`already_fixed`" not in rendered
@@ -763,7 +746,7 @@ class TestEvaluate:
             key="RHDHBUGS-1001",
             summary="still valid",
             status="Backlog",
-            disposition="duplicate",
+            verdict="duplicate",
             confidence=0.9,
             confidence_basis=[],
             action="propose_close_duplicate",
@@ -773,7 +756,7 @@ class TestEvaluate:
             current_release=CURRENT_RELEASE,
             target="RHDHBUGS-1002",
         )
-        result = evaluate([packet], {"RHDHBUGS-1001": {"disposition": "still_valid"}})
+        result = evaluate([packet], {"RHDHBUGS-1001": {"verdict": "still_valid"}})
         assert len(result.false_closes) == 1
 
 

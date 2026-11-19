@@ -43,10 +43,7 @@ from .policy import (
 from .report import (
     now_iso,
     render_manifest,
-    render_packet,
     render_report,
-    render_summary_csv,
-    surfaced,
     write_json,
     write_text,
 )
@@ -70,7 +67,7 @@ class RunConfig:
     size: int = 12
     seed: int = 18094
     controls: List[Control] = field(default_factory=list)
-    corpus_path: str = ""
+    backlog_path: str = ""
     jql: str = ""
     comment_cooldown_days: int = DEFAULT_COOLDOWN_DAYS
     scope: str = "aged"
@@ -175,7 +172,7 @@ def load_assessments(directory: str) -> Dict[str, Assessment]:
             raise RunError(f"invalid assessment {path}: {error}") from error
         if path.stem != assessment.key:
             raise RunError(f"assessment {path} names a different issue: {assessment.key}")
-        if not assessment.disposition:
+        if not assessment.verdict:
             raise RunError(
                 f"assessment {path} is still an unfilled template; investigate before running"
             )
@@ -269,13 +266,13 @@ def run(config: RunConfig) -> RunResult:
         if reason:
             raise RunError(f"sample issue {key} is no longer eligible: {reason}")
 
-    corpus = tickets
-    if config.corpus_path:
-        corpus = load_export(config.corpus_path)
-    # Duplicate retrieval is only as good as the corpus. A closed canonical
+    backlog = tickets
+    if config.backlog_path:
+        backlog = load_export(config.backlog_path)
+    # Duplicate retrieval is only as good as the backlog. A closed canonical
     # report is invisible when the export holds open tickets only, so record
     # that instead of silently implying the search was complete.
-    corpus_has_closed = any(ticket.is_done for ticket in corpus)
+    backlog_has_closed = any(ticket.is_done for ticket in backlog)
 
     assessments = load_assessments(config.assessments_dir)
     absent = sorted(set(selection) - set(assessments))
@@ -294,9 +291,7 @@ def run(config: RunConfig) -> RunResult:
 
         for key in selection:
             assessment = assessments[key]
-            errors = fix_plan_errors(
-                assessment.fix_plan, assessment.evidence, assessment.disposition
-            )
+            errors = fix_plan_errors(assessment.fix_plan, assessment.evidence, assessment.verdict)
             if errors:
                 raise RunError(f"fix plan incomplete for {key}: " + "; ".join(errors))
     collection = {}
@@ -314,23 +309,23 @@ def run(config: RunConfig) -> RunResult:
         if config.verification_dir
         else {}
     )
-    corpus_by_key = {item.key: item for item in corpus}
+    backlog_by_key = {item.key: item for item in backlog}
     for key, evidence in collection.items():
         discovery = evidence.get("discovery", {})
         if discovery and discovery.get("key") != key:
             raise RunError(f"discovery evidence does not match {key}")
         for record in discovery.get("candidateRecords", []):
             candidate = normalize_issue(record)
-            # Fresh collected records supersede the bounded corpus snapshot.
-            corpus_by_key[candidate.key] = candidate
-    corpus_by_key.update(tickets_by_key)
-    corpus = list(corpus_by_key.values())
-    corpus_has_closed = any(item.is_done for item in corpus)
+            # Fresh collected records supersede the bounded backlog snapshot.
+            backlog_by_key[candidate.key] = candidate
+    backlog_by_key.update(tickets_by_key)
+    backlog = list(backlog_by_key.values())
+    backlog_has_closed = any(item.is_done for item in backlog)
     packets: List[Packet] = []
     for key in selection:
         ticket = tickets_by_key[key]
-        candidates = rank_candidates(ticket, corpus, limit=10)
-        discovery = discover(ticket, corpus)
+        candidates = rank_candidates(ticket, backlog, limit=10)
+        discovery = discover(ticket, backlog)
         collected_discovery = collection.get(key, {}).get("discovery", {})
         if collected_discovery:
             discovery["collection"] = collected_discovery
@@ -348,16 +343,16 @@ def run(config: RunConfig) -> RunResult:
         discovered_keys = {lead["key"] for lead in discovery["leads"]}
         discovered_keys.update(lead["key"] for lead in collected_discovery.get("leads", []))
         for candidate_key in sorted(discovered_keys):
-            if candidate_key in corpus_by_key and all(c.key != candidate_key for c in candidates):
-                candidates.append(score_candidate(ticket, corpus_by_key[candidate_key]))
+            if candidate_key in backlog_by_key and all(c.key != candidate_key for c in candidates):
+                candidates.append(score_candidate(ticket, backlog_by_key[candidate_key]))
         assessment = assessments.get(key)
         # An explicitly investigated target may lie outside the top lexical hits.
         if (
             assessment
-            and assessment.duplicate_of in corpus_by_key
+            and assessment.duplicate_of in backlog_by_key
             and all(c.key != assessment.duplicate_of for c in candidates)
         ):
-            candidates.append(score_candidate(ticket, corpus_by_key[assessment.duplicate_of]))
+            candidates.append(score_candidate(ticket, backlog_by_key[assessment.duplicate_of]))
         packet = evaluate(
             ticket,
             candidates,
@@ -377,7 +372,7 @@ def run(config: RunConfig) -> RunResult:
     redundant = {packet.key for packet in packets if packet.action == "propose_close_duplicate"}
     for packet in packets:
         if packet.action == "propose_close_duplicate" and packet.target in redundant:
-            packet.action, packet.disposition = "comment_only", "unclear"
+            packet.action, packet.verdict = "comment_only", "unclear"
             packet.recommended_step = (
                 "Resolve the duplicate chain to one canonical tracker before recommending closure."
             )
@@ -394,7 +389,6 @@ def run(config: RunConfig) -> RunResult:
             )
 
     generated_at = now_iso()
-    proposals_dir = output_dir / "proposed"
     thresholds = {
         "duplicate": DUPLICATE_CLOSE_THRESHOLD,
         "duplicateHint": DUPLICATE_HINT_THRESHOLD,
@@ -409,16 +403,16 @@ def run(config: RunConfig) -> RunResult:
         "excludedIssues": len(sample.get("excluded", [])),
         "scope": config.scope,
         "selectionComplete": len(selection) >= sample.get("eligibleCount", 0),
-        "corpusIssues": len(corpus),
-        "corpusHasClosed": corpus_has_closed,
+        "corpusIssues": len(backlog),
+        "corpusHasClosed": backlog_has_closed,
         "corpusExhaustive": False,
         "collection": collection,
     }
-    # Atomic directory creation: two callers cannot write into the same run.
+    # Two files, by design: report.md for people, packets.json for the system
+    # (findings plus the meta block that says where the data came from and
+    # that nothing was written). Working inputs live outside this directory,
+    # wherever the workflow put them.
     output_dir.mkdir(parents=True, exist_ok=False)
-    # report.md and proposed/ are the human-facing surface. Every machine
-    # artifact lives under audit/ so a reviewer opens exactly one file.
-    audit_dir = output_dir / "audit"
 
     report = render_report(
         packets,
@@ -429,8 +423,8 @@ def run(config: RunConfig) -> RunResult:
         jql=jql,
         sample_size=sum(1 for entry in selection.values() if entry.get("kind") == "aged"),
         control_count=sum(1 for entry in selection.values() if entry.get("kind") == "control"),
-        corpus_size=len(corpus),
-        corpus_has_closed=corpus_has_closed,
+        backlog_size=len(backlog),
+        backlog_has_closed=backlog_has_closed,
         excluded=sample.get("excluded", []),
         selection=selection,
         thresholds=thresholds,
@@ -438,37 +432,7 @@ def run(config: RunConfig) -> RunResult:
         release_evidence=config.release_evidence,
     )
     write_text(output_dir / "report.md", report)
-    write_json(audit_dir / "sample.json", sample)
-    write_text(audit_dir / "summary.csv", render_summary_csv(packets, selection))
-    write_json(
-        audit_dir / "packets.json",
-        {
-            "schemaVersion": 3,
-            "dryRun": True,
-            "generatedAt": generated_at,
-            "currentRelease": config.current_release,
-            "packets": [packet.to_dict() for packet in packets],
-        },
-    )
-    for packet in packets:
-        if not surfaced(packet) or packet.comment_plan.get("status") == "suppress":
-            continue
-        ticket = tickets_by_key[packet.key]
-        entry = selection.get(packet.key, {})
-        write_text(
-            proposals_dir / f"{packet.key}.md",
-            render_packet(
-                packet,
-                ticket,
-                kind=str(entry.get("kind", "aged")),
-                stratum=str(entry.get("stratum", "")),
-                control_label=str(entry.get("controlLabel", "")),
-                as_of=as_of,
-                generated_at=generated_at,
-            ),
-        )
-
-    manifest = render_manifest(
+    meta = render_manifest(
         generated_at=generated_at,
         as_of=as_of,
         current_release=config.current_release,
@@ -477,15 +441,15 @@ def run(config: RunConfig) -> RunResult:
         sample_path=config.sample_path or "(selected in memory)",
         assessments_path=config.assessments_dir or "(none)",
         output_path=str(output_dir),
-        corpus_size=len(corpus),
-        corpus_has_closed=corpus_has_closed,
+        backlog_size=len(backlog),
+        backlog_has_closed=backlog_has_closed,
         sample_size=sum(1 for entry in selection.values() if entry.get("kind") == "aged"),
         control_count=sum(1 for entry in selection.values() if entry.get("kind") == "control"),
         packets=packets,
         thresholds=thresholds,
         policy_version=POLICY_VERSION,
     )
-    manifest["commentPolicy"] = {
+    meta["commentPolicy"] = {
         "cooldownDays": config.comment_cooldown_days,
         "historySource": "complete Jira comments; dry runs are not posting history",
         "counts": {
@@ -493,25 +457,25 @@ def run(config: RunConfig) -> RunResult:
             for status in ("propose", "suppress", "review_required")
         },
     }
-    manifest["releaseEvidence"] = config.release_evidence
-    manifest["investigationRequired"] = config.require_investigation
-    manifest["fixPlanRequired"] = config.require_fix_plan
-    manifest["investigationStates"] = {
+    meta["releaseEvidence"] = config.release_evidence
+    meta["investigationRequired"] = config.require_investigation
+    meta["fixPlanRequired"] = config.require_fix_plan
+    meta["investigationStates"] = {
         status: sum(p.investigation.get("status", "not_recorded") == status for p in packets)
         for status in ("completed", "blocked", "not_recorded")
     }
-    manifest["discovery"] = {
+    meta["discovery"] = {
         "leadCount": sum(len(p.discovery.get("leads", [])) for p in packets),
         "passes": sorted({route for p in packets for route in p.discovery.get("passesRun", [])}),
         "leadsAreVerdicts": False,
     }
-    manifest["coverage"] = coverage
-    manifest["inputs"]["corpus"] = config.corpus_path or config.input_path
-    manifest["inputSha256"] = {
+    meta["coverage"] = coverage
+    meta["inputs"]["backlog"] = config.backlog_path or config.input_path
+    meta["inputSha256"] = {
         name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
         for name, path in {
             "export": config.input_path,
-            "corpus": config.corpus_path or config.input_path,
+            "backlog": config.backlog_path or config.input_path,
             **{
                 f"assessment:{key}": str(Path(config.assessments_dir) / f"{key}.json")
                 for key in selection
@@ -527,16 +491,26 @@ def run(config: RunConfig) -> RunResult:
             ),
         }.items()
     }
-    manifest["codeSha256"] = {
+    meta["codeSha256"] = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(Path(__file__).parent.glob("*.py"))
     }
-    write_json(audit_dir / "manifest.json", manifest)
+    write_json(
+        output_dir / "packets.json",
+        {
+            "schemaVersion": 3,
+            "dryRun": True,
+            "generatedAt": generated_at,
+            "currentRelease": config.current_release,
+            "meta": meta,
+            "packets": [packet.to_dict() for packet in packets],
+        },
+    )
 
     return RunResult(
         packets=packets,
         tickets=tickets_by_key,
         sample=sample,
-        manifest=manifest,
+        manifest=meta,
         output_dir=output_dir,
     )
