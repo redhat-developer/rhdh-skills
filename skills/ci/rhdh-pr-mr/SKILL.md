@@ -2,12 +2,13 @@
 name: rhdh-pr-mr
 description: >-
   Pushes a topic branch and opens a GitHub pull request or GitLab CEE merge
-  request for CI and agent automation after validating AI/tool attribution and a
-  linked Jira issue in its description, then links Jira via /rhdh-jira-link.
-  Use for "open a PR", "create the merge request", "push and open PR/MR after
-  a yarn or base-image bump", or when another CI skill needs a shared opener.
-  Not for plugin changeset publish (/rhdh-pr-create) and not a replacement for
-  midstream createPR.sh inside updateBaseImages.sh.
+  request for CI and agent automation after validating AI/tool attribution,
+  adding a linked Jira issue (when one is given) to its description and linking
+  Jira via /rhdh-jira-link. Use for "open a PR", "create the merge request",
+  "push and open PR/MR after a yarn or base-image bump", or when another CI
+  skill needs a shared opener. Not for plugin changeset publish
+  (/rhdh-pr-create) and not a replacement for midstream createPR.sh inside
+  updateBaseImages.sh.
 compatibility: "bash, git, jq, curl; gh for GitHub; PRIVATE_TOKEN (and optional glab) for GitLab CEE; JIRA_API_TOKEN when linking."
 ---
 
@@ -19,8 +20,9 @@ approval when an agent is driving. Weekly bots may call the script unattended.
 ## Boundaries
 
 - **Not** `/rhdh-pr-create` (plugin changesets, recordings, monorepo publish).
-- **Requires** a known Jira key and calls `/rhdh-jira-link` after opening. Stop
-  before pushing when no issue is known; never invent one.
+- Links a known Jira key via `/rhdh-jira-link` after opening; never invent
+  one. Unattended Jira-less automation (e.g. the weekly-maintenance yarn bump)
+  may open without an issue key, with attribution only.
 - **Requires** an attribution trailer on the commit and in the description. The
   payload is open: name the tool, then add only the agent, model, provider and
   thinking level that are actually known.
@@ -44,7 +46,7 @@ SKILL=<this skill's directory>
   --head chore/my-topic \
   --title 'chore: short summary' \
   --body-file /tmp/body.md \
-  --issue RHIDP-12345 \
+  [--issue RHIDP-12345] \
   --attribution '<tool> (<agent> + <model> (<provider>), thinking: <level>)' \
   [--label ok-to-test] \
   [--dry-run]
@@ -97,6 +99,7 @@ Stdout includes `url: …`. Exit 0 if a PR/MR already exists for `--head`.
 | --- | --- |
 | `--issue KEY` or `JIRA_ISSUE` set + `JIRA_API_TOKEN` | Add the linked issue to the description, then invoke `/rhdh-jira-link` (`link-pr-mr.js link`). The Jira comment links the PR/MR title (`repo #id: title [base]`) to the URL (plus optional Adjusted fields). |
 | Issue set but no token / missing link script | The linked description remains; warn that the Jira backlink was skipped. |
+| No issue given | Open with attribution only; skip the `Related Jira:` line and backlink (Jira-less automation, e.g. the GitLab weekly-maintenance yarn bump). |
 
 Override the link scripts directory with `RHDH_JIRA_LINK_SCRIPTS` when the
 sibling skill is not next to this one in the pack checkout.
@@ -106,11 +109,12 @@ sibling skill is not next to this one in the pack checkout.
 1. Resolve the most specific available attribution from the table above — fill
    in what you know, stop at the tool name — and add that `Assisted-By:`
    trailer to the commit.
-2. Resolve the Jira key from the conversation. Stop before pushing when none is
-   known; never turn a plain issue key in the description into an unlinked label.
-3. Follow `/mutation-gate` for push + open + Jira link.
+2. Resolve the Jira key from the conversation when one is tracked, and pass it;
+   never invent one, and never turn a plain issue key in the description into an
+   unlinked label.
+3. Follow `/mutation-gate` for push + open (+ Jira link when an issue is passed).
 4. Invoke `/rhdh-pr-mr` by name (or run the script path when already inside a
-   skill clone), passing `--issue` and `--attribution`.
+   skill clone), passing `--attribution` and `--issue` when one is tracked.
 5. Report the `url:` line.
 
 ## Tests
@@ -126,6 +130,6 @@ shellcheck --severity=warning "$SKILL/scripts/create-pr-mr.sh"
 
 Done when the topic branch is pushed; the latest commit and PR/MR description
 carry an attribution trailer whose payload names every part that was actually
-known; the description contains the Markdown Jira link; a Jira Web link was
-updated or its missing credential was reported; and a GitLab MR is configured to
-delete its source branch after merge.
+known; when an issue key was given the description contains the Markdown Jira
+link and a Jira Web link was updated or its missing credential was reported;
+and a GitLab MR is configured to delete its source branch after merge.
