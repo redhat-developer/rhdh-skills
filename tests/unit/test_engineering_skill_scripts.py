@@ -238,6 +238,113 @@ def test_overlay_analyzers_preserve_workspace_and_priority_classification():
     assert triage.extract_workspace_from_title("Update catalog workspace to 1.2.3") == "catalog"
 
 
+def test_overlay_triage_names_the_next_command_from_pr_state():
+    triage = load_script(
+        "skills/plugins/rhdh-overlay/scripts/triage-prs.py",
+        "rhdh_overlay_triage_prs_state",
+    )
+
+    def pr(**overrides):
+        base = {
+            "labels": [],
+            "files": [{"path": "workspaces/catalog/source.json"}],
+            "statusCheckRollup": [],
+        }
+        base.update(overrides)
+        return base
+
+    def check(name, conclusion, completed_at="2026-01-01T00:00:00Z"):
+        return {"name": name, "conclusion": conclusion, "completedAt": completed_at}
+
+    def status(context, state, started_at="2026-01-01T00:00:00Z"):
+        # `publish` and `smoketest` arrive as StatusContext, not CheckRun.
+        return {
+            "__typename": "StatusContext",
+            "context": context,
+            "state": state,
+            "startedAt": started_at,
+        }
+
+    assert triage.evaluate_pr_state(pr())[0] == "publish-missing"
+    assert (
+        triage.evaluate_pr_state(pr(statusCheckRollup=[status("publish", "SUCCESS")]))[0] == "ready"
+    )
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=[status("publish", "FAILURE")]))[0] == (
+        "publish-failed"
+    )
+    assert triage.evaluate_pr_state(pr(isDraft=True))[0] == "draft"
+    assert triage.evaluate_pr_state(pr(labels=[{"name": "do-not-merge"}]))[0] == "skip"
+
+    rerun = [status("publish", "FAILURE"), status("publish", "SUCCESS", "2026-01-02T00:00:00Z")]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=rerun))[0] == "ready"
+
+    pending_rerun = [
+        status("publish", "SUCCESS"),
+        status("publish", "PENDING", "2026-01-02T00:00:00Z"),
+    ]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=pending_rerun))[0] == "publish-pending"
+
+    cancelled = [status("publish", "CANCELLED")]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=cancelled))[0] == "publish-missing"
+
+    # A CheckRun rerun keeps the newest completed run.
+    checkruns = [check("publish", "FAILURE"), check("publish", "SUCCESS", "2026-01-02T00:00:00Z")]
+    assert triage.evaluate_pr_state(pr(statusCheckRollup=checkruns))[0] == "ready"
+
+    multi = [
+        {"path": "workspaces/catalog/source.json"},
+        {"path": "workspaces/theme/source.json"},
+    ]
+    state, workspaces = triage.evaluate_pr_state(
+        pr(files=multi, statusCheckRollup=[status("publish", "SUCCESS")])
+    )
+    assert state == "ready"
+    assert workspaces == ["catalog", "theme"]
+    # Without the status the PR still needs the command that records it.
+    assert triage.evaluate_pr_state(pr(files=multi))[0] == "publish-missing"
+
+    # A failing check is reported even when the PR spans several workspaces.
+    failing = [status("publish", "SUCCESS"), check("workspace-tests", "FAILURE")]
+    assert (
+        triage.evaluate_pr_state(pr(files=multi, statusCheckRollup=failing))[0] == "checks-failed"
+    )
+
+
+def test_overlay_triage_explains_cancelled_workspace_commands():
+    triage = load_script(
+        "skills/plugins/rhdh-overlay/scripts/triage-prs.py",
+        "rhdh_overlay_triage_prs_scope",
+    )
+
+    assert triage.scope_note(["catalog"]) == ""
+    assert "no workspace files" in triage.scope_note([])
+    assert "2 workspaces" in triage.scope_note(["catalog", "theme"])
+    assert "required check" in triage.scope_note(["catalog", "theme"])
+
+    info = {
+        "priority_key": "critical",
+        "assignee_icon": "❌",
+        "days_stale": 1,
+        "state": "publish-missing",
+        "next_action": triage.NEXT_ACTION["publish-missing"],
+        "scope_note": triage.scope_note(["catalog", "theme"]),
+    }
+    assert triage.describe_next(info).startswith("Trigger /publish (2 workspaces")
+    assert triage.suggest_action(info).endswith(" + Assign owner")
+    assert triage.needs_action(info)
+
+    waiting = {
+        "priority_key": "critical",
+        "assignee_icon": "✅",
+        "days_stale": 1,
+        "state": "ready",
+        "next_action": triage.NEXT_ACTION["ready"],
+        "scope_note": "",
+    }
+    assert triage.suggest_action(waiting) == "Ready to merge"
+    assert not triage.needs_action(waiting)
+
+
 def test_shared_adf_parser_keeps_the_current_milestone_date():
     from datetime import datetime
 
