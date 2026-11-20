@@ -47,8 +47,14 @@ After the grill questions are complete, present all inferred fields at once:
 | **Size** | AC count, dependency count, complexity signals from the grill ("need to investigate", "multiple PRs", "cross-team"). Use the scales in [sizing.md](sizing.md). |
 | **Component** | Technical domain discussed (RBAC, plugins, catalog, helm, operator, CI/CD, docs). Match against the component catalog in `/rhdh-jira-api`. Also check codebase context — if the user has been editing files during the session, infer from file paths (see below). |
 | **Assignee** | If the user is describing their own work, suggest them. Otherwise, run a lightweight expertise match from the conversation context (component + domain keywords against team roster). For a real roster-and-capacity analysis, hand off to `/rhdh-jira-update`. |
-| **Labels** | Customer-facing → `demo`. Release target mentioned → `rhdh-X.Y-candidate`. Stretch goal language → `stretch`. Support/customer origin → single `RHDH-Customer` (never also apply `rhdh-customer`). |
+| **Labels** | Customer-facing → `demo`. Release target mentioned → `rhdh-X.Y-candidate`. Stretch-goal signals → `stretch-goal` plus the target Fix Version at Feature level. Support/customer origin → single `RHDH-Customer` (never also apply `rhdh-customer`). |
 | **Affects Version** | RHDHBUGS Bugs only. Infer from Build Details / prerequisites. Required at create — see `/rhdh-jira-api` (`fields.md`, Bug workflow). Confirm before the write gate. Not Fix Version. |
+
+### Stretch-goal judgement
+
+Recommend `stretch-goal` for smaller, lower-priority work the team expects to fit but does not commit to firmly. It is appropriate when delivery risk is elevated — for example, an upstream or cross-team dependency — or when capacity pressure makes deferral likely.
+
+During release planning, make the decision at Feature level. When the Feature is refined, carry `stretch-goal` down to its child Epics and their child issues. Use it only when the work has a concrete release target; do not use it as a parking lot for vague or unplanned ideas. `/rhdh-jira-api` owns the Fix Version, candidate-label, inheritance, deferral, and promotion mechanics.
 
 ### Codebase-aware component inference
 

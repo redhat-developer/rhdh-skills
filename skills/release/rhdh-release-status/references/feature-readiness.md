@@ -11,7 +11,8 @@ cannot return. Read-only: this route reports, and hands any fix to the skill tha
 
 The caller provides:
 
-1. **Release version** — e.g., `2.1`, `1.10`. Matches against candidate labels (`rhdh-2.1-candidate`) and fix versions.
+1. **Release version** — e.g., `2.1`, `1.10`. The candidate label is
+   `rhdh-2.1-candidate`; the corresponding Fix Version is `2.1.0`.
 2. **Team** — optional. If provided, filter to that team's Features/Epics only. If omitted, show all teams (program-level view).
 
 ## Mode Selection
@@ -24,11 +25,13 @@ Default to **quick** if not specified.
 
 ### Step 1 — Fetch Features
 
-Query RHDHPLAN Features with the candidate label or fix version. Replace `VERSION` with the target release version (e.g., `2.1`):
+Query RHDHPLAN Features with the candidate label or fix version. Replace
+`VERSION` with the release stream (e.g., `2.1`) and `FIX_VERSION` with the full
+Fix Version (e.g., `2.1.0`):
 
 ```bash
 acli jira workitem search \
-  --jql 'project = RHDHPLAN AND issuetype = Feature AND (labels = "rhdh-VERSION-candidate" OR fixVersion = "VERSION") ORDER BY priority ASC' \
+  --jql 'project = RHDHPLAN AND issuetype = Feature AND ((labels = "rhdh-VERSION-candidate" AND (fixVersion is EMPTY OR fixVersion = "FIX_VERSION")) OR fixVersion = "FIX_VERSION") ORDER BY priority ASC' \
   --fields "key,summary,status,priority,assignee,storypoints,labels,fixversions" --paginate --json
 ```
 
@@ -37,7 +40,7 @@ Use the authenticated host adapter only if the CLI omits it.
 
 ### Step 2 — Program Increment Funnel
 
-Classify each Feature into PI release planning states based on its field values:
+Classify each Feature into PI release planning states based on its field values. Evaluate the states top-down; a Feature matching **Stretch Goal** is not also counted as **Fixversion Set**:
 
 | PI State | Condition |
 |----------|-----------|
@@ -45,7 +48,8 @@ Classify each Feature into PI release planning states based on its field values:
 | **Defined but No Team** | Team field is empty |
 | **Exploration** | Size is empty OR assignee is empty |
 | **Ready for Commitment** | Size set, assignee set, has child Epics, fix version is empty |
-| **Fixversion Set** | Fix version is set (committed to release) |
+| **Stretch Goal** | `stretch-goal` label and Fix Version are both set |
+| **Fixversion Set** | Fix Version is set and the Feature does not carry `stretch-goal` (committed to release) |
 
 Show the funnel as a count breakdown:
 
@@ -57,6 +61,7 @@ Show the funnel as a count breakdown:
 | ⚠ Defined but No Team | 1 | RHDHPLAN-415 |
 | 🔍 Exploration | 3 | ... |
 | ✅ Ready for Commitment | 2 | ... |
+| ⚠ Stretch Goal | 1 | RHDHPLAN-410 |
 | ✅ Fixversion Set | 4 | ... |
 ```
 
@@ -71,11 +76,16 @@ Map each Feature to its Jira workflow status with color coding:
 | 🟢 | In Progress |
 | ✅ | Release Pending, Closed |
 
-Include: key, summary, status, owner, team, size, stretch flag.
+Include: key, summary, status, owner, team, size, stretch flag. The internal
+stretch flag is true only when the Feature has both the `stretch-goal` label and
+a Fix Version.
 
 ### Step 4 — Stretch Features
 
-Features with `stretch` label listed separately as descope candidates. These are first to cut if the release is at risk.
+Features with a valid stretch target — both the `stretch-goal` label and a Fix
+Version — are listed separately as descope candidates. These are first to cut if
+the release is at risk. A `stretch-goal` label without a Fix Version is a
+label-check failure, not a stretch feature.
 
 ### Step 4b — Label Checks
 
@@ -85,6 +95,7 @@ For each Feature, verify expected labels:
 |-------|--------------|----------------|
 | `demo` | Customer-facing Feature | "Customer-facing Feature missing `demo` label — needs Feature Demo." |
 | `rhdh-testday` | Test Day candidate | Informational only — note if present. |
+| `stretch-goal` | Feature-level stretch target | "`stretch-goal` without Fix Version — set the target or remove the label." |
 | Documentation component | Feature requires docs | "No Documentation component — will Docs team create an Epic?" |
 
 ### Step 5 — Readiness Score
@@ -148,7 +159,7 @@ For each dependency:
 Bugs in RHDHBUGS with the release fix version and priority Blocker or Critical:
 
 ```bash
-jql: "project = RHDHBUGS AND priority in (Blocker, Critical) AND fixVersion = VERSION AND status != Closed"
+jql: "project = RHDHBUGS AND priority in (Blocker, Critical) AND fixVersion = \"FIX_VERSION\" AND status != Closed"
 ```
 
 Include: key, summary, status, assignee, days since last update.

@@ -117,7 +117,7 @@ Most labels are lowercase and hyphen-separated. Labels are global to the Jira in
 | `demo` | Customer-facing Features/Epics requiring a feature demo. Decided during Feature Exploration — `/rhdh-jira-refine` owns that checklist. |
 | `needs-info` | Release planning — needs more information from the feature reporter (Engineering → reporter) |
 | `needs-pm` | Release planning — needs product management input |
-| `stretch` | Feature is a stretch goal for a release |
+| `stretch-goal` | Feature-level stretch commitment during release planning; inherited by delivery children during refinement. Pair with the attempted release's Fix Version. See the lifecycle below. |
 | `rhdh-testday` | Feature should be tested as part of release test day. Set during Feature Exploration. |
 | `quality` | Continuous improvement issues. **Excluded from code freeze release queries** — use this label (not `ci`) to ensure the issue doesn't block a code freeze. |
 | `rhdh-n.n-candidate` | Feature is a candidate for release n.n (e.g., `rhdh-2.1-candidate`). **Do not remove without PM approval** — removing this label can silently drop a feature from release tracking. |
@@ -128,6 +128,34 @@ Most labels are lowercase and hyphen-separated. Labels are global to the Jira in
 | `ga-support` | Target support level: GA (generally available) |
 | `tp-support` | Target support level: Tech Preview |
 | `dp-support` | Target support level: Developer Preview |
+
+### Stretch-goal lifecycle (authoritative)
+
+Use `stretch-goal` during release planning on an RHDHPLAN Feature for smaller, lower-priority work the team expects to fit but does not firmly commit to. Current practice is not a hard workflow gate: make the decision at Feature level, then inherit the label to child Epics and their child issues when the Feature is refined.
+
+A valid Feature-level stretch target has both:
+
+- the `stretch-goal` label;
+- the Fix Version for the release being attempted, using the full version name such as `2.2.0`.
+
+The corresponding candidate label omits the patch component: `rhdh-2.2-candidate`.
+
+Fix Version is settable during creation. Do not pass a `--version` CLI flag; use the create dialog or include `fixVersions` in the create payload (`additionalAttributes.fixVersions` for acli JSON, `additional_fields.fixVersions` for MCP, or `fields.fixVersions` for REST). Use the object shape `[{"name": "2.2.0"}]`.
+
+When a stretch goal is deferred:
+
+1. Remove `stretch-goal` from the Feature. For now, do not remove inherited labels from child Epics or descendant issues as part of this step; child-label cleanup is a separate team decision.
+2. Keep the existing candidate label so the Feature remains visible as a former candidate.
+3. Add the next major release stream's candidate label, such as `rhdh-2.2-candidate`.
+4. Move the Feature's Fix Version to that stream's `X.Y.0`, such as `2.2.0`; Jira automation may cascade the change to children.
+5. Add a private comment to the Feature with visibility restricted to the group **Red Hat Employee**. State that it is being de-committed from the old release and added for consideration for the new candidate label, and include both versions. Suggested text: ``De-committed from 2.1.0; now candidate for 2.2.0. `stretch-goal` removed, candidate label added for next release, and Fix Version moved.``
+
+Old candidate labels intentionally remain when a Feature moves to a later release.
+Release-scoped queries must therefore constrain a candidate-label match to an empty
+or current-release Fix Version so a deferred Feature does not appear in both the old
+and new releases.
+
+If confidence improves, remove `stretch-goal` and leave the candidate label and Fix Version in place to promote the Feature to a firmer commitment.
 
 ### Customer identity in unprotected fields (authoritative)
 
