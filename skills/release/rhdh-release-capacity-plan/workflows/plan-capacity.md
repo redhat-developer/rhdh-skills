@@ -18,7 +18,8 @@ the arithmetic in prose.
    `/rhdh-release-teams` and `/rhdh-jira-api`. Never infer a team from member
    names.
 2. **Release version** — e.g. `2.2`. Builds the candidate label
-   `rhdh-2.2-candidate`. Ask if missing.
+   `rhdh-2.2-candidate`; the corresponding Fix Version is `2.2.0`. Ask if
+   missing.
 3. **Availability** — default every `FULL_MEMBER` to 100% only when the shared
    PTO calendar has no match for that person. Do not ask for PTO unless the
    calendar cannot be read.
@@ -142,11 +143,11 @@ completed, interrupt, and planned-completed points. Rolled-forward issues
 ## Step 5 — Candidate demand
 
 ```jql
-project = RHDHPLAN AND issuetype = Feature AND labels = 'rhdh-VERSION-candidate'
+project = RHDHPLAN AND issuetype = Feature AND labels = 'rhdh-VERSION-candidate' AND (fixVersion is EMPTY OR fixVersion = 'FIX_VERSION')
 ORDER BY priority ASC
 ```
 
-Enrich Size, labels (`stretch`), and Team. For each Feature, query child Epics:
+Enrich Size and Team. Set the input `stretch` boolean to true only when the Feature has both the `stretch-goal` label and a Fix Version. For each Feature, query child Epics:
 
 ```jql
 issuetype = Epic AND parent = FEATURE_KEY
