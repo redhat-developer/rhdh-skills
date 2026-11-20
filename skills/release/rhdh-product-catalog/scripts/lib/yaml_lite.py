@@ -11,11 +11,28 @@ empty ``[]`` / ``{}``.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
 def parse_yaml(text: str) -> dict[str, Any]:
     lines = text.splitlines()
+    seen_content = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "---":
+            if seen_content:
+                raise ValueError("multiple YAML documents are not supported")
+        elif stripped and not stripped.startswith("#"):
+            seen_content = True
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(("&", "*")) or stripped.startswith("<<:"):
+            raise ValueError("YAML anchors, aliases, and merge keys are not supported")
+        if ":" in stripped:
+            value = stripped.split(":", 1)[1].strip()
+            if value.startswith(("[", "{")) and value not in ("[]", "{}"):
+                raise ValueError("non-empty YAML flow collections are not supported")
     return _parse_mapping(lines, 0, 0)[0]
 
 
@@ -56,8 +73,8 @@ def _scalar(val: str) -> Any:
         return []
     if v == "{}":
         return {}
-    # Keep dotted versions as strings (1.52.0, 0.9.1).
-    if v.count(".") >= 2:
+    # Keep dotted versions and semantic-looking numbers as strings (1.52.0, 1.10, 1.0).
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)+", v):
         return _strip_quotes(v)
     try:
         return int(v)
@@ -99,8 +116,30 @@ def _parse_mapping(lines: list[str], idx: int, base_indent: int) -> tuple[dict[s
         after_colon = stripped[colon_pos + 1 :].strip()
 
         if after_colon and not after_colon.startswith("#"):
-            result[key] = _scalar(after_colon)
-            idx += 1
+            if after_colon in {"|", "|-", "|+", ">", ">-", ">+"}:
+                block_lines: list[str] = []
+                block_indent: int | None = None
+                bi = idx + 1
+                while bi < len(lines):
+                    bl = lines[bi]
+                    if not bl.strip():
+                        block_lines.append("")
+                        bi += 1
+                        continue
+                    indent = _indent_of(bl)
+                    if block_indent is None:
+                        block_indent = indent
+                    if indent < block_indent:
+                        break
+                    block_lines.append(bl.strip())
+                    bi += 1
+                while block_lines and not block_lines[-1]:
+                    block_lines.pop()
+                result[key] = "\n".join(block_lines)
+                idx = bi
+            else:
+                result[key] = _scalar(after_colon)
+                idx += 1
         else:
             child_indent = None
             peek = idx + 1

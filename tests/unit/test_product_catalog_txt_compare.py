@@ -68,5 +68,19 @@ class CompareFixtureTests(unittest.TestCase):
         )
 
 
+class ExactTokenMappingTests(unittest.TestCase):
+    def test_substring_does_not_map_unrelated_package(self) -> None:
+        packages = [
+            {
+                "workspace": "authorization",
+                "name": "authorization-package",
+                "file": "workspaces/authorization/metadata/authorization-package.yaml",
+                "package_name": "@example/authorization",
+            }
+        ]
+        hits = packages_for_txt_path("authorization/plugins/auth", {"authorization": packages})
+        self.assertEqual(hits, [])
+
+
 if __name__ == "__main__":
     unittest.main()

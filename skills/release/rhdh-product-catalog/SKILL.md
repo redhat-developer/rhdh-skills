@@ -10,7 +10,7 @@ description: >-
   export list consistency, or whether plugin and package support match.
   Prefer RHDH_OVERLAY_REPO or --repo for a local overlay checkout. Do not use
   for overlay onboarding, version bumps, CI/PRs (overlay), platform EOL
-  (lifecycle), CVE exports, or local enablement (rhdh-local).
+  (lifecycle), CVE exports, or local enablement.
 ---
 
 # Product catalog
@@ -164,6 +164,8 @@ Complete when the answer names the release and the overlay ref it was read from,
 gives the support level of every plugin or package the caller asked about, and
 states which of them came back `Unknown`. A level the metadata did not carry is
 reported as Unknown, never inferred from the author, publisher, or package name.
+In diffs and support alignment, missing metadata is reported separately from a
+valid support-level change.
 A catalog tile is not an npm artifact, so plugin and package figures are never
 interchanged. Nothing is written: no overlay checkout is modified, no branch is
 created, and the caller never has to open a file to get the answer. A version

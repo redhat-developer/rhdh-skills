@@ -43,7 +43,7 @@ Match by `spec.packageName` (fallback `workspace/filename`). Compared fields: `s
 | `tech-preview` | Tech Preview | `tp`, `tech preview` |
 | `dev-preview` | Developer Preview | `dp`, `dev preview`, `developer preview` |
 | `community` | Community | `community` |
-| missing / anything else | Unknown | `unknown` |
+| missing / anything else | Unknown (missing metadata) | `unknown` |
 
 Display order (decreasing): Generally Available, Tech Preview, Developer Preview, Community, Unknown.
 

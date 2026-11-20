@@ -541,6 +541,8 @@ def render_diff_markdown(
     scanned_to: int,
 ) -> str:
     support_rows = report.support_changes()
+    support_appeared = report.support_metadata_appeared()
+    support_disappeared = report.support_metadata_disappeared()
     lifecycle_rows = report.lifecycle_changes()
     from_note = " (pre-release)" if source.get("pre_release_from") == "true" else ""
     to_note = " (pre-release)" if source.get("pre_release_to") == "true" else ""
@@ -558,6 +560,8 @@ def render_diff_markdown(
         "| Change | Count |",
         "|---|---|",
         f"| Support level | {len(support_rows)} |",
+        f"| Support metadata appeared | {len(support_appeared)} |",
+        f"| Support metadata disappeared | {len(support_disappeared)} |",
         f"| Newly added | {len(report.added)} |",
         f"| Lifecycle | {len(lifecycle_rows)} |",
         f"| Removed | {len(report.removed)} |",
@@ -584,6 +588,36 @@ def render_diff_markdown(
                         arrow(row["from"]["support_label"], row["to"]["support_label"]),
                     ]
                     for row in support_rows
+                ],
+            ),
+        )
+    if support_appeared:
+        section(
+            "Support metadata appeared",
+            _md_table(
+                ["Title", "Name", "Support"],
+                [
+                    [
+                        md_cell(row["to"]["title"]),
+                        md_cell(row["to"]["name"]),
+                        arrow(row["from"]["support_label"], row["to"]["support_label"]),
+                    ]
+                    for row in support_appeared
+                ],
+            ),
+        )
+    if support_disappeared:
+        section(
+            "Support metadata disappeared",
+            _md_table(
+                ["Title", "Name", "Support"],
+                [
+                    [
+                        md_cell(row["to"]["title"]),
+                        md_cell(row["to"]["name"]),
+                        arrow(row["from"]["support_label"], row["to"]["support_label"]),
+                    ]
+                    for row in support_disappeared
                 ],
             ),
         )
@@ -618,7 +652,14 @@ def render_diff_markdown(
                 [_plugin_row_cells(plugin) for plugin in report.removed],
             ),
         )
-    if not (support_rows or report.added or lifecycle_rows or report.removed):
+    if not (
+        support_rows
+        or support_appeared
+        or support_disappeared
+        or report.added
+        or lifecycle_rows
+        or report.removed
+    ):
         lines.extend(
             [
                 "",
@@ -878,6 +919,8 @@ def _diff_payload(
         "filtered": filtered,
         "counts": {
             "support": len(report.support_changes()),
+            "support_metadata_appeared": len(report.support_metadata_appeared()),
+            "support_metadata_disappeared": len(report.support_metadata_disappeared()),
             "added": len(report.added),
             "lifecycle": len(report.lifecycle_changes()),
             "removed": len(report.removed),
@@ -887,6 +930,8 @@ def _diff_payload(
         "added": report.added,
         "removed": report.removed,
         "support": report.support_changes(),
+        "support_metadata_appeared": report.support_metadata_appeared(),
+        "support_metadata_disappeared": report.support_metadata_disappeared(),
         "lifecycle": report.lifecycle_changes(),
         "changed": report.changed,
     }

@@ -45,6 +45,7 @@ def link_plugins_to_packages(
 @dataclass
 class SupportAlignmentReport:
     plugin_package_mismatches: list[dict[str, Any]] = field(default_factory=list)
+    missing_support: list[dict[str, Any]] = field(default_factory=list)
     plugin_package_spread: list[dict[str, Any]] = field(default_factory=list)
     workspace_package_spread: list[dict[str, Any]] = field(default_factory=list)
     plugins_without_packages: list[dict[str, Any]] = field(default_factory=list)
@@ -55,6 +56,7 @@ class SupportAlignmentReport:
     def has_findings(self) -> bool:
         return bool(
             self.plugin_package_mismatches
+            or self.missing_support
             or self.plugin_package_spread
             or self.workspace_package_spread
             or self.plugins_without_packages
@@ -120,6 +122,29 @@ def analyze_support_alignment(
         plugin_support = as_str(plugin.get("support"))
         for pkg in linked:
             package_support = as_str(pkg.get("support"))
+            if plugin_support == "unknown" or package_support == "unknown":
+                if plugin_support == "unknown" and package_support == "unknown":
+                    direction = "both_missing"
+                elif plugin_support == "unknown":
+                    direction = "plugin_missing"
+                else:
+                    direction = "package_missing"
+                report.missing_support.append(
+                    {
+                        "plugin_name": as_str(plugin.get("name")),
+                        "plugin_title": as_str(plugin.get("title")),
+                        "plugin_support": plugin_support,
+                        "plugin_support_label": plugin.get("support_label", ""),
+                        "package_name": as_str(pkg.get("package_name")),
+                        "package_title": as_str(pkg.get("title")),
+                        "package_support": package_support,
+                        "package_support_label": pkg.get("support_label", ""),
+                        "workspace": as_str(pkg.get("workspace")),
+                        "direction": direction,
+                        "catalog_membership": as_str(plugin.get("catalog_membership_label")),
+                    }
+                )
+                continue
             if package_support == plugin_support:
                 continue
             direction = _mismatch_direction(plugin_support, package_support)
@@ -176,6 +201,13 @@ def analyze_support_alignment(
         key=lambda r: (r.get("workspace", ""), r.get("package_name", ""))
     )
 
+    report.missing_support.sort(
+        key=lambda r: (
+            r.get("plugin_title", ""),
+            r.get("direction", ""),
+            r.get("package_name", ""),
+        )
+    )
     report.plugin_package_mismatches.sort(
         key=lambda r: (
             r.get("plugin_title", ""),
@@ -227,6 +259,7 @@ def alignment_payload(
             "plugins_scanned": report.plugins_scanned,
             "packages_scanned": report.packages_scanned,
             "plugin_package_mismatches": len(report.plugin_package_mismatches),
+            "missing_support": len(report.missing_support),
             "plugin_package_spread": len(report.plugin_package_spread),
             "workspace_package_spread": len(report.workspace_package_spread),
             "plugins_without_packages": len(report.plugins_without_packages),
@@ -234,6 +267,7 @@ def alignment_payload(
         },
         "warnings": warnings,
         "plugin_package_mismatches": report.plugin_package_mismatches,
+        "missing_support": report.missing_support,
         "plugin_package_spread": report.plugin_package_spread,
         "workspace_package_spread": report.workspace_package_spread,
         "plugins_without_packages": report.plugins_without_packages,
@@ -261,6 +295,7 @@ def render_alignment_markdown(
         "| Finding | Count |",
         "|---|---|",
         f"| Plugin vs package support mismatch | {len(report.plugin_package_mismatches)} |",
+        f"| Missing support metadata | {len(report.missing_support)} |",
         f"| Plugin with mixed package support levels | {len(report.plugin_package_spread)} |",
         f"| Workspace with mixed package support levels | {len(report.workspace_package_spread)} |",
         f"| Plugin lists packages but none resolved | {len(report.plugins_without_packages)} |",
@@ -288,6 +323,32 @@ def render_alignment_markdown(
         "Plugin `spec.support.level` differs from a linked Package `spec.support`. "
         "**package_lagging** = package is lower than the plugin (e.g. plugin GA, package TP).",
         report.plugin_package_mismatches,
+        [
+            "Plugin",
+            "Plugin support",
+            "Package",
+            "Package support",
+            "Workspace",
+            "Direction",
+            "Catalog",
+        ],
+        lambda r: [
+            md_cell(r["plugin_title"]),
+            md_cell(r["plugin_support_label"]),
+            md_cell(r["package_name"]),
+            md_cell(r["package_support_label"]),
+            md_cell(r["workspace"]),
+            md_cell(r["direction"].replace("_", " ")),
+            md_cell(r.get("catalog_membership", "")),
+        ],
+    )
+
+    _table(
+        lines,
+        "## Missing support metadata",
+        "A linked Plugin or Package has missing or unrecognized support metadata. "
+        "This is not a support-level mismatch; it needs metadata attention.",
+        report.missing_support,
         [
             "Plugin",
             "Plugin support",

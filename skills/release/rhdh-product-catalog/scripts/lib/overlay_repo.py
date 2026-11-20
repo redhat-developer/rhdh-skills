@@ -264,10 +264,11 @@ def load_core_index(
         load_core_index_from_text,
     )
 
-    root = Path(source.get("path", ""))
-    on_disk = root / DEFAULT_PACKAGES_REL
-    if on_disk.is_file():
-        return load_core_index_from_path(on_disk)
+    if source.get("type") in {"workdir", "tarball"}:
+        root = Path(source.get("path", ""))
+        on_disk = root / DEFAULT_PACKAGES_REL
+        if on_disk.is_file():
+            return load_core_index_from_path(on_disk)
     if repo and (repo / ".git").is_dir():
         try:
             resolved = ensure_git_ref(repo, ref)

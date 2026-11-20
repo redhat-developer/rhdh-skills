@@ -32,6 +32,7 @@ def _pkg(
         "tech-preview": "Tech Preview",
         "dev-preview": "Developer Preview",
         "community": "Community",
+        "unknown": "Unknown",
     }
     return {
         "workspace": workspace,
@@ -57,6 +58,7 @@ def _plugin(
         "tech-preview": "Tech Preview",
         "dev-preview": "Developer Preview",
         "community": "Community",
+        "unknown": "Unknown",
     }
     return {
         "name": name,
@@ -122,6 +124,54 @@ class SupportAlignmentTests(unittest.TestCase):
         report = analyze_support_alignment(plugins, packages)
         self.assertEqual(report.plugin_package_mismatches, [])
         self.assertEqual(report.plugin_package_spread, [])
+
+
+class MissingSupportMetadataTests(unittest.TestCase):
+    def test_package_unknown_is_not_a_support_mismatch(self) -> None:
+        plugins = [
+            _plugin(
+                name="orchestrator",
+                title="Orchestrator",
+                support="generally-available",
+                package_refs=["orchestrator-package"],
+            )
+        ]
+        packages = [
+            _pkg(
+                workspace="orchestrator",
+                name="orchestrator-package",
+                title="Orchestrator",
+                support="unknown",
+                package_name="@example/orchestrator",
+            )
+        ]
+        report = analyze_support_alignment(plugins, packages)
+        self.assertEqual(report.plugin_package_mismatches, [])
+        self.assertEqual(len(report.missing_support), 1)
+        self.assertEqual(report.missing_support[0]["direction"], "package_missing")
+
+    def test_plugin_unknown_is_not_a_support_mismatch(self) -> None:
+        plugins = [
+            _plugin(
+                name="orchestrator",
+                title="Orchestrator",
+                support="unknown",
+                package_refs=["orchestrator-package"],
+            )
+        ]
+        packages = [
+            _pkg(
+                workspace="orchestrator",
+                name="orchestrator-package",
+                title="Orchestrator",
+                support="generally-available",
+                package_name="@example/orchestrator",
+            )
+        ]
+        report = analyze_support_alignment(plugins, packages)
+        self.assertEqual(report.plugin_package_mismatches, [])
+        self.assertEqual(len(report.missing_support), 1)
+        self.assertEqual(report.missing_support[0]["direction"], "plugin_missing")
 
 
 if __name__ == "__main__":

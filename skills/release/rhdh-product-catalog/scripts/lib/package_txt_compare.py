@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,27 +32,25 @@ def parse_txt_paths(text: str) -> set[str]:
     return paths
 
 
-def _norm_token(value: str) -> str:
-    return value.replace("-", "").replace("_", "").lower()
+def _tokens(value: str) -> set[str]:
+    """Split an identifier into normalized semantic tokens."""
+    basename = value.rsplit("/", 1)[-1]
+    return {part for part in re.split(r"[-_]", basename.lower()) if part}
 
 
 def _leaf_matches_package(leaf: str, meta: str, stem: str, npm: str) -> bool:
-    if meta == leaf or stem == leaf:
-        return True
-    if meta == f"{leaf}-backend" or stem == f"{leaf}-backend":
-        return True
-    if leaf.endswith("-backend") and (meta == leaf or stem == leaf):
-        return True
-    if not leaf.endswith("-backend") and (meta.endswith("-backend") or stem.endswith("-backend")):
+    leaf_tokens = _tokens(leaf)
+    if not leaf_tokens:
         return False
-    if leaf.replace("-backend", "") == meta.replace("-backend", ""):
-        return True
-    if _norm_token(leaf) in _norm_token(meta) and not (
-        not leaf.endswith("-backend") and meta.endswith("-backend")
-    ):
-        return True
-    if _norm_token(leaf) in _norm_token(npm) and not npm.endswith("-backend"):
-        return True
+    leaf_has_backend = "backend" in leaf_tokens
+    for candidate in (meta, stem, npm):
+        candidate_tokens = _tokens(candidate)
+        if not candidate_tokens:
+            continue
+        if ("backend" in candidate_tokens) != leaf_has_backend:
+            continue
+        if leaf_tokens <= candidate_tokens:
+            return True
     return False
 
 
@@ -78,16 +77,11 @@ def packages_for_txt_path(
 
     if not hits and len(rest) >= 2:
         module = rest[-1]
-        token = module.replace("-actions", "")
         for pkg in by_workspace.get(ws, []):
             meta = as_str(pkg.get("name"))
+            stem = Path(as_str(pkg.get("file"))).stem
             npm = as_str(pkg.get("package_name"))
-            if (
-                module in meta
-                or module in Path(as_str(pkg.get("file"))).stem
-                or token in npm
-                or _norm_token(token) in _norm_token(npm)
-            ):
+            if _leaf_matches_package(module, meta, stem, npm):
                 consider(pkg)
 
     seen: set[str] = set()

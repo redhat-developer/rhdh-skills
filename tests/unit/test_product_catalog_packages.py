@@ -520,5 +520,44 @@ class TarballDiffCoreTests(unittest.TestCase):
         self.assertEqual(removed, {"Old Package": "disabled"})
 
 
+class LocalGitRefTests(unittest.TestCase):
+    def test_local_git_reads_core_and_txt_lists_from_requested_ref(self) -> None:
+        import tempfile
+
+        from product_catalog_git_fixture import init_overlay_git
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = init_overlay_git(
+                Path(tmp) / "overlay",
+                {
+                    "release-2.1": {
+                        "default.packages.yaml": (
+                            "packages:\n  enabled:\n    - package: '@release/plugin'\n"
+                        ),
+                        "rhdh-community-packages.txt": "release/plugins/release\n",
+                        "rhdh-supported-packages.txt": "",
+                    },
+                    "main": {
+                        "default.packages.yaml": (
+                            "packages:\n  enabled:\n    - package: '@main/plugin'\n"
+                        ),
+                        "rhdh-community-packages.txt": "main/plugins/main\n",
+                        "rhdh-supported-packages.txt": "",
+                    },
+                },
+            )
+            source = {"type": "local-git", "path": str(repo)}
+            core = repo_mod.load_core_index(Path(repo), "release-2.1", source)
+            self.assertIsNotNone(core)
+            assert core is not None
+            self.assertIsNotNone(core.get("@release/plugin"))
+            self.assertIsNone(core.get("@main/plugin"))
+
+            community, supported = lp.load_package_txt_lists(source, Path(repo), "release-2.1")
+            self.assertIn("release/plugins/release", community or "")
+            self.assertNotIn("main/plugins/main", community or "")
+            self.assertEqual(supported, "")
+
+
 if __name__ == "__main__":
     unittest.main()

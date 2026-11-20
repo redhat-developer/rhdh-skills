@@ -22,7 +22,31 @@ class DiffReport:
     warnings: list[str] = field(default_factory=list)
 
     def support_changes(self) -> list[dict[str, Any]]:
-        return [row for row in self.changed if "support" in row["changes"]]
+        return [
+            row
+            for row in self.changed
+            if "support" in row["changes"]
+            and row["from"]["support"] != "unknown"
+            and row["to"]["support"] != "unknown"
+        ]
+
+    def support_metadata_appeared(self) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.changed
+            if "support" in row["changes"]
+            and row["from"]["support"] == "unknown"
+            and row["to"]["support"] != "unknown"
+        ]
+
+    def support_metadata_disappeared(self) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.changed
+            if "support" in row["changes"]
+            and row["from"]["support"] != "unknown"
+            and row["to"]["support"] == "unknown"
+        ]
 
     def lifecycle_changes(self) -> list[dict[str, Any]]:
         return [row for row in self.changed if "lifecycle" in row["changes"]]

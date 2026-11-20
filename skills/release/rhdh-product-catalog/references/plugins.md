@@ -49,4 +49,4 @@ Display order: catalog group first, then support level (decreasing), then title 
 | `tech-preview` | Tech Preview | `tp`, `tech preview` |
 | `dev-preview` | Developer Preview | `dp`, `dev preview`, `developer preview` |
 | `community` | Community | `community` |
-| missing / anything else | Unknown | `unknown` |
+| missing / anything else | Unknown (missing metadata) | `unknown` |
