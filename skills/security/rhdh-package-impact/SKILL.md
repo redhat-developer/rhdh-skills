@@ -2,29 +2,51 @@
 name: rhdh-package-impact
 description: >-
   Classifies whether an npm package in a Backstage-style plugins monorepo
-  (rhdh-plugins / community-plugins, workspaces/<name>/) or the RHDH core repo
-  (redhat-developer/rhdh, root yarn.lock) reaches shipped code (PLUGIN_PROD /
-  CORE_PROD), plugin or core dev harnesses, local runners (plugins monorepo
-  only), or workspace root (WORKSPACE_DEV). Discovers packages from open
-  Dependabot alerts, classifies impact, checks first_patched_version, and
-  bumps via yarn up -R. Use when assessing Dependabot alerts, CVE bumps on
-  rhdh-plugins, community-plugins, or rhdh core, deciding if a CVE is
-  runner-only vs shipped, or interactively closing Dependabot alerts.
+  (rhdh-plugins / community-plugins, workspaces/<name>/), the RHDH core repo
+  (redhat-developer/rhdh, root yarn.lock), or a GitLab rhdh-plugin-catalog
+  release workspace reaches shipped code (PLUGIN_PROD / CORE_PROD), plugin or
+  core dev harnesses, local runners (plugins monorepo only), or workspace root
+  (WORKSPACE_DEV). Discovers packages from open Dependabot alerts, classifies
+  impact, checks first_patched_version, and bumps via yarn up -R. Use when
+  assessing Dependabot alerts, CVE bumps on rhdh-plugins, community-plugins, or
+  rhdh core, deciding if a CVE is runner-only vs shipped, interactively closing
+  Dependabot alerts, or doing a downstream catalog Dependabot CVE lockfile bump
+  on release-X.Y (skip-sync workspaces, reexport-dist-dynamic) when alerts come
+  from an upstream GitHub Dependabot host — not for Version Packages / overlay
+  promote into catalog (/rhdh-plugin-midstream-propagate).
 ---
 
 # plugins package impact
 
 ## Goal
 
-For a **plugins-monorepo workspace** (`rhdh-plugins` / `community-plugins`) or
-the **RHDH core repo** (`redhat-developer/rhdh`; [references/rhdh-core.md](references/rhdh-core.md)):
+For a **plugins-monorepo workspace** (`rhdh-plugins` / `community-plugins`), the
+**RHDH core repo** (`redhat-developer/rhdh`; [references/rhdh-core.md](references/rhdh-core.md)),
+or a **catalog midstream** workspace in GitLab `rhdh-plugin-catalog` on
+`release-X.Y` (alerts often from a separate GitHub Dependabot host):
 
 1. **Discover** packages from open Dependabot alerts under that workspace’s manifests.
 2. **Classify** each package (plugin prod / core prod / plugin dev / runner / workspace root).
 3. **Check patch status** vs Dependabot `first_patched_version` — especially `PATCHED_EXCEPT_RUNNER` (plugins monorepo only).
 4. **Dismiss** only when policy allows (runner-only, plugin-dev-only, workspace-dev-only, or runner-manifest alert-level).
+5. **Bump** lockfiles when needed; on catalog midstream, re-export `dist-dynamic/` after the workspace lock changes.
 
 Dismissal targets **local-dev** paths that are **exactly** `RUNNER`, **exactly** `PLUGIN_DEV`, **exactly** `CORE_DEV`, or **exactly** `WORKSPACE_DEV` — never `PLUGIN_PROD` or `CORE_PROD`. On rhdh core, `packages/app` and `packages/backend` **ship**; they are `CORE_PROD`, not `RUNNER`.
+
+## Route
+
+| Intent | Load |
+| --- | --- |
+| Assess / classify / patch-status | [workflows/assess.md](workflows/assess.md) |
+| Bump upstream plugins or rhdh core | [workflows/bump-workspace.md](workflows/bump-workspace.md) |
+| Downstream catalog Dependabot CVE bump (`rhdh-plugin-catalog`, `release-X.Y`, re-export) | [workflows/bump-catalog-midstream.md](workflows/bump-catalog-midstream.md) (includes workspace setup) |
+| Dismiss Dependabot alerts (policy) | [workflows/dismiss-alerts.md](workflows/dismiss-alerts.md) |
+| RHDH core layout / CORE_PROD | [references/rhdh-core.md](references/rhdh-core.md) |
+| Repo layouts (plugins, core, catalog midstream) | [references/repo-layouts.md](references/repo-layouts.md) |
+| Dismissal policy detail | [references/dismissal-policy.md](references/dismissal-policy.md) |
+| Classification labels | [references/classifications.md](references/classifications.md) |
+
+Not this skill: Version Packages → overlays → surgical catalog promote → `/rhdh-plugin-midstream-propagate`.
 
 ## Classifications
 
@@ -103,20 +125,25 @@ Default reason: `not_used`. Comment should cite classification, e.g. `runner-onl
 
 ## Prerequisites
 
-- Working directory (or `RHDH_PLUGINS_ROOT` / `RHDH_CORE_ROOT` / `--repo-root`) is either:
-  - a plugins monorepo with `workspaces/<name>/yarn.lock`, or
-  - rhdh core with a **root** `yarn.lock` + `packages/` (no `workspaces/` directory)
+- Working directory (or `RHDH_PLUGINS_ROOT` / `RHDH_CORE_ROOT` / `--repo-root`) is one of:
+  - a plugins monorepo with `workspaces/<name>/yarn.lock`,
+  - rhdh core with a **root** `yarn.lock` + `packages/` (no `workspaces/` directory), or
+  - `rhdh-plugin-catalog` with `workspaces/<name>/yarn.lock` (catalog midstream; alerts `--repo` may differ from the catalog remote)
 - Prefer `yarn install` in the target workspace before classifying
 - `node` ≥ 18
-- GitHub PAT (`GITHUB_TOKEN` / `GH_TOKEN` or a cwd-walked `.env`) for REST, **or** `--alerts-json` (no token)
+- Authenticated GitHub access for Dependabot REST: `GITHUB_TOKEN` or `GH_TOKEN`
+  already in the process environment (never commit credentials; never pass
+  `--token`), **or** `--alerts-json` (no live token)
 
 RHDH core details, commands, and the CORE_PROD vs RUNNER rule: [references/rhdh-core.md](references/rhdh-core.md).
+Catalog Dependabot CVE flow: [workflows/bump-catalog-midstream.md](workflows/bump-catalog-midstream.md).
 
 ### `--repo` vs `--repo-root` vs `--alerts-json`
 
 - `--repo <owner/name>` = **remote GitHub repository** queried by Dependabot REST API calls.
   - default resolution order: explicit `--repo`, then `GITHUB_REPOSITORY`, then `origin` remote from current checkout (or `--repo-root` for scripts that use it)
-- `--repo-root <path>` = **local checkout path** used for `yarn.lock` + `yarn why` classification.
+  - Catalog midstream: pass the **alerts** GitHub host here (often not the GitLab catalog remote)
+- `--repo-root <path>` = **local checkout path** used for `yarn.lock` + `yarn why` classification (catalog checkout when bumping midstream).
 - `--alerts-json <file>` = **snapshot** of GitHub list-alerts objects (JSON array, or `{ "alerts": [...] }`). No REST. Dump with `gh api --paginate --slurp "repos/OWNER/REPO/dependabot/alerts?state=open"`. Must include `security_vulnerability` (ranges / `first_patched_version`) for patch-status. Token not required.
 
 ### Auth / API rules (agents)
@@ -443,7 +470,12 @@ After bumping, re-run `check-dependabot-patch-status.js` to confirm patch level 
 ```
 Task progress:
 - [ ] Resolve workspace (`homepage` or `rhdh`) and `--repo-root`. RHDH core: `--repo redhat-developer/rhdh` ([references/rhdh-core.md](references/rhdh-core.md)).
-- [ ] Ensure GITHUB_TOKEN / GH_TOKEN via .env or env — NOT gh, --token, or git credential
+      Catalog Dependabot CVE bumps: Route →
+      [bump-catalog-midstream.md](workflows/bump-catalog-midstream.md)
+      (alerts `--repo` ≠ catalog `--repo-root`; `--no-dedupe`; re-export).
+- [ ] Ensure GITHUB_TOKEN / GH_TOKEN is in the process environment (or use
+      `--alerts-json`) — NOT gh, --token, or git credential helpers; never
+      commit credentials
 - [ ] If bumping interactively: `prepare-workspace-bump.js <workspace>`
       (fetch upstream/main, checkout -B chore/<workspace>-cve-bumps).
       Release trains: `--base release-X.Y` from a worktree of
