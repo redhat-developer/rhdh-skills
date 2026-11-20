@@ -1,0 +1,1 @@
+prompt: "Two reusable agent workflows answer the same user request and each forwards to the other. Decide whether the boundary should be removed and carry out the safe consolidation."

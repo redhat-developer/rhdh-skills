@@ -1,0 +1,3 @@
+should_trigger: false
+category: near-miss-plugin
+rationale: Creating a plugin is broader packaging work owned by plugin creation.
