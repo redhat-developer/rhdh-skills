@@ -45,6 +45,22 @@
       ]
     },
     {
+      "name": "rhdh-jira-lint",
+      "category": "jira",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "prose-editing",
+        "rhdh-feature-docs",
+        "rhdh-jira-api",
+        "rhdh-jira-authoring",
+        "rhdh-release-schedule"
+      ],
+      "optionalSkills": [
+        "rhdh-jira-update"
+      ]
+    },
+    {
       "name": "rhdh-jira-refine",
       "category": "jira",
       "invocation": "model",

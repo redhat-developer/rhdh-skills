@@ -1,0 +1,3 @@
+interface:
+  display_name: "RHDH Jira Lint"
+  short_description: "Find and fix RHDH Jira hygiene violations"

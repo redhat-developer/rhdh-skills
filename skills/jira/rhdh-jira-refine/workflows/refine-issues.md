@@ -256,12 +256,15 @@ and the edited bodies included in the plan.
 
 **Applied without individual prompts:**
 
-- Setting Priority to the parent's priority when the child reads "Undefined".
-- Adding a missing Component when the parent Epic has exactly one.
+- None. Rule-based hygiene remediation belongs to `/rhdh-jira-lint`; this skill
+  reports the gap and hands the fixed rule set to that skill.
 
 **Always needs the user:**
 
 - Setting Size or Story Points — these need estimation, not inference.
+  `/rhdh-jira-lint` has a separate, ADR-approved unattended procedure for
+  bounded hygiene remediation; this skill reports sizing gaps and recommends
+  human estimation instead.
 - Linking to a parent Feature or Epic — needs a choice among candidates.
 - Marking as duplicate — add a comment linking the original and set resolution to
   `Duplicate`.
