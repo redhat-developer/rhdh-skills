@@ -927,3 +927,68 @@ class TestGoModUpdateApplies:
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout == original
+
+
+class TestInPlaceRewrites:
+    """The readme and catalog-tag rewrites edit a file in place."""
+
+    @staticmethod
+    def _run(function: str, call: str, workdir: Path) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(
+            ["bash", "-c", f'{function}\ncd "$1" && {call}', "bash", str(workdir)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_update_nvm_releases_readme_rewrites_every_mention(self, tmp_path: Path) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_nvm_releases_readme")
+        readme = tmp_path / "README.adoc"
+        readme.write_text(
+            "As of 2026/01/15, this version is `v22.1.0`.\n"
+            "\n"
+            "The latest RPM is `v22.1.0`.\n"
+            "\n"
+            "NODE_HEADERS_VERSION=v22.1.0\n"
+            "\n"
+            "----\n"
+            "$ node --version\n"
+            "v22.1.0\n"
+            "----\n",
+            encoding="utf-8",
+        )
+
+        result = self._run(function, "update_nvm_releases_readme README.adoc v24.9.0", tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        text = readme.read_text(encoding="utf-8")
+        assert text.startswith("As of ")
+        assert "this version is `v24.9.0`" in text
+        assert "The latest RPM is `v24.9.0`." in text
+        assert "NODE_HEADERS_VERSION=v24.9.0" in text
+        assert "\nv24.9.0\n----\n" in text
+        assert "v22.1.0" not in text
+        assert not (tmp_path / "README.adoc.bak").exists()
+
+    def test_rewrite_catalog_additional_tags_rewrites_only_the_node_pin(
+        self, tmp_path: Path
+    ) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "rewrite_catalog_additional_tags")
+        containerfile = tmp_path / "builder.Containerfile"
+        containerfile.write_text(
+            "FROM registry.access.redhat.com/ubi9/nodejs-22:latest\n"
+            'LABEL version="1.9" release="3"\n'
+            'LABEL konflux.additional-tags="1.9-3,node-v22.1.0"\n',
+            encoding="utf-8",
+        )
+
+        result = self._run(
+            function, "rewrite_catalog_additional_tags builder.Containerfile 24.9.0", tmp_path
+        )
+
+        assert result.returncode == 0, result.stderr
+        text = containerfile.read_text(encoding="utf-8")
+        assert 'konflux.additional-tags="1.9-3,node-v24.9.0"' in text
+        assert 'version="1.9" release="3"' in text
+        assert "node-v22.1.0" not in text
+        assert not (tmp_path / "builder.Containerfile.bak").exists()

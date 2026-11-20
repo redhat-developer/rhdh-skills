@@ -48,6 +48,8 @@ Skills run on macOS, Windows, and Linux. Write scripts that work on all three:
 - **Path separators**: Use `pathlib.Path` or `os.path.join()`, never hardcode `/` in paths.
 - **Line endings**: Use `newline=""` when opening files for CSV/structured output. Don't assume `\n`.
 - **Shell commands**: If a script calls external tools, document the platform differences or use Python stdlib equivalents.
+- **In-place edits**: use `sed -i.bak` and delete the backup afterwards, never a bare `sed -i`. GNU sed takes no suffix, BSD sed (macOS) requires one, and `sed -i -E` therefore makes BSD sed read `-E` as that suffix: the edit runs without `-E`, rewrites nothing, and leaves a stray `*-E` file.
+- **Shell version**: macOS resolves `bash` to 3.2. Avoid `declare -A`, `mapfile`, and `${var,,}`; 3.2 also rejects a `case` statement used directly inside `$( ... )`, which shows up as a script that stops half-way through its output. Check the script with `bash -n` under 3.2 as well — `tests/unit/test_shell_portability.py` parses every shipped script that way.
 - **subprocess on Windows**: Tools installed via npm/yarn often resolve to `.cmd` shims. Resolve the
   native runtime and JavaScript entry point, then keep structured argv with `shell=False`. Never join
   user input into a command string:
