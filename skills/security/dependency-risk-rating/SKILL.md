@@ -43,7 +43,10 @@ S="$(mktemp -d)"
 
 ## Shared pipeline
 
-Every mode produces `changes.json`, then:
+Every mode below produces `changes.json` with `detect-changes.ts`. When
+something outside the skill already staged the base and head manifests as
+local files, `scripts/compare-manifests.ts` produces the same `changes.json`
+from four file paths, needing no git repo, no network, and no `gh`. Then:
 
 ```bash
 node scripts/collect-metrics.ts --changes $S/changes.json --config <repo-root-or-config> > $S/metrics.json
