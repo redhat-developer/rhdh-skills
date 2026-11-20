@@ -1,83 +1,83 @@
 ---
 name: osl-bump-automation
-description: Automate and verify OpenShift Serverless Logic (OSL) version bumps across the RHDH chart and operator repositories. Use when an OSL release requires synchronized startingCSV, kn-workflow URL, generated-manifest, documentation, schema, and chart-version updates.
+description: Run the scripted status, prepare, and verify workflow for an OpenShift Serverless Logic (OSL) version bump across the rhdh-chart and rhdh-operator repositories.
 ---
 
 # OSL bump automation
 
-Use this skill for the recurring change represented by the RHDH chart/operator OSL
-bump pull requests and RHIDP-17562. The authoritative input is the new OSL
-`MAJOR.MINOR.PATCH` version. Do not guess the version from a PR number or from
-an existing checkout.
+This skill reports and applies an OpenShift Serverless Logic (OSL) version bump across `redhat-developer/rhdh-chart` and `redhat-developer/rhdh-operator`: status, a dry-run plan, the edit, and a verification pass.
 
-## Constraints
+The workflow is implemented in the scripts under `scripts/`. Run them and read their output; do not reproduce the procedure as prompt steps, and do not re-derive the RHDHBUGS-3766/RHDHBUGS-3767 history on each run.
 
-- Run the helper from this skill's `scripts/` directory (or invoke it by its
-  path). It uses only Python's standard library.
-- Treat `rhdh-chart` and `rhdh-operator` as two separate Git repositories. Do
-  not combine their histories or commit changes across both repositories.
-- Never edit files outside the explicitly listed OSL paths in
-  `scripts/osl_bump.py`.
-- `plan` is read-only. `apply` requires the explicit `--write` flag.
-- Generated files are part of the change: do not update only the source YAML
-  and leave `README.md`, `values.schema.json`, `dist/`, or `bundle/` stale.
+The two repositories are separate checkouts with separate histories, so a bump is always two independent changes.
 
-## Procedure
+## When to use
 
-1. Confirm clean working trees and identify the target branches in both
-   checkouts. Save or shelve unrelated changes before applying anything.
-2. Obtain the exact OSL version from the release/change request, then run a
-   read-only plan:
+- A new OSL patch or minor release must land in both repositories - a CVE fix or a rebuild.
+- Someone asks where a bump stands: tickets, pull requests, base branches, merged versus open, hold label, catalog state.
+- A working tree needs checking before commit or review: did every OSL reference move?
 
-   ```bash
-   ./scripts/osl_bump plan --version 1.38.1 \
-     --chart-repo /path/to/rhdh-chart \
-     --operator-repo /path/to/rhdh-operator
-   ```
+Out of scope: merging pull requests, publishing to OperatorHub, and deciding that a CSV exists. Catalog state comes from the cluster or from `oc`, never from a ticket status.
 
-3. Review the planned files. In the chart repository the bump must synchronize
-   `charts/orchestrator-infra/values.yaml`, both schema files, both README
-   representations, and the chart patch version in `Chart.yaml`. In the
-   operator repository it must synchronize the profile source plus the checked
-   in generated `bundle/rhdh/...` and `dist/rhdh/...` manifests and the
-   plugin-dependency source.
-4. Apply only after reviewing the plan:
+## Prerequisites
 
-   ```bash
-   ./scripts/osl_bump apply --version 1.38.1 \
-     --chart-repo /path/to/rhdh-chart \
-     --operator-repo /path/to/rhdh-operator --write
-   ```
+| Dependency | Used for | If it is missing |
+| --- | --- | --- |
+| `acli`, or Atlassian MCP output passed with `--jira-json` | ticket state and PR references | the Jira section reports `unavailable` |
+| `gh`, or GitHub MCP output passed with `--github-json` | PR state, base branch, merged or open, hold labels | the GitHub section reports `unavailable` |
+| `oc` (optional) | `oc get packagemanifest logic-operator` | catalog state is reported as `unknown` |
 
-   The chart patch version is incremented automatically. Supply
-   `--chart-version X.Y.Z` only when the repository's release process requires
-   a different chart version.
-5. Inspect the diff in each repository. The only expected semantic changes are
-   the OSL version, the chart patch version, and their generated renderings.
-6. Verify exact synchronization:
+A missing tool is reported as `unavailable`, never as "nothing found". `unknown` is a
+valid catalog answer, and a Jira status never proves that a CSV is published.
 
-   ```bash
-   ./scripts/osl_bump verify --version 1.38.1 \
-     --chart-repo /path/to/rhdh-chart \
-     --operator-repo /path/to/rhdh-operator
-   ```
+## Commands
 
-7. Run repository-native checks. For the chart, run the repository's Helm
-   lint/chart-testing and README/schema generation checks. For the operator,
-   run formatting/lint/unit checks plus the manifest-generation or bundle
-   diff checks documented by its Makefile/CI. If an OpenShift cluster and
-   registry access are available, install the infra chart and approve the OLM
-   InstallPlan, then confirm the installed Logic Operator CSV equals
-   `logic-operator.v<version>`; otherwise clearly report that cluster validation
-   was not run.
-8. Commit and push one focused commit per repository, using the repository's
-   normal signed-off/PR conventions. Include the plan, verification result,
-   native checks, and any unavailable cluster/artifact checks in the PR body.
+Run from the skill's directory. `status`, `plan`, and `verify` are read-only; `apply` without `--write` is a dry run.
 
-## Testing expectations
+Summarise the current state:
 
-A bump is not complete when only one occurrence changes. Verify all selected
-files, search the diffs for the previous OSL version, and confirm the source and
-checked-in generated manifests agree. Use `plan` before every future bump and
-`verify` after every apply. The helper fails closed if an expected file or
-version pattern is absent, which protects against upstream layout changes.
+```bash
+python3 scripts/osl_status.py --issue RHIDP-17562 --json
+```
+
+Plan a bump without writing:
+
+```bash
+python3 scripts/osl_bump.py plan --version 1.40.0 \
+  --chart-repo <chart> --operator-repo <operator>
+```
+
+Apply it:
+
+```bash
+python3 scripts/osl_bump.py apply --version 1.40.0 \
+  --chart-repo <chart> --operator-repo <operator> --write
+```
+
+Verify every reference agrees:
+
+```bash
+python3 scripts/osl_bump.py verify --version 1.40.0 \
+  --chart-repo <chart> --operator-repo <operator>
+```
+
+`--kn-workflow-version <tag>` moves the kn-workflow tool tag only when it is passed; omitting it preserves the checked-in pin. Exit codes: `0` clean, `1` ran and found a mismatch, `2` could not run.
+
+## Rules
+
+- Never touch git history. `apply --write` edits the working tree only; committing and pushing stay with the engineer.
+- Never infer catalog availability from a Jira status. If the catalog cannot be read, report `unknown`.
+- Generated files must match their source: `dist/rhdh/install.yaml`, `bundle/rhdh/manifests/rhdh-plugin-deps_v1_configmap.yaml`, `README.md`, `values.schema.json`.
+- The kn-workflow tool tag is not the OSL version. Rebuilds have shipped a CSV newer than the tool (SRVLOGIC-1303), so the pin is preserved unless `--kn-workflow-version` is passed.
+- One commit per repository, signed off with `git commit -s`.
+- Opening pull requests is out of scope. Do not merge, do not remove a hold, and do not publish to OperatorHub.
+
+## Reference
+
+Read [references/osl-releases.json](references/osl-releases.json) before preparing a bump on a release line. It maps `1.9`, `1.10`, and `main` to their branches, records the kn-workflow pin policy, and lists the files each repository must change.
+
+## Completion
+
+Report what was produced: the status summary, the planned or applied file set, and the verfication result. State any dependency that was unavailable and any check that could not run.
+
+A bump is complete only when `verify` exits `0` for each repository that was changed, and the diffs contain nothing beyond the reported files.

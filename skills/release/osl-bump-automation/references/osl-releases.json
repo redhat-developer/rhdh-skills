@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "repositories": {
+    "chart": {
+      "name": "rhdh-chart",
+      "github": "redhat-developer/rhdh-chart",
+      "required_files": [
+        "charts/orchestrator-infra/Chart.yaml",
+        "charts/orchestrator-infra/README.md",
+        "charts/orchestrator-infra/README.md.gotmpl",
+        "charts/orchestrator-infra/values.yaml",
+        "charts/orchestrator-infra/values.schema.json",
+        "charts/orchestrator-infra/values.schema.tmpl.json"
+      ]
+    },
+    "operator": {
+      "name": "rhdh-operator",
+      "github": "redhat-developer/rhdh-operator",
+      "required_files": [
+        "config/profile/rhdh/plugin-infra/serverless-logic.yaml",
+        "config/profile/rhdh/plugin-infra/serverless-logic-v1.yaml",
+        "config/profile/rhdh/plugin-deps/tekton.yaml",
+        "bundle/rhdh/manifests/rhdh-plugin-deps_v1_configmap.yaml",
+        "dist/rhdh/install.yaml"
+      ]
+    }
+  },
+  "release_lines": {
+    "1.9": {
+      "chart_branch": "release-1.9",
+      "operator_branch": "release-1.9"
+    },
+    "1.10": {
+      "chart_branch": "release-1.10",
+      "operator_branch": "release-1.10"
+    },
+    "main": {
+      "chart_branch": "main",
+      "operator_branch": "main"
+    }
+  },
+  "jira": {
+    "source_issue": "RHIDP-17562",
+    "related_projects": [
+      "RHDHBUGS",
+      "SRVLOGIC"
+    ],
+    "reference_issues": [
+      "RHDHBUGS-3766",
+      "RHDHBUGS-3767"
+    ]
+  },
+  "github": {
+    "default_state": "all",
+    "required_pr_fields": [
+      "number",
+      "title",
+      "state",
+      "isDraft",
+      "baseRefName",
+      "headRefName",
+      "mergedAt",
+      "labels",
+      "reviews",
+      "statusCheckRollup",
+      "files"
+    ]
+  },
+  "catalog": {
+    "package_name": "logic-operator",
+    "csv_prefix": "logic-operator.v",
+    "namespace": "openshift-marketplace",
+    "truth_sources": [
+      "oc get packagemanifest logic-operator",
+      "OperatorHub catalog"
+    ],
+    "jira_is_not_catalog_truth": true
+  },
+  "human_gates": {
+    "dco_email": "ntwomey@redhat.com",
+    "hold_label": "hold",
+    "requires_human_approval_for": [
+      "push",
+      "merge",
+      "catalog_publish",
+      "hold_removal"
+    ]
+  },
+  "osl_versions": {
+    "operator_version_is_distinct_from_kn_workflow_version": true,
+    "default_kn_workflow_version_policy": "preserve_existing_unless_explicitly_changed"
+  }
+}

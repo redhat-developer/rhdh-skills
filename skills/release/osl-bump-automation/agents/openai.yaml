@@ -1,0 +1,3 @@
+interface:
+  display_name: "OSL Bump Automation"
+  short_description: "Status, prepare, and verify OpenShift Serverless Logic bumps"

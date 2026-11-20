@@ -58,6 +58,7 @@
       "source": "./",
       "description": "Release skills from the RHDH pack",
       "skills": [
+        "./skills/release/osl-bump-automation",
         "./skills/release/rhdh-overlay-cve-export",
         "./skills/release/rhdh-platform-lifecycle",
         "./skills/release/rhdh-release-announce",
