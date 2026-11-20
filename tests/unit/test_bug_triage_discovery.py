@@ -397,3 +397,53 @@ def test_public_pipeline_includes_nonlexical_linked_candidate_and_does_not_inven
     assert "RHDHBUGS-1" in {candidate.key for candidate in packet.duplicate_candidates}
     assert packet.verdict == "unclear"
     assert result.manifest["writes"] == []
+
+
+def test_collected_candidate_supersedes_stale_export_customer_and_status_data(tmp_path):
+    seed = record(issuelinks=[link("RHDHBUGS-1")])
+    stale = record("RHDHBUGS-1")
+    source = tmp_path / "input.json"
+    source.write_text(json.dumps({"issues": [seed, stale]}))
+    sample = tmp_path / "sample.json"
+    sample.write_text(
+        json.dumps(
+            {
+                "currentRelease": "2.1.0",
+                "scope": "all-open",
+                "eligibleCount": 2,
+                "tickets": [{"key": seed["key"], "kind": "all-open"}],
+            }
+        )
+    )
+    assessments = tmp_path / "assessments"
+    assessments.mkdir()
+    (assessments / f"{seed['key']}.json").write_text(
+        json.dumps({"key": seed["key"], "verdict": "unclear"})
+    )
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    fresh = record(
+        "RHDHBUGS-1",
+        labels=["RHDH-Customer"],
+        status={"name": "Closed", "statusCategory": {"name": "Done"}},
+    )
+    (evidence / f"{seed['key']}.json").write_text(
+        json.dumps({"discovery": {"key": seed["key"], "candidateRecords": [fresh]}})
+    )
+    result = run(
+        RunConfig(
+            input_path=str(source),
+            sample_path=str(sample),
+            output_dir=str(tmp_path / "run"),
+            assessments_dir=str(assessments),
+            evidence_dir=str(evidence),
+            scope="all-open",
+            current_release="2.1.0",
+            release_evidence="https://example.com/release/2.1.0",
+            as_of="2026-11-18",
+        )
+    )
+    candidate = next(c for c in result.packets[0].duplicate_candidates if c.key == fresh["key"])
+    assert candidate.customer_signals
+    assert candidate.status == "Closed"
+    assert result.manifest["coverage"]["corpusHasClosed"] is True

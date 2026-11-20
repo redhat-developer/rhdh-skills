@@ -25,7 +25,7 @@ from bugtriage.run import (  # noqa: E402
     default_jql,
     run,
 )
-from bugtriage.selection import SelectionConfig  # noqa: E402
+from bugtriage.selection import Control, SelectionConfig  # noqa: E402
 
 RELEASE = "2.1.0"
 RELEASE_RECORD = (
@@ -231,6 +231,66 @@ def test_age_threshold_cannot_be_changed_after_selection(inputs):
     inputs.aged_days = 30
     with pytest.raises(RunError, match="age threshold"):
         run(inputs)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"labels": ["RHDH-Customer"]}, {"status": {"name": "Closed"}}],
+)
+def test_saved_controls_recheck_customer_and_done_exclusions(inputs, change):
+    path = Path(inputs.input_path)
+    document = json.loads(path.read_text())
+    document["issues"][0]["fields"]["versions"] = []
+    path.write_text(json.dumps(document))
+    sample = build_sample_manifest(
+        load_export(str(path)),
+        SelectionConfig(current_release=RELEASE, controls=[Control("RHDHBUGS-101")]),
+        NOW,
+        default_jql(90),
+    )
+    Path(inputs.sample_path).write_text(json.dumps(sample))
+    assert sample["eligibleCount"] == 0
+    document["issues"][0]["fields"].update(change)
+    path.write_text(json.dumps(document))
+    with pytest.raises(RunError, match="control.*no longer eligible"):
+        run(inputs)
+    assert not Path(inputs.output_dir).exists()
+
+
+def test_out_of_scope_controls_cannot_make_partial_selection_complete(inputs):
+    path = Path(inputs.input_path)
+    document = json.loads(path.read_text())
+    for key, versions in [("RHDHBUGS-102", ["1.9.0"]), ("RHDHBUGS-103", [])]:
+        item = json.loads(json.dumps(document["issues"][0]))
+        item["key"] = key
+        item["fields"]["versions"] = [{"name": version} for version in versions]
+        document["issues"].append(item)
+    path.write_text(json.dumps(document))
+    sample = build_sample_manifest(
+        load_export(str(path)),
+        SelectionConfig(current_release=RELEASE, size=1, controls=[Control("RHDHBUGS-103")]),
+        NOW,
+        default_jql(90),
+    )
+    Path(inputs.sample_path).write_text(json.dumps(sample))
+    for entry in sample["tickets"]:
+        Path(inputs.assessments_dir, entry["key"] + ".json").write_text(
+            json.dumps({"key": entry["key"], "verdict": "unclear"})
+        )
+    result = run(inputs)
+    coverage = result.manifest["coverage"]
+    assert coverage["selectedIssues"] == coverage["eligibleIssues"] == 2
+    assert coverage["selectionComplete"] is False
+
+
+def test_supplied_sample_bytes_are_hashed_in_run_provenance(inputs):
+    import hashlib
+
+    result = run(inputs)
+    assert (
+        result.manifest["inputSha256"]["sample"]
+        == hashlib.sha256(Path(inputs.sample_path).read_bytes()).hexdigest()
+    )
 
 
 def test_second_run_refuses_output_without_modifying_it(inputs):

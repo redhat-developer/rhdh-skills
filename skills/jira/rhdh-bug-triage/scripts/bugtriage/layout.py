@@ -162,7 +162,9 @@ def _verdict_counts(packets: List[Packet]) -> Dict[str, int]:
 
 def _investigation_counts(packets: List[Packet]) -> Dict[str, int]:
     return {
-        status: sum((p.investigation or {}).get("status") == status for p in packets)
+        status: sum(
+            (p.investigation or {}).get("status", "not_recorded") == status for p in packets
+        )
         for status in ("completed", "blocked", "not_recorded")
     }
 
@@ -359,16 +361,16 @@ def render_start_here(
         "",
         "## How the run worked",
         "",
-        f"1. Verified the release record for `{current_release}` and recorded the evidence link.",
-        f"2. Read every bug in the export and selected {len(packets)} under the age, customer and affects-version rules; {excluded_count} were excluded with reasons.",
-        f"3. Searched {corpus_size or 'the'} open and closed bugs for duplicate and fix leads.",
-        "4. Gave each selected bug to one fresh investigator with only its own brief.",
+        f"1. Recorded the supplied release `{current_release}` and evidence link; the CLI does not verify the release record's contents.",
+        f"2. Loaded the export and assessed {len(packets)} selected bugs; {excluded_count} were excluded with reasons. Scope and controls are recorded in `audit/selection.json`.",
+        f"3. Searched a local comparison corpus of {corpus_size} bugs for duplicate and fix leads. Its open/closed coverage and collection limits are in `audit/RUN.md`.",
+        f"4. Loaded investigator assessments: {investigations['completed']} completed, {investigations['blocked']} blocked, {investigations['not_recorded']} not recorded. The CLI does not establish whether investigators used independent contexts.",
         "5. Checked evidence shape, method matching and proof gates, then routed each finding to `02-fixes/`.",
         "",
         "## Limits",
         "",
         "- The release under review is recorded in `audit/release.md`; the CLI records the supplied evidence link and does not verify its contents.",
-        "- Customer-field coverage is not established for this export. That is why held comments stay `review_required`; it is not permission to post them.",
+        f"- Customer-field coverage is complete for {customer_complete} of {len(packets)} assessed bugs. Delivery status also depends on history and proof checks; it is not permission to post.",
         "- Code reading is not running the product. Runtime claims are labelled as unproven or blocked.",
         "- A failed or cut-short search is not a zero result. See `audit/RUN.md`.",
         "",
@@ -614,7 +616,7 @@ def render_release(*, current_release: str, release_evidence: str, generated_at:
             "The tool records the supplied link; it does not verify the link's contents.",
             "Read the linked release record and the code anchors cited in each assessment before accepting a finding.",
             "",
-            "Code and documentation refs in the assessments are pinned to the exact tag, commit, or release artifact named there.",
+            "Check code and documentation refs against the exact tag, commit, or release artifact under review.",
             "",
         ]
     )
