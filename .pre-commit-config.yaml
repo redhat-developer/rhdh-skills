@@ -1,3 +1,7 @@
+# Avoid selecting a prerelease Node version when creating hook environments.
+default_language_version:
+  node: 22.22.0
+
 repos:
   # Python linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
