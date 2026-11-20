@@ -264,11 +264,6 @@ def run(config: RunConfig) -> RunResult:
     backlog = tickets
     if config.backlog_path:
         backlog = load_export(config.backlog_path)
-    # Duplicate retrieval is only as good as the backlog. A closed canonical
-    # report is invisible when the export holds open tickets only, so record
-    # that instead of silently implying the search was complete.
-    backlog_has_closed = any(ticket.is_done for ticket in backlog)
-
     assessments = load_assessments(config.assessments_dir)
     absent = sorted(set(selection) - set(assessments))
     if absent:
@@ -315,6 +310,9 @@ def run(config: RunConfig) -> RunResult:
             backlog_by_key[candidate.key] = candidate
     backlog_by_key.update(tickets_by_key)
     backlog = list(backlog_by_key.values())
+    # Duplicate retrieval is only as good as the backlog. A closed canonical
+    # report is invisible when the export holds open tickets only, so record
+    # that instead of silently implying the search was complete.
     backlog_has_closed = any(item.is_done for item in backlog)
     packets: List[Packet] = []
     for key in selection:
@@ -419,7 +417,7 @@ def run(config: RunConfig) -> RunResult:
         output_path=str(output_dir),
         backlog_size=len(backlog),
         backlog_has_closed=backlog_has_closed,
-        sample_size=sum(1 for entry in selection.values() if entry.get("kind") == "aged"),
+        sample_size=sum(1 for entry in selection.values() if entry.get("kind") != "control"),
         control_count=sum(1 for entry in selection.values() if entry.get("kind") == "control"),
         packets=packets,
         thresholds=thresholds,

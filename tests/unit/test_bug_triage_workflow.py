@@ -115,6 +115,29 @@ def test_end_to_end_uncertainty_has_exact_comment_not_an_empty_closure_report(in
     assert result.manifest["inputSha256"]["export"]
 
 
+@pytest.mark.parametrize("scope", ["aged", "all-open"])
+def test_sample_size_counts_every_reviewed_bug_not_only_aged_ones(inputs, scope):
+    """``sampleSize`` describes the run, not the name of the scope.
+
+    ``Selection.kind`` carries the scope string, so counting only ``kind ==
+    "aged"`` recorded zero reviewed bugs for an ``--scope all-open`` run while
+    the packets correctly held every bug.
+    """
+    sample = build_sample_manifest(
+        load_export(inputs.input_path),
+        SelectionConfig(current_release=RELEASE, all_tickets=True, scope=scope),
+        NOW,
+        default_jql(90, scope),
+    )
+    Path(inputs.sample_path).write_text(json.dumps(sample))
+    inputs.scope = scope
+
+    result = run(inputs)
+
+    assert result.manifest["sampleSize"] == 1
+    assert result.manifest["sampleSize"] == result.manifest["counts"]["packets"]
+
+
 def test_missing_assessment_directory_is_an_error_not_successful_zero_results(inputs):
     inputs.assessments_dir += "-typo"
     with pytest.raises(RunError, match="assessment directory"):

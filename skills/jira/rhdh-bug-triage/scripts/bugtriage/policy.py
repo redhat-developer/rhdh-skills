@@ -336,6 +336,22 @@ def _jira_ref(ref: str) -> str:
     return ""
 
 
+def _ref_label(ref: str, url, tail: str) -> str:
+    """Human label for a non-Jira link; the shape of the URL picks the noun."""
+    if "/pull/" in ref:
+        return f"PR #{tail}"
+    if "/commit/" in ref:
+        return f"commit {tail[:7]}"
+    if "/blob/" in url.path:
+        return f"{tail}:{url.fragment}" if url.fragment else tail
+    focused = parse_qs(url.query).get("focusedCommentId")
+    if focused:
+        return f"{tail} comment {focused[0]}"
+    if "/releases/" in url.path or "/errata/" in url.path:
+        return "release record"
+    return f"{url.hostname}: {tail}" if tail else str(url.hostname)
+
+
 def ref_link(ref: str, label: str = "") -> str:
     if not ref:
         return ""
@@ -345,23 +361,7 @@ def ref_link(ref: str, label: str = "") -> str:
         url = urlsplit(ref)
         tail = url.path.rstrip("/").rsplit("/", 1)[-1]
         if not label:
-            label = (
-                f"PR #{tail}"
-                if "/pull/" in ref
-                else f"commit {tail[:7]}"
-                if "/commit/" in ref
-                else f"{tail}:{url.fragment}"
-                if "/blob/" in url.path and url.fragment
-                else tail
-                if "/blob/" in url.path
-                else f"{tail} comment {parse_qs(url.query)['focusedCommentId'][0]}"
-                if "focusedCommentId" in parse_qs(url.query)
-                else "release record"
-                if "/releases/" in url.path or "/errata/" in url.path
-                else f"{url.hostname}: {tail}"
-                if tail
-                else str(url.hostname)
-            )
+            label = _ref_label(ref, url, tail)
         return f"[{label}]({ref})"
     return f"`{ref}`"
 

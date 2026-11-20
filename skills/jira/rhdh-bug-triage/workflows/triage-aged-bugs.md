@@ -174,9 +174,10 @@ Use a fresh output directory; a non-empty one is refused so stale drafts can
 never survive. Missing assessments, unfilled verdicts or broken inputs stop
 the run — do not manufacture an "unclear" just to get exit code 0.
 `--require-investigation` refuses assessments whose checks were not actually
-done; `--require-fix-plan` refuses ones without a fix plan. A blocked
-investigation needs one unknown check and a sentence on what is missing, and
-stays visibly blocked.
+done; `--require-fix-plan` refuses ones without a fix plan. `template` writes
+empty shells, and those shells are exactly what both flags refuse: fill every
+field before the first strict run. A blocked investigation needs one unknown
+check and a sentence on what is missing, and stays visibly blocked.
 
 The run writes a phased root. `01-triage/` contains the decision page
 (`START-HERE.md`), one exact draft per bug under `comments/`, and the
@@ -222,7 +223,7 @@ write phase are separate, explicitly approved work under `/mutation-gate`.
 ## Scoring against known answers
 
 ```bash
-python3 scripts/triage.py evaluate --packets REVIEW/01-triage/audit/packets.json \
+python3 scripts/triage.py evaluate --packets review/01-triage/audit/packets.json \
   --truth labels.json --strict
 ```
 

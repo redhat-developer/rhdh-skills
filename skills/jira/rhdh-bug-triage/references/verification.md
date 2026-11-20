@@ -75,7 +75,7 @@ facts or reviewers; perform and retain the actual source inspection separately.
 
 ## Evaluation and live shadow review
 
-Run `evaluate --packets REVIEW/01-triage/audit/packets.json --truth labels.json --strict` through
+Run `evaluate --packets review/01-triage/audit/packets.json --truth labels.json --strict` through
 `scripts/triage.py` using independently established labels. Strict failure must
 cover false duplicate/fixed closure advice, wrong tracker kept, **false still-valid
 or other definitive conclusions**, unlabelled packets and labels absent from

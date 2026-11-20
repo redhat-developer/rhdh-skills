@@ -180,10 +180,15 @@ def _case_action(packet: Packet) -> str:
     if outcome == "resolution":
         return "Review the resolution: close, retarget, or verify the finding. No code change is proposed."
     if outcome == "blocked":
-        blocker = (packet.investigation or {}).get("blocker") or "the named check"
+        blocker = (packet.investigation or {}).get("blocker") or ""
+        if not blocker.strip():
+            return "Do the one missing check named in the investigation record, then re-triage."
         return f"Do the missing check first: {_one_line(blocker, 240)}"
     if outcome == "docs":
-        return "Update the documentation named in the fix plan, then verify the 2.1 page."
+        return (
+            "Update the documentation named in the fix plan, then verify the "
+            f"{packet.current_release} page."
+        )
     if outcome == "new-bugs":
         return "Create the follow-up Jira issue named in the plan, then re-triage the original."
     return "Implement the fix plan, run the named tests, and open a PR for review."
@@ -766,7 +771,10 @@ def render_plan(packet: Packet) -> str:
             + ".md` first."
         )
     elif outcome == "docs":
-        lines.append("- Update the documentation and check the 2.1 page after the change.")
+        lines.append(
+            "- Update the documentation and check the "
+            f"{packet.current_release} page after the change."
+        )
     elif outcome == "new-bugs":
         lines.append("- Create the follow-up issue, then link it to the original.")
     else:
