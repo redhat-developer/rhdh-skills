@@ -16,36 +16,55 @@
  */
 
 /**
- * List unique npm packages from open Dependabot alerts for an rhdh-plugins
- * workspace (or a specific manifest). Output is the package list used as
- * input to classify-cve-source.js impact assessment.
+ * List unique npm packages from open Dependabot alerts for a plugins
+ * workspace or the rhdh core product lockfile. Output is the package list
+ * used as input to classify-cve-source.js impact assessment.
  *
- * Uses GitHub REST (fetch) only — never the gh CLI.
+ * Uses GitHub REST (fetch) only — never the gh CLI — unless --alerts-json
+ * supplies a snapshot (no token, no network).
  * Token from GITHUB_TOKEN / GH_TOKEN env or a .env file (see github-auth.js).
  */
 
-import { resolveGithubToken } from './github-auth.js';
-import { resolveGithubRepo } from './github-repo.js';
-
-const API_BASE = 'https://api.github.com';
+import { loadDependabotAlerts } from './dependabot-alerts.js';
+import {
+  filterAlertsForLayout,
+  filterAlertsForPackageDiscovery,
+  resolveRepoLayout,
+} from './repo-layout.js';
+import {
+  resolveBumpBase,
+  wantsDualLockfileBump,
+} from './release-1.10-dual-lockfile.js';
 
 function usage() {
   console.error(`Usage: list-dependabot-packages.js [options] <workspace-or-manifest>
 
 Fetch open Dependabot alerts for a workspace (all manifests under
-workspaces/<name>/) or a single manifest path, and print the unique package
-names — the input set for classify-cve-source.js.
+workspaces/<name>/) or the rhdh core product lockfile (yarn.lock +
+packages/ + plugins/), and print the unique package names — the input
+set for classify-cve-source.js.
 
 Uses GitHub REST API (not gh). Token: GITHUB_TOKEN / GH_TOKEN in the
-environment or a .env file near cwd.
+environment or a .env file near cwd. --alerts-json skips REST and token.
 
 <workspace-or-manifest> may be:
   homepage
   workspaces/homepage
   workspaces/homepage/yarn.lock
+  rhdh            (redhat-developer/rhdh product lockfile)
+  yarn.lock       (rhdh core exact manifest)
+
+On rhdh-core release-1.10 only, package discovery also includes alerts
+under dynamic-plugins/ so one list covers both lockfiles (REMOVE WHEN EOL).
 
 Options:
-  --repo <owner/name>            Remote GitHub repo for REST alerts\n                                 (default: detect from GITHUB_REPOSITORY or git origin)
+  --repo <owner/name>            Remote GitHub repo for REST alerts
+                                 (default: detect from GITHUB_REPOSITORY or git origin)
+  --repo-root <path>             Local checkout (detects plugins vs rhdh-core)
+  --alerts-json <file>           Snapshot of GitHub Dependabot alert objects
+                                 (array, or { "alerts": [...] }). No REST.
+  --base <branch>                Release train for dual-lockfile discovery
+                                 (else CVE_BASE_BRANCH, else infer from git)
   --state <open|dismissed|fixed|auto_dismissed|all>
                                  Alert state filter (default: open)
   --scope <runtime|development>  Optional dependency scope filter
@@ -57,8 +76,8 @@ Options:
 
 Examples:
   GITHUB_TOKEN=… node list-dependabot-packages.js homepage
-  GITHUB_TOKEN=… node list-dependabot-packages.js homepage --json
-  GITHUB_TOKEN=… node list-dependabot-packages.js workspaces/homepage/yarn.lock --exact-manifest
+  GITHUB_TOKEN=… node list-dependabot-packages.js --repo redhat-developer/rhdh rhdh --json
+  node list-dependabot-packages.js homepage --alerts-json /tmp/dependabot-alerts.json
 `);
 }
 
@@ -68,6 +87,9 @@ function parseArgs(argv) {
     state: 'open',
     scope: undefined,
     repo: undefined,
+    repoRoot: undefined,
+    alertsJson: undefined,
+    base: undefined,
   };
   const positional = [];
 
@@ -86,6 +108,21 @@ function parseArgs(argv) {
       options.repo = argv[++i];
       if (!options.repo) {
         throw new Error('--repo requires owner/name');
+      }
+    } else if (arg === '--repo-root') {
+      options.repoRoot = argv[++i];
+      if (!options.repoRoot) {
+        throw new Error('--repo-root requires a path');
+      }
+    } else if (arg === '--alerts-json') {
+      options.alertsJson = argv[++i];
+      if (!options.alertsJson) {
+        throw new Error('--alerts-json requires a file path');
+      }
+    } else if (arg === '--base') {
+      options.base = argv[++i];
+      if (!options.base) {
+        throw new Error('--base requires a branch name');
       }
     } else if (arg === '--token') {
       throw new Error(
@@ -111,140 +148,6 @@ function parseArgs(argv) {
   return { flags, options, positional };
 }
 
-function resolveToken() {
-  return resolveGithubToken({
-    requiredFor: 'Dependabot alerts read',
-  });
-}
-
-function parseOwnerRepo(repo) {
-  const [owner, name, ...rest] = repo.split('/');
-  if (!owner || !name || rest.length) {
-    throw new Error(`Invalid --repo "${repo}"; expected owner/name`);
-  }
-  return { owner, repo: name };
-}
-
-/**
- * Normalize input to { workspace, prefix, exactManifest }.
- * prefix = workspaces/<name>/  (all alerts under workspace)
- * exactManifest set when input ends with yarn.lock/package.json or --exact-manifest
- */
-function normalizeWorkspaceInput(input, exactManifestFlag) {
-  let path = input.replace(/^\.\//, '').replace(/\/+$/, '');
-
-  if (!path.includes('/') && !path.endsWith('.lock') && !path.endsWith('.json')) {
-    path = `workspaces/${path}`;
-  }
-
-  if (path.startsWith('workspaces/')) {
-    const rest = path.slice('workspaces/'.length);
-    const slash = rest.indexOf('/');
-    const workspace = slash === -1 ? rest : rest.slice(0, slash);
-    if (!workspace) {
-      throw new Error(`Could not parse workspace from "${input}"`);
-    }
-
-    const isFile =
-      path.endsWith('.lock') ||
-      path.endsWith('.json') ||
-      exactManifestFlag;
-
-    if (isFile) {
-      let manifest = path;
-      if (
-        exactManifestFlag &&
-        !path.endsWith('.lock') &&
-        !path.endsWith('.json')
-      ) {
-        manifest = `${path}/yarn.lock`;
-      }
-      return {
-        workspace,
-        prefix: `workspaces/${workspace}/`,
-        exactManifest: manifest,
-      };
-    }
-
-    return {
-      workspace,
-      prefix: `workspaces/${workspace}/`,
-      exactManifest: null,
-    };
-  }
-
-  throw new Error(
-    `Expected workspace name or workspaces/<name>/… path, got "${input}"`,
-  );
-}
-
-function parseNextLink(linkHeader) {
-  if (!linkHeader) {
-    return null;
-  }
-  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-  return match ? match[1] : null;
-}
-
-function formatApiError(status, message, repo) {
-  if (status === 401 || status === 403) {
-    return `Failed to access Dependabot alerts for ${repo} (HTTP ${status}). Check GITHUB_TOKEN permissions. Details: ${message}`;
-  }
-  if (status === 404) {
-    return `Dependabot alerts not found for ${repo} (HTTP 404). Details: ${message}`;
-  }
-  return `GitHub API error for ${repo}: ${message}`;
-}
-
-async function fetchAllAlerts({ token, owner, repo, state }) {
-  const alerts = [];
-  const params = new URLSearchParams({ per_page: '100' });
-  if (state && state !== 'all') {
-    params.set('state', state);
-  }
-  let nextUrl = `${API_BASE}/repos/${owner}/${repo}/dependabot/alerts?${params}`;
-
-  while (nextUrl) {
-    const response = await fetch(nextUrl, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'plugins-package-impact',
-      },
-    });
-
-    const text = await response.text();
-    let data = null;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { message: text };
-      }
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        formatApiError(
-          response.status,
-          data?.message || response.statusText,
-          `${owner}/${repo}`,
-        ),
-      );
-    }
-
-    if (!Array.isArray(data) || data.length === 0) {
-      break;
-    }
-
-    alerts.push(...data);
-    nextUrl = parseNextLink(response.headers.get('link'));
-  }
-
-  return alerts;
-}
-
 function summarizeAlert(alert) {
   return {
     number: alert.number,
@@ -261,26 +164,11 @@ function summarizeAlert(alert) {
   };
 }
 
-function filterAlerts(alerts, { prefix, exactManifest, scope }) {
-  return alerts.filter(alert => {
-    const dep = alert.dependency ?? {};
-    const manifest = dep.manifest_path ?? '';
-    const pkg = dep.package?.name;
-    if (!pkg || !manifest) {
-      return false;
-    }
-    if (exactManifest) {
-      if (manifest !== exactManifest) {
-        return false;
-      }
-    } else if (!manifest.startsWith(prefix)) {
-      return false;
-    }
-    if (scope && dep.scope !== scope) {
-      return false;
-    }
-    return true;
-  });
+function filterByScope(alerts, scope) {
+  if (!scope) {
+    return alerts;
+  }
+  return alerts.filter(alert => (alert.dependency ?? {}).scope === scope);
 }
 
 function compilePackages(filtered) {
@@ -335,29 +223,41 @@ async function main() {
     process.exit(1);
   }
 
-  const { workspace, prefix, exactManifest } = normalizeWorkspaceInput(
-    positional[0],
-    flags.has('exact-manifest'),
-  );
-  const repoFull = await resolveGithubRepo({
+  const layout = resolveRepoLayout({
+    explicitRoot: options.repoRoot,
+    workspaceInput: positional[0],
+    exactManifest: flags.has('exact-manifest'),
     explicitRepo: options.repo,
-    requiredFor: 'Dependabot alerts read',
+    requireCheckout: false,
   });
-  const { owner, repo } = parseOwnerRepo(repoFull);
-  const token = resolveToken();
+  const { workspace, exactManifest, lockfileRel, kind } = layout;
+  const base = await resolveBumpBase({
+    repoRoot: layout.repoRoot,
+    explicitBase: options.base,
+  });
+  const dualLockfile = wantsDualLockfileBump({
+    layoutKind: kind,
+    scope: layout.scope,
+    base,
+  });
 
-  const allAlerts = await fetchAllAlerts({
-    token,
-    owner,
-    repo,
-    state: options.state,
-  });
+  const { alerts: allAlerts, repo: repoFull, fromSnapshot } =
+    await loadDependabotAlerts({
+      alertsJson: options.alertsJson,
+      explicitRepo: options.repo || layout.defaultDependabotRepo,
+      cwd: layout.repoRoot || process.cwd(),
+      state: options.state,
+    });
 
-  const filtered = filterAlerts(allAlerts, {
-    prefix,
-    exactManifest,
-    scope: options.scope,
-  });
+  const filtered = filterByScope(
+    filterAlertsForPackageDiscovery(allAlerts, layout, { dualLockfile }),
+    options.scope,
+  );
+  // Product-only count for comparison in JSON (excludes dynamic-plugins/).
+  const productOnly = filterByScope(
+    filterAlertsForLayout(allAlerts, layout),
+    options.scope,
+  );
 
   const packages = compilePackages(filtered);
   const packageNames = packages.map(p => p.package);
@@ -368,11 +268,17 @@ async function main() {
         {
           repo: repoFull,
           workspace,
-          prefix,
+          layout: kind,
+          lockfileRel,
+          prefix: layout.alertPrefix,
           exactManifest,
           state: options.state,
           scope: options.scope ?? null,
+          base,
+          dualLockfile,
+          source: fromSnapshot ? 'alerts-json' : 'github-rest',
           alertCount: filtered.length,
+          productAlertCount: productOnly.length,
           packageCount: packageNames.length,
           packages: packageNames,
           packageDetails: packages.map(
@@ -392,18 +298,17 @@ async function main() {
     return;
   }
 
-  // Default: one package per line for piping into classify
   for (const name of packageNames) {
     console.log(name);
   }
 
   if (packageNames.length === 0) {
     console.error(
-      `No ${options.state} Dependabot alerts for ${exactManifest || prefix}`,
+      `No ${options.state} Dependabot alerts for ${exactManifest || lockfileRel}`,
     );
   } else {
     console.error(
-      `# ${packageNames.length} package(s) from ${filtered.length} alert(s) under ${exactManifest || prefix}`,
+      `# ${packageNames.length} package(s) from ${filtered.length} alert(s) under ${exactManifest || lockfileRel}${dualLockfile ? ' (+ dynamic-plugins/ on release-1.10)' : ''}`,
     );
   }
 }

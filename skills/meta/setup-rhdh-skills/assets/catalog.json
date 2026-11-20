@@ -17,19 +17,11 @@
   ],
   "skills": [
     {
-      "name": "rhdh-bug-triage",
-      "category": "jira",
+      "name": "rhdh-cve-pr-jira-link",
+      "category": "security",
       "invocation": "model",
       "requiresSkills": [
-        "rhdh-jira-api",
-        "rhdh-jira-authoring",
-        "rhdh-context",
-        "rhdh-forge",
-        "prose-editing"
-      ],
-      "optionalSkills": [
-        "mutation-gate",
-        "rhdh-plugin-bug-fix"
+        "mutation-gate"
       ]
     },
     {
@@ -324,6 +316,12 @@
         "mutation-gate",
         "rhdh-pr-mr"
       ]
+    },
+    {
+      "name": "cve-pr-review",
+      "category": "security",
+      "invocation": "model",
+      "requiresSkills": []
     },
     {
       "name": "rhdh-platform-lifecycle",

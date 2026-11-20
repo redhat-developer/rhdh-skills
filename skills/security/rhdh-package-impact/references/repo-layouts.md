@@ -1,6 +1,6 @@
 # Repository layouts
 
-## Supported today: plugins monorepos
+## Plugins monorepos
 
 Checkouts shaped like `redhat-developer/rhdh-plugins` or
 `redhat-developer/community-plugins`:
@@ -18,13 +18,28 @@ Flags and env:
 | `--repo <owner/name>` | Remote GitHub repo for Dependabot REST |
 | `GITHUB_REPOSITORY` / `origin` | Fallbacks for `--repo` |
 | `GH_TOKEN` / `GITHUB_TOKEN` | Dependabot read/write (prefer env; fullsend mints these) |
+| `--alerts-json <file>` | Fullsend / offline snapshot (no REST) |
 
 Prefer `yarn install` in the target workspace before classify so `yarn why -R`
 resolves.
 
-## Future: `redhat-developer/rhdh`
+## RHDH core (`redhat-developer/rhdh`)
 
-The midstream / app monorepo does not use the same `workspaces/<name>/` plugin
-layout. Until classify and bump grow an explicit layout adapter for it, refuse
-with a clear error rather than inventing paths. Keep using `--repo-root` as the
-primary flag so the env name does not hard-wire “plugins only.”
+Single-root Yarn workspace: root `yarn.lock` + `packages/` (+ `plugins/`,
+`backstage.json`). Detected as layout `rhdh-core`. Workspace token `rhdh`
+(aliases `.`, `root`). Default Dependabot repo: `redhat-developer/rhdh`.
+
+Product alert/bump scope is root + `packages/**` + `plugins/**` only.
+`e2e-tests/` and `.ci/` stay separate tokens when needed.
+
+**Temporary (REMOVE WHEN `release-1.10` EOL):** on the release-1.10 train
+only, product / main Dependabot alerts are assumed to also apply to
+wrapped plugins under `dynamic-plugins/`, and that package list drives a
+second `yarn up -R` there when still vulnerable. Imperfect but closes a
+patching gap — see [rhdh-core.md](rhdh-core.md) and
+`scripts/release-1.10-dual-lockfile.js`. `main` and `release-2.1+` remain
+root-only. There is no `dynamic-plugins` workspace token. Scheduled CVE
+workflows that set `--base release-1.10` live in the **rhdh core** repo;
+plugins-monorepo Fullsend schedules omit that path.
+
+Env fallback: `RHDH_CORE_ROOT`.

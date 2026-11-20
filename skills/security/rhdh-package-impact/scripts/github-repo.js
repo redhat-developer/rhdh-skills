@@ -3,7 +3,7 @@ import { promisify } from 'util';
 
 const execFile = promisify(execFileCb);
 
-function parseOwnerRepo(raw) {
+export function parseOwnerRepo(raw) {
   const candidate = String(raw || '').trim();
   const [owner, repo, ...rest] = candidate.split('/');
   if (!owner || !repo || rest.length) {

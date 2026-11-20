@@ -54,14 +54,47 @@ For every Critical and Medium PR:
 - ⚠️ Only a team reviewer → responsibility diluted
 - ✅ Individual assigned → clear ownership
 
-**Checks**
+**Next command**
 
-- `publish` must pass before merge
-- `workspace-tests` / `smoke` validates that the plugin loads
+Derive one next action per PR from its state. Apply the first row that matches.
+
+| PR state | Next action |
+|---|---|
+| `do-not-merge` label | No action — OCI artifact only |
+| Draft | Wait for the author |
+| `publish` check failed | Read the run log, then `/publish` or `workflows/fix-build.md` |
+| `publish` check missing | `/publish` |
+| `publish` check pending | Wait |
+| Any other check failed | Fix the failing check; `/publish` again if the check tests the published artifact |
+| Checks pending | Wait |
+| Checks unreadable | Re-run triage |
+| Every check passed | Ready to merge |
 
 A check absent from the rollup never ran. Treat that as "needs `/publish`", not
 as a failure, and confirm any verdict against the head branch's runs before
 reporting it.
+
+`publish` is the only required status check on `main` and `release-**`. The
+command that ran creates it, so a PR needs its next command before it can merge.
+
+**What a PR without exactly one workspace needs**
+
+`pr-actions.yaml` resolves exactly one workspace from the branch name or the PR
+files. When a PR touches zero or several workspaces, `prepare` skips the pending
+status and `add_no_workspace_comment` records a successful one under the
+command's name, with a comment saying the action was cancelled. That status
+satisfies the required check, so `/publish` is still the next command for such a
+PR: it records the check without publishing anything or dispatching smoke tests.
+Report the cancellation; do not report the PR as blocked.
+
+Splitting the PR per workspace is optional and only right when the change
+belongs to one workspace. Repo-wide changes to shared scripts and workflows
+legitimately touch many workspaces and merge through the cancelled `/publish`
+run. A `workspaces/release-<version>__<workspace>` branch resolves to its
+workspace by name even when the PR touches several.
+
+`/publish` success dispatches the workspace smoke tests itself, so `/smoketest`
+is only for a published PR that needs another tag or a re-run.
 
 **Staleness**
 
@@ -81,16 +114,17 @@ Generated: {date}
 
 ### 🔴 Critical — Mandatory Workspace Updates
 
-| PR | Plugin | Days Stale | Assignee | Checks | Action |
-|----|--------|------------|----------|--------|--------|
-| #1234 | aws-ecs | 3 | @user | ✅ Publish ✅ Smoke | Ready to merge |
-| #1235 | intelligent-assistant | 7 | (none) | ⏳ Publish | Assign + /publish |
+| PR | Plugin | Days Stale | Assignee | Action |
+|----|--------|------------|----------|--------|
+| #1234 | aws-ecs | 3 | @user | Ready to merge |
+| #1235 | intelligent-assistant | 7 | (none) | Trigger /publish + Assign owner |
 
 ### 🟡 Medium — Mandatory Workspace Additions
 
-| PR | Plugin | Days Stale | Assignee | Checks | Action |
-|----|--------|------------|----------|--------|--------|
-| #1240 | new-plugin | 2 | @contributor | ❌ Missing CODEOWNERS | Request CODEOWNERS |
+| PR | Plugin | Days Stale | Assignee | Action |
+|----|--------|------------|----------|--------|
+| #1240 | new-plugin | 2 | @contributor | Fix failing checks |
+| #1242 | catalog,theme | 1 | @contributor | Trigger /publish (2 workspaces: /publish is cancelled and only records the required check) |
 
 ### 🟢 Low — Community Additions
 [... or "No low-priority PRs" ...]
@@ -100,15 +134,24 @@ Generated: {date}
 |----|--------|--------|
 | #1250 | orchestrator-test | OCI artifact only |
 
+### ❓ Unknown — Needs Labels
+
+| PR | Title | Days Stale | Author | Next |
+|----|-------|------------|--------|------|
+| #1244 | fix(ci): make the stale label truthful | 6 | @contributor | Trigger /publish |
+
 ---
 
 ## Suggested Actions
 
-1. [ ] **Assign** @someone to PR #1235 (intelligent-assistant, 7 days stale)
-2. [ ] **Trigger** `/publish` on PR #1236
-3. [ ] **Ping** @owner for PR #1237 (blocking release)
-4. [ ] **Request** CODEOWNERS from contributor on PR #1240
+1. [ ] **Trigger /publish + Assign owner** — PR #1235 (intelligent-assistant, 7 days stale)
+2. [ ] **Fix failing checks + Escalate (stale)** — PR #1240 (new-plugin, 9 days stale)
+3. [ ] **Trigger /publish (2 workspaces: /publish is cancelled and only records the required check)** — PR #1242 (catalog,theme, 4 days stale)
 ```
+
+Every tier that carries an action shows it, and the Unknown table shows the next
+command, so an unlabeled PR still says what it needs. The Action column combines
+the next command with ownership and staleness advice when either applies.
 
 ---
 

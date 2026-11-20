@@ -87,9 +87,21 @@ printf '%s\n' "$(PI_MODEL="${harness_model_dir}/${harness_model}" PI_REASONING_L
   exit 1
 }
 
+# Jira-less automation: no --issue opens with attribution only, no Jira line.
+no_issue_dry=$("${SH}" --cwd "${tmpdir}" --base main --head chore/test --title 'chore: test' \
+  --attribution "${full_attribution}" --dry-run)
+if printf '%s\n' "${no_issue_dry}" | grep -Fq 'Related Jira:'; then
+  echo "expected no Jira line without --issue" >&2
+  exit 1
+fi
+printf '%s\n' "${no_issue_dry}" | grep -Fxq "Assisted-By: ${full_attribution}" || {
+  echo "expected attribution without --issue" >&2
+  exit 1
+}
+
 if "${SH}" --cwd "${tmpdir}" --base main --head chore/test --title 'chore: test' \
-  --attribution "${full_attribution}" --dry-run >/dev/null 2>&1; then
-  echo "expected missing Jira issue to fail" >&2
+  --issue not-a-key --attribution "${full_attribution}" --dry-run >/dev/null 2>&1; then
+  echo "expected malformed Jira issue to fail" >&2
   exit 1
 fi
 

@@ -8,7 +8,7 @@ description: >-
   Containerfile lines. Use for "bump yarn to 4.17.1", "upgrade Yarn Berry across
   the repos", "weekly yarn bump", "which Yarn version is each repo pinned to",
   or scanning yarn pins.
-compatibility: "Node, yarn, git, gh, jq on PATH; PRIVATE_TOKEN + gitlab.cee.redhat.com for GitLab CEE MRs; JIRA_ISSUE standing ticket."
+compatibility: "Node, yarn, git, gh, jq on PATH; PRIVATE_TOKEN + gitlab.cee.redhat.com for GitLab CEE MRs; optional JIRA_ISSUE standing ticket for Jira linkage."
 ---
 
 # RHDH multi-repo Yarn bump
@@ -52,9 +52,10 @@ JIRA_ISSUE=RHIDP-1234 "$SKILL/scripts/yarn-bump.sh"   # resolve latest 4.x, clon
 "$SKILL/scripts/yarn-bump.sh" --to 4.18.1 --issue RHIDP-1234 --dry-run
 ```
 
-`--issue` / `JIRA_ISSUE` is required: the opener (`/rhdh-pr-mr`) refuses to publish without a
-key, so the scheduled bump carries the standing automation ticket. The key goes in the
-`Related Jira:` line; it does not mean a human is working the bump.
+`--issue` / `JIRA_ISSUE` is optional: with a key the opener (`/rhdh-pr-mr`) adds the
+`Related Jira:` line and links the standing automation ticket. Without one the bump runs
+Jira-less — how the GitLab weekly-maintenance job runs it, since it holds no Jira
+credentials. A key never means a human is working the bump.
 
 `--attribution` / `RHDH_ATTRIBUTION` (alias `--assisted-by`, `RHDH_ASSISTED_BY`) becomes the
 commit trailer and is forwarded to the opener. Default `rhdh-yarn-bump` — the script names
@@ -63,7 +64,7 @@ itself and claims no model. An agent-driven run should pass what it knows, e.g.
 already starts with `Assisted-By:` or `Generated-by:` is used verbatim.
 
 It resolves Yarn 4.x (`@yarnpkg/cli`; never `stable` / 5.x unless `--to`), downloads that CLI once, clones the six repos, skips open `chore/automated-yarn-bump*` PRs/MRs and denylist pins (`4.8.1` / `4.9.2` / `4.15.0`), bumps each tree with `--bin` (so the release binary is in the diff), commits as `rhdh-bot` with the `Assisted-By:` trailer, and opens PRs/MRs via sibling
-`/rhdh-pr-mr`, forwarding `--issue` and `--attribution`.
+`/rhdh-pr-mr`, forwarding `--attribution` and, when set, `--issue`.
 
 GitLab weekly-maintenance clones this skill pack and runs `yarn-bump.sh` after digest/bootc and before Quay cleanup.
 
