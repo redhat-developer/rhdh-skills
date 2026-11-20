@@ -41,7 +41,7 @@ from overlay_repo import (  # noqa: E402
     load_core_index,
     read_files_via_git,
     read_via_git,
-    version_to_ref,
+    source_for_ref,
 )
 from package_txt_compare import (  # noqa: E402
     COMMUNITY_TXT,
@@ -293,8 +293,10 @@ def render_markdown(
 ) -> str:
     counts = Counter(pkg["support"] for pkg in packages)
     workspaces = group_by_workspace(packages)
+    pre_release = source.get("pre_release") == "true"
+    release_note = ", pre-release" if pre_release else ""
     lines: list[str] = [
-        f"# RHDH {version} packages (`{ref}`)",
+        f"# RHDH {version} packages (`{ref}{release_note}`)",
         "",
         f"**{len(packages)} package{'s' if len(packages) != 1 else ''}** "
         f"in **{len(workspaces)} workspace{'s' if len(workspaces) != 1 else ''}**"
@@ -402,8 +404,11 @@ def render_diff_markdown(
     support_rows = report.support_changes()
     lifecycle_rows = report.lifecycle_changes()
     noun = "package"
+    from_note = " (pre-release)" if source.get("pre_release_from") == "true" else ""
+    to_note = " (pre-release)" if source.get("pre_release_to") == "true" else ""
     lines: list[str] = [
-        f"# RHDH package diff: {version_from} → {version_to} (`{ref_from}` → `{ref_to}`)",
+        f"# RHDH package diff: {version_from}{from_note} → {version_to}{to_note} "
+        f"(`{ref_from}` → `{ref_to}`)",
         "",
         f"_Source: {source_caption_diff(source, ref_from, ref_to)}_",
         "",
@@ -621,8 +626,18 @@ def _diff_payload(
 ) -> dict[str, Any]:
     return {
         "mode": "diff",
-        "from": {"version": version_from, "ref": ref_from, "scanned": scanned_from},
-        "to": {"version": version_to, "ref": ref_to, "scanned": scanned_to},
+        "from": {
+            "version": version_from,
+            "ref": ref_from,
+            "pre_release": source.get("pre_release_from") == "true",
+            "scanned": scanned_from,
+        },
+        "to": {
+            "version": version_to,
+            "ref": ref_to,
+            "pre_release": source.get("pre_release_to") == "true",
+            "scanned": scanned_to,
+        },
         "source": source,
         "filtered": filtered,
         "counts": {
@@ -643,7 +658,7 @@ def _diff_payload(
 
 def repo_for_core(source: dict[str, str], repo_arg: str | None) -> Path | None:
     stype = source.get("type")
-    if stype in ("local-git", "clone"):
+    if stype == "local-git":
         return Path(source["path"])
     if repo_arg:
         repo = Path(repo_arg).expanduser().resolve()
@@ -824,9 +839,10 @@ def main(argv: list[str] | None = None) -> int:
 
             scanned_from = len(from_pkgs)
             scanned_to = len(to_pkgs)
-            ref_from = version_to_ref(version_from)
-            ref_to = version_to_ref(version_to)
-            core_from = load_core_index(repo_for_core(source, args.repo), ref_from, source)
+            from_source = source_for_ref(source, ref_from)
+            core_from = load_core_index(
+                repo_for_core(from_source, args.repo), ref_from, from_source
+            )
             core_to = load_core_index(repo_for_core(source, args.repo), ref_to, source)
             enrich_packages_with_core(from_pkgs, core_from)
             enrich_packages_with_core(to_pkgs, core_to)
@@ -925,6 +941,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = {
             "version": args.version,
             "ref": ref,
+            "pre_release": source.get("pre_release") == "true",
             "source": source,
             "scanned": scanned,
             "filtered": filtered,

@@ -1,29 +1,35 @@
-"""Locate, clone, or git-show rhdh-plugin-export-overlays without checking out.
+"""Locate, download, or git-show rhdh-plugin-export-overlays without checking out.
 
-Shared by product-catalog scripts. Sparse clone includes both
-workspaces/*/metadata and catalog-entities/extensions/plugins.
+Shared by product-catalog scripts. The downloaded tarball is trimmed to
+workspaces/*/metadata, catalog-entities/extensions/plugins, and the overlay root
+files both scripts read.
 """
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 OVERLAYS_GIT = "https://github.com/redhat-developer/rhdh-plugin-export-overlays.git"
+OVERLAYS_TARBALL = "https://codeload.github.com/redhat-developer/rhdh-plugin-export-overlays/tar.gz"
 OVERLAYS_DIRNAME = "rhdh-plugin-export-overlays"
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)(?:\.\d+)?$")
-SPARSE_PATTERNS = (
-    "workspaces/*/metadata",
-    "workspaces/*/metadata/*",
-    "catalog-entities/extensions/plugins",
-    "catalog-entities/extensions/plugins/*",
+RELEASE_BRANCH_RE = re.compile(r"(?:^|/)release-(\d+)\.(\d+)$")
+OVERLAY_ROOT_FILES = (
     "default.packages.yaml",
+    "rhdh-community-packages.txt",
+    "rhdh-supported-packages.txt",
 )
 
 LoadWorkdir = Callable[[Path], list[dict[str, Any]]]
@@ -41,6 +47,95 @@ def version_to_ref(version: str) -> str:
     if match:
         return f"release-{match.group(1)}.{match.group(2)}"
     return v
+
+
+def version_number(version: str) -> tuple[int, int] | None:
+    match = VERSION_RE.match(version.strip())
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def local_release_branches(repo: Path) -> set[tuple[int, int]]:
+    proc = git(
+        repo,
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/heads/release-*",
+        "refs/remotes/origin/release-*",
+        check=False,
+    )
+    branches: set[tuple[int, int]] = set()
+    for name in proc.stdout.splitlines():
+        match = RELEASE_BRANCH_RE.search(name.strip())
+        if match:
+            branches.add((int(match.group(1)), int(match.group(2))))
+    return branches
+
+
+def remote_release_branches() -> set[tuple[int, int]]:
+    proc = subprocess.run(
+        ["git", "ls-remote", "--heads", OVERLAYS_GIT, "refs/heads/release-*"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip() or str(proc.returncode)
+        raise FileNotFoundError(f"cannot list overlay release branches: {detail}")
+    branches: set[tuple[int, int]] = set()
+    for line in proc.stdout.splitlines():
+        ref = line.split("\t")[-1]
+        match = RELEASE_BRANCH_RE.search(ref)
+        if match:
+            branches.add((int(match.group(1)), int(match.group(2))))
+    return branches
+
+
+def resolve_release_ref(
+    version: str,
+    *,
+    ref_arg: str | None = None,
+    repo: Path | None = None,
+    workdir: bool = False,
+    available: set[tuple[int, int]] | None = None,
+) -> tuple[str, bool]:
+    """Resolve a version to a ref, using main only for the next release.
+
+    A numbered release newer than every existing release branch is pre-GA and
+    reads from main. An older missing release branch is an error so stale
+    versions are never silently answered from main.
+    """
+    if ref_arg:
+        return ref_arg, False
+
+    requested_ref = version_to_ref(version)
+    number = version_number(version)
+    if number is None or requested_ref == "main":
+        return requested_ref, False
+
+    if available is None:
+        if repo is not None and (repo / ".git").exists() and not workdir:
+            available = local_release_branches(repo)
+            if number in available:
+                return requested_ref, False
+            # A checkout may be single-branch; ask upstream before deciding
+            # whether this is a missing old release or the next release.
+            available = remote_release_branches()
+        elif repo is None:
+            available = remote_release_branches()
+        else:
+            # A working tree has no refs to inspect; report the requested ref.
+            return requested_ref, False
+
+    if number in available:
+        return requested_ref, False
+    if not available or number > max(available):
+        return "main", True
+    raise FileNotFoundError(
+        f"overlay ref {requested_ref!r} does not exist and {version} is not newer "
+        "than the newest release branch"
+    )
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -212,41 +307,65 @@ def discover_overlay_repo() -> Path | None:
     return None
 
 
-def clone_overlay(ref: str, dest: Path) -> Path:
+def source_for_ref(source: dict[str, str], ref: str) -> dict[str, str]:
+    """Point a two-ref source at the directory holding `ref`."""
+    if source.get("ref_from") == ref and source.get("path_from"):
+        return {**source, "path": source["path_from"]}
+    return source
+
+
+def wanted_overlay_path(rel: str) -> bool:
+    """True for the overlay paths the product-catalog scripts read."""
+    if rel in OVERLAY_ROOT_FILES:
+        return True
+    parts = rel.split("/")
+    if len(parts) != 4:
+        return False
+    if parts[0] == "workspaces" and parts[2] == "metadata":
+        return True
+    return parts[:3] == ["catalog-entities", "extensions", "plugins"]
+
+
+def extract_overlay_tarball(payload: bytes, dest: Path) -> Path:
+    """Write the wanted overlay files from a GitHub tarball into `dest`."""
     dest.mkdir(parents=True, exist_ok=True)
-    clone = subprocess.run(
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--filter=blob:none",
-            "--sparse",
-            "--branch",
-            ref,
-            OVERLAYS_GIT,
-            str(dest),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if clone.returncode != 0:
-        raise FileNotFoundError(
-            f"git clone of {OVERLAYS_GIT} ref {ref!r} failed: "
-            f"{clone.stderr.strip() or clone.stdout.strip()}"
-        )
-    sparse = subprocess.run(
-        ["git", "-C", str(dest), "sparse-checkout", "set", "--no-cone", *SPARSE_PATTERNS],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if sparse.returncode != 0:
-        raise FileNotFoundError(
-            f"sparse-checkout failed: {sparse.stderr.strip() or sparse.stdout.strip()}"
-        )
+    root = dest.resolve()
+    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
+        for member in archive:
+            if not member.isfile():
+                continue
+            _, _, rel = member.name.partition("/")
+            if not rel or not wanted_overlay_path(rel):
+                continue
+            target = dest / rel
+            if not target.resolve().is_relative_to(root):
+                continue
+            source = archive.extractfile(member)
+            if source is None:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read())
     return dest
+
+
+def fetch_overlay_tarball(ref: str, dest: Path) -> Path:
+    """Download one overlay ref as a tarball and extract the wanted files."""
+    url = f"{OVERLAYS_TARBALL}/{urllib.parse.quote(ref, safe='')}"
+    request = urllib.request.Request(url, headers={"User-Agent": "rhdh-product-catalog"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = response.read()
+    except urllib.error.HTTPError as exc:
+        raise FileNotFoundError(
+            f"cannot download overlay ref {ref!r} from {url}: HTTP {exc.code}. "
+            "Check the ref, or pass --repo/RHDH_OVERLAY_REPO for a local checkout."
+        ) from exc
+    except OSError as exc:
+        raise FileNotFoundError(
+            f"cannot download overlay ref {ref!r} from {url}: {exc}. "
+            "Offline? Pass --repo/RHDH_OVERLAY_REPO for a local checkout."
+        ) from exc
+    return extract_overlay_tarball(payload, dest)
 
 
 def collect_overlay(
@@ -259,37 +378,52 @@ def collect_overlay(
     load_workdir: LoadWorkdir,
     load_git: LoadGit,
 ) -> tuple[list[dict[str, Any]], str, dict[str, str], tempfile.TemporaryDirectory[str] | None]:
-    ref = ref_arg or version_to_ref(version)
     temp_dir: tempfile.TemporaryDirectory[str] | None = None
 
     if repo_arg:
         repo = Path(repo_arg).expanduser().resolve()
         if not repo.is_dir():
             raise FileNotFoundError(f"--repo is not a directory: {repo}")
+        ref, pre_release = resolve_release_ref(version, ref_arg=ref_arg, repo=repo, workdir=workdir)
+        source = {"type": "workdir" if workdir or not (repo / ".git").exists() else "local-git"}
+        source["path"] = str(repo)
+        if pre_release:
+            source["pre_release"] = "true"
         if workdir or not (repo / ".git").exists():
-            return load_workdir(repo), ref, {"type": "workdir", "path": str(repo)}, temp_dir
+            return load_workdir(repo), ref, source, temp_dir
         rows, resolved = load_git(repo, ref)
-        return rows, resolved, {"type": "local-git", "path": str(repo)}, temp_dir
+        return rows, resolved, source, temp_dir
 
     discovered = discover_overlay_repo()
-    if discovered and (discovered / ".git").exists() and not workdir:
+    if discovered and workdir:
+        ref, pre_release = resolve_release_ref(
+            version, ref_arg=ref_arg, repo=discovered, workdir=workdir
+        )
+        source = {"type": "workdir", "path": str(discovered)}
+        if pre_release:
+            source["pre_release"] = "true"
+        return load_workdir(discovered), ref, source, temp_dir
+
+    if discovered and (discovered / ".git").exists():
         try:
+            ref, pre_release = resolve_release_ref(
+                version, ref_arg=ref_arg, repo=discovered, workdir=workdir
+            )
             rows, resolved = load_git(discovered, ref)
-            return rows, resolved, {"type": "local-git", "path": str(discovered)}, temp_dir
+            source = {"type": "local-git", "path": str(discovered)}
+            if pre_release:
+                source["pre_release"] = "true"
+            return rows, resolved, source, temp_dir
         except FileNotFoundError:
             pass
 
-    if discovered and workdir:
-        return (
-            load_workdir(discovered),
-            ref,
-            {"type": "workdir", "path": str(discovered)},
-            temp_dir,
-        )
-
+    ref, pre_release = resolve_release_ref(version, ref_arg=ref_arg)
     temp_dir = tempfile.TemporaryDirectory(prefix=temp_prefix)
-    cloned = clone_overlay(ref, Path(temp_dir.name) / OVERLAYS_DIRNAME)
-    return load_workdir(cloned), ref, {"type": "clone", "path": str(cloned)}, temp_dir
+    root = fetch_overlay_tarball(ref, Path(temp_dir.name) / OVERLAYS_DIRNAME)
+    source = {"type": "tarball", "path": str(root)}
+    if pre_release:
+        source["pre_release"] = "true"
+    return load_workdir(root), ref, source, temp_dir
 
 
 def collect_overlay_pair(
@@ -310,31 +444,10 @@ def collect_overlay_pair(
 ]:
     """Load two overlay refs without switching a user working tree.
 
-    User checkouts are read with `git cat-file --batch`. A throwaway clone
-    already has FROM on disk from sparse-checkout; TO is detached-checked-out
-    in that clone only.
+    User checkouts are read with `git cat-file --batch`. Without one, each ref
+    is downloaded as its own tarball so neither version is checked out.
     """
-    ref_from = version_to_ref(version_from)
-    ref_to = version_to_ref(version_to)
-    temp_dir: tempfile.TemporaryDirectory[str] | None = None
-
-    def load_both(repo: Path) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]], str]:
-        from_rows, from_resolved = load_git(repo, ref_from)
-        to_rows, to_resolved = load_git(repo, ref_to)
-        return from_rows, from_resolved, to_rows, to_resolved
-
-    def load_clone(cloned: Path) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]], str]:
-        if load_workdir is None:
-            return load_both(cloned)
-        from_rows = load_workdir(cloned)
-        from_resolved = git_ref_exists(cloned, ref_from) or ref_from
-        to_resolved = ensure_git_ref(cloned, ref_to)
-        switched = git(cloned, "checkout", "--detach", "--force", to_resolved, check=False)
-        if switched.returncode == 0:
-            return from_rows, from_resolved, load_workdir(cloned), to_resolved
-        to_rows, to_resolved = load_git(cloned, ref_to)
-        return from_rows, from_resolved, to_rows, to_resolved
-
+    repo: Path | None = None
     if repo_arg:
         repo = Path(repo_arg).expanduser().resolve()
         if not repo.is_dir():
@@ -344,39 +457,47 @@ def collect_overlay_pair(
                 "--diff needs a git checkout of rhdh-plugin-export-overlays "
                 "so both versions can be read with git cat-file (not a working tree)."
             )
-        from_rows, from_resolved, to_rows, to_resolved = load_both(repo)
-        return (
-            from_rows,
-            from_resolved,
-            to_rows,
-            to_resolved,
-            {"type": "local-git", "path": str(repo)},
-            temp_dir,
-        )
+    else:
+        discovered = discover_overlay_repo()
+        if discovered and (discovered / ".git").exists():
+            repo = discovered
 
-    discovered = discover_overlay_repo()
-    if discovered and (discovered / ".git").exists():
-        try:
-            from_rows, from_resolved, to_rows, to_resolved = load_both(discovered)
-            return (
-                from_rows,
-                from_resolved,
-                to_rows,
-                to_resolved,
-                {"type": "local-git", "path": str(discovered)},
-                temp_dir,
-            )
-        except FileNotFoundError:
-            pass
+    available = remote_release_branches() if repo is None else None
+    ref_from, pre_release_from = resolve_release_ref(version_from, repo=repo, available=available)
+    ref_to, pre_release_to = resolve_release_ref(version_to, repo=repo, available=available)
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
 
+    if repo is not None:
+        from_rows, from_resolved = load_git(repo, ref_from)
+        to_rows, to_resolved = load_git(repo, ref_to)
+        source = {"type": "local-git", "path": str(repo)}
+        if pre_release_from:
+            source["pre_release_from"] = "true"
+        if pre_release_to:
+            source["pre_release_to"] = "true"
+        return from_rows, from_resolved, to_rows, to_resolved, source, temp_dir
+
+    if load_workdir is None:
+        raise FileNotFoundError("cannot read two overlay refs: no working-tree loader was supplied")
     temp_dir = tempfile.TemporaryDirectory(prefix=temp_prefix)
-    cloned = clone_overlay(ref_from, Path(temp_dir.name) / OVERLAYS_DIRNAME)
-    from_rows, from_resolved, to_rows, to_resolved = load_clone(cloned)
+    base = Path(temp_dir.name)
+    from_root = fetch_overlay_tarball(ref_from, base / "from")
+    to_root = fetch_overlay_tarball(ref_to, base / "to")
+    source = {
+        "type": "tarball",
+        "path": str(to_root),
+        "path_from": str(from_root),
+        "ref_from": ref_from,
+    }
+    if pre_release_from:
+        source["pre_release_from"] = "true"
+    if pre_release_to:
+        source["pre_release_to"] = "true"
     return (
-        from_rows,
-        from_resolved,
-        to_rows,
-        to_resolved,
-        {"type": "clone", "path": str(cloned)},
+        load_workdir(from_root),
+        ref_from,
+        load_workdir(to_root),
+        ref_to,
+        source,
         temp_dir,
     )

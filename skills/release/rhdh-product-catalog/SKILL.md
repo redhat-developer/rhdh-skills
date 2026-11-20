@@ -23,7 +23,7 @@ Read-only inspection of [rhdh-plugin-export-overlays](https://github.com/redhat-
 |-----------|--------|
 | npm packages, workspaces, export txt lists, package diff | `scripts/list_packages.py` |
 | Extensions catalog plugins, all.yaml, pre-installed YAML, plugin diff, support alignment | `scripts/list_plugins.py` |
-| Both views (e.g. “notifications on main”) | Run **both** for the same version/ref |
+| Both views, or “is X available?” | `scripts/list_plugins.py` `--search TERM` (plugins **and** matching packages in one call) |
 
 Resolve paths from this `SKILL.md`:
 
@@ -41,6 +41,7 @@ python3 "$PACKAGES" --diff 1.10 2.1
 python3 "$PACKAGES" main --compare-txt --core
 
 python3 "$PLUGINS" 2.1 --in-catalog --support ga
+python3 "$PLUGINS" main --search quay --search "cost management"
 python3 "$PLUGINS" main --support-alignment
 python3 "$PLUGINS" --diff 1.10 2.1 --json
 
@@ -50,18 +51,24 @@ python3 "$PLUGINS" main --repo "$RHDH_OVERLAY_REPO"
 ```
 
 If the user omitted a version, ask once. For `--diff`, both versions are
-required. Do not default a numbered release to `main`. A release line with no
-`release-X.Y` branch yet (`2.2` until GA) has no release ref to read, so
-answer from `main` and say it is pre-release.
+required. Do not blindly default a numbered release to `main`: use its
+`release-X.Y` branch when it exists. A numbered release newer than every
+existing release branch is the next pre-GA release, so read it from `main` and
+label it pre-release. A missing older release is an error, not a fallback to
+`main`.
 
 The `/ask-rhdh` catalog should route release inventory / support / catalog questions here.
 
 ## Workflow
 
 1. Map the request to a version or git ref (`2.1`, `main`, `release-2.1`). Two versions + “what changed” → `--diff FROM TO` on the appropriate script.
-2. Prefer a local overlay checkout (`--repo` or `RHDH_OVERLAY_REPO`) — ~10× faster than a sparse clone.
+2. Prefer a local overlay checkout (`--repo` or `RHDH_OVERLAY_REPO`). Without one the
+   ref is downloaded as a tarball, which is fast enough for a single call but repeats
+   the download per invocation — batch related lookups into one call.
 3. Return the script markdown as-is. Use `--json` only for follow-up filtering, not as the user-facing answer.
-4. Re-run with filters; do not hand-filter a previous dump.
+4. Re-run with filters; do not hand-filter a previous dump. One availability
+   question about several names is one call: `--search` is repeatable and reports
+   catalog tiles and npm packages together.
 
 **Packages:** `references/packages.md`  
 **Plugins:** `references/plugins.md`
@@ -83,15 +90,14 @@ rhdh-plugin-export-overlays @ ref
 
 | User says | Git ref |
 |-----------|---------|
-| `1.9`, `1.9.3` | `release-1.9` |
-| `1.10`, `1.10.3` | `release-1.10` |
-| `2.1`, `2.1.0` | `release-2.1` |
-| `main`, `next`, unreleased, `2.2` before GA | `main` |
+| `main`, `next`, unreleased, `latest` | `main` |
+| `X.Y` / `X.Y.Z` | `release-X.Y` when that branch exists |
+| `X.Y` newer than every release branch | `main` (pre-release) |
 | explicit branch or tag | used as-is |
 
 ## Overlay repo
 
-Sparse clone by default (~2s). Local git checkout strongly preferred.
+Tarball download by default (~1s). Local git checkout still preferred for repeat use.
 
 | Priority | Source |
 |----------|--------|
@@ -99,7 +105,7 @@ Sparse clone by default (~2s). Local git checkout strongly preferred.
 | 2 | `RHDH_OVERLAY_REPO` |
 | 3 | `rhdh` CLI `get_overlay_repo()` |
 | 4 | Auto-discovery of `rhdh-plugin-export-overlays` |
-| 5 | Temp sparse clone from GitHub |
+| 5 | Temp tarball download from GitHub |
 
 | Flag | Purpose |
 |------|---------|
@@ -131,6 +137,7 @@ Grouped by **Included in the Catalog** vs **Packaged, but Not in Catalog** → s
 | `--in-catalog` / `--not-in-catalog` | `all.yaml` membership |
 | `--pre-installed` / `--custom` | plugin YAML annotation |
 | `--support` / `--name` / `--lifecycle` | filters |
+| `--search` | plugin name/title/**tags** and package name/title/workspace match, one call |
 | `--core` / `--enabled-ootb` / `--disabled-ootb` | core product list |
 | `--diff FROM TO` | support, lifecycle, added, removed |
 | `--support-alignment` | plugin vs linked package support (manual review) |
@@ -150,14 +157,6 @@ Source: [`default.packages.yaml`](https://github.com/redhat-developer/rhdh-plugi
 - Platform/vendor EOL → `/rhdh-platform-lifecycle`
 - CVE CSV for GA workspaces → `/rhdh-overlay-cve-export`
 - Enable plugins locally → `/rhdh-local`
-
-## Tests
-
-From the repository root:
-
-```bash
-uv run pytest tests/unit/test_product_catalog_*.py
-```
 
 ## Completion
 

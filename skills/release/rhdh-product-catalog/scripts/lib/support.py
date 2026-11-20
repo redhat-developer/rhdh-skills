@@ -73,22 +73,36 @@ def md_cell(value: str) -> str:
 
 def source_caption(source: dict[str, str], ref: str) -> str:
     kind = source.get("type", "")
-    if kind == "clone":
-        return f"redhat-developer/rhdh-plugin-export-overlays@{ref} (sparse clone)"
-    path = source.get("path", "")
-    if kind == "local-git":
-        return f"local git {path} (`{ref}`)"
-    if kind == "workdir":
-        return f"working tree {path}"
-    return f"{kind} {path}".strip()
+    if kind == "tarball":
+        caption = f"redhat-developer/rhdh-plugin-export-overlays@{ref} (tarball)"
+    else:
+        path = source.get("path", "")
+        if kind == "local-git":
+            caption = f"local git {path} (`{ref}`)"
+        elif kind == "workdir":
+            caption = f"working tree {path}"
+        else:
+            caption = f"{kind} {path}".strip()
+    if source.get("pre_release") == "true":
+        caption += " — pre-release"
+    return caption
 
 
 def source_caption_diff(source: dict[str, str], ref_from: str, ref_to: str) -> str:
     kind = source.get("type", "")
     path = source.get("path", "")
     span = f"`{ref_from}` → `{ref_to}`"
-    if kind == "clone":
-        return f"redhat-developer/rhdh-plugin-export-overlays {span} (sparse clone)"
-    if kind == "local-git":
-        return f"local git {path} ({span})"
-    return f"{kind} {path} ({span})".strip()
+    if kind == "tarball":
+        caption = f"redhat-developer/rhdh-plugin-export-overlays {span} (tarball)"
+    elif kind == "local-git":
+        caption = f"local git {path} ({span})"
+    else:
+        caption = f"{kind} {path} ({span})".strip()
+    notes = []
+    if source.get("pre_release_from") == "true":
+        notes.append(f"`{ref_from}` is pre-release")
+    if source.get("pre_release_to") == "true":
+        notes.append(f"`{ref_to}` is pre-release")
+    if notes:
+        caption += f" ({'; '.join(notes)})"
+    return caption

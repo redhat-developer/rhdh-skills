@@ -17,23 +17,25 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import list_packages as lp  # noqa: E402
+import overlay_repo as repo_mod  # noqa: E402
 
 
 class VersionToRefTests(unittest.TestCase):
     def test_stream_and_zstream(self) -> None:
-        self.assertEqual(lp.version_to_ref("1.10"), "release-1.10")
-        self.assertEqual(lp.version_to_ref("1.10.3"), "release-1.10")
-        self.assertEqual(lp.version_to_ref("v1.9.0"), "release-1.9")
+        self.assertEqual(repo_mod.version_to_ref("1.10"), "release-1.10")
+        self.assertEqual(repo_mod.version_to_ref("1.10.3"), "release-1.10")
+        self.assertEqual(repo_mod.version_to_ref("v1.9.0"), "release-1.9")
 
     def test_main_aliases(self) -> None:
-        self.assertEqual(lp.version_to_ref("main"), "main")
-        self.assertEqual(lp.version_to_ref("next"), "main")
-        self.assertEqual(lp.version_to_ref("unreleased"), "main")
+        self.assertEqual(repo_mod.version_to_ref("main"), "main")
+        self.assertEqual(repo_mod.version_to_ref("next"), "main")
+        self.assertEqual(repo_mod.version_to_ref("unreleased"), "main")
+        self.assertEqual(repo_mod.version_to_ref("latest"), "main")
 
     def test_explicit_ref(self) -> None:
-        self.assertEqual(lp.version_to_ref("release-1.10"), "release-1.10")
+        self.assertEqual(repo_mod.version_to_ref("release-1.10"), "release-1.10")
         self.assertEqual(
-            lp.version_to_ref("catalog-index-release-1.10"), "catalog-index-release-1.10"
+            repo_mod.version_to_ref("catalog-index-release-1.10"), "catalog-index-release-1.10"
         )
 
 
@@ -163,22 +165,34 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["txt_supported_mismatches"], 1)
         self.assertEqual(payload["counts"]["packages"], 6)
 
-    def test_cli_markdown_grouping(self) -> None:
+    def test_cli_grouping(self) -> None:
         from contextlib import redirect_stdout
         from io import StringIO
 
         buf = StringIO()
         with redirect_stdout(buf):
-            code = lp.main(["1.10", "--repo", str(FIXTURES), "--workdir"])
+            code = lp.main(["1.10", "--repo", str(FIXTURES), "--workdir", "--json"])
         self.assertEqual(code, 0)
-        text = buf.getvalue()
-        self.assertIn("# RHDH 1.10 packages (`release-1.10`)", text)
-        self.assertIn("## adoption-insights", text)
-        self.assertIn("Generally Available", text)
-        self.assertIn("Developer Preview", text)
-        self.assertLess(text.index("## adoption-insights"), text.index("## scorecard"))
-        self.assertIn("Unknown", text)
-        self.assertIn("missing or unrecognized spec.support", text)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(
+            [workspace["name"] for workspace in payload["workspaces"]],
+            ["adoption-insights", "example-tp", "mystery", "scorecard", "todo"],
+        )
+        self.assertEqual(
+            payload["counts"],
+            {
+                "generally-available": 2,
+                "tech-preview": 1,
+                "dev-preview": 1,
+                "community": 1,
+                "unknown": 1,
+            },
+        )
+        self.assertTrue(
+            any(
+                "missing or unrecognized spec.support" in warning for warning in payload["warnings"]
+            )
+        )
 
     def test_support_filter_cli(self) -> None:
         from contextlib import redirect_stdout
@@ -426,32 +440,84 @@ spec:
             )
             buf = StringIO()
             with redirect_stdout(buf):
-                code = lp.main(["--diff", "1.9", "1.10", "--repo", str(repo)])
-            self.assertEqual(code, 0)
-            text = buf.getvalue()
-            self.assertIn("# RHDH package diff: 1.9 → 1.10", text)
-            self.assertIn("## Support level changed", text)
-            self.assertIn("## Newly added (in 1.10, not in 1.9)", text)
-            self.assertIn("## Lifecycle changed", text)
-            self.assertIn("## Removed (in 1.9, not in 1.10)", text)
-            self.assertIn("Community → **Generally Available**", text)
-            self.assertIn("experimental → **active**", text)
-            self.assertIn("New Package", text)
-            self.assertIn("Old Package", text)
-            self.assertLess(text.index("## Support level changed"), text.index("## Newly added"))
-            self.assertLess(text.index("## Newly added"), text.index("## Lifecycle changed"))
-
-            jbuf = StringIO()
-            with redirect_stdout(jbuf):
                 code = lp.main(["--diff", "1.9", "1.10", "--repo", str(repo), "--json"])
             self.assertEqual(code, 0)
-            payload = json.loads(jbuf.getvalue())
+            payload = json.loads(buf.getvalue())
             self.assertEqual(payload["mode"], "diff")
+            self.assertEqual([row["title"] for row in payload["added"]], ["New Package"])
+            self.assertEqual([row["title"] for row in payload["removed"]], ["Old Package"])
+            self.assertEqual(
+                [(row["from"]["support"], row["to"]["support"]) for row in payload["support"]],
+                [("community", "generally-available")],
+            )
+            self.assertEqual(
+                [
+                    (row["from"]["lifecycle"], row["to"]["lifecycle"])
+                    for row in payload["lifecycle"]
+                ],
+                [("experimental", "active")],
+            )
             self.assertEqual(payload["counts"]["added"], 1)
             self.assertEqual(payload["counts"]["removed"], 1)
             self.assertEqual(payload["counts"]["support"], 1)
             self.assertEqual(payload["counts"]["lifecycle"], 1)
             self.assertEqual(payload["counts"]["unchanged"], 0)
+
+
+class TarballDiffCoreTests(unittest.TestCase):
+    """Each side of a --diff reads its own default.packages.yaml."""
+
+    @staticmethod
+    def _write_side(root: Path, ref: str) -> Path:
+        name = "old" if ref == "release-1.9" else "new"
+        ootb = "disabled" if ref == "release-1.9" else "enabled"
+        files = {
+            f"workspaces/{name}/metadata/{name}.yaml": (
+                "apiVersion: extensions.backstage.io/v1alpha1\n"
+                "kind: Package\n"
+                "metadata:\n"
+                f"  name: {name}-pkg\n"
+                f"  title: {name.title()} Package\n"
+                "spec:\n"
+                f'  packageName: "@acme/{name}"\n'
+                "  support: community\n"
+                "  lifecycle: active\n"
+            ),
+            "default.packages.yaml": (
+                "packages:\n"
+                f"  {ootb}:\n"
+                f"    - package: '@acme/{name}'\n"
+                '      support: "community"\n'
+            ),
+        }
+        for rel, content in files.items():
+            dest = root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+        return root
+
+    def test_added_and_removed_rows_use_their_own_core_list(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest import mock
+
+        def fake_fetch(ref: str, dest: Path) -> Path:
+            return self._write_side(dest, ref)
+
+        buf = StringIO()
+        with mock.patch.object(repo_mod, "discover_overlay_repo", return_value=None):
+            with mock.patch.object(
+                repo_mod, "remote_release_branches", return_value={(1, 9), (1, 10)}
+            ):
+                with mock.patch.object(repo_mod, "fetch_overlay_tarball", side_effect=fake_fetch):
+                    with redirect_stdout(buf):
+                        code = lp.main(["--diff", "1.9", "1.10", "--json"])
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue())
+        added = {p["title"]: p["core_ootb"] for p in payload["added"]}
+        removed = {p["title"]: p["core_ootb"] for p in payload["removed"]}
+        self.assertEqual(added, {"New Package": "enabled"})
+        self.assertEqual(removed, {"Old Package": "disabled"})
 
 
 if __name__ == "__main__":

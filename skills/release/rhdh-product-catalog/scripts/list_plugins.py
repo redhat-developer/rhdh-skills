@@ -29,6 +29,7 @@ from default_packages import (  # noqa: E402
     DEFAULT_PACKAGES_REL,
     DEFAULT_PACKAGES_URL,
     CoreIndex,
+    enrich_packages_with_core,
     enrich_plugins_with_core,
     plugin_package_refs,
 )
@@ -46,7 +47,7 @@ from overlay_repo import (  # noqa: E402
     list_via_git,
     load_core_index,
     read_files_via_git,
-    version_to_ref,
+    source_for_ref,
 )
 from support import (  # noqa: E402
     SUPPORT_LABELS,
@@ -152,6 +153,13 @@ def support_provider(raw: Any) -> str:
     return ""
 
 
+def plugin_tags(meta: dict[str, Any]) -> list[str]:
+    raw = meta.get("tags")
+    if not isinstance(raw, list):
+        return []
+    return [as_str(item) for item in raw if as_str(item)]
+
+
 def extract_plugin(doc: dict[str, Any], rel_path: str) -> dict[str, Any]:
     meta = doc.get("metadata") or {}
     spec = doc.get("spec") or {}
@@ -164,6 +172,7 @@ def extract_plugin(doc: dict[str, Any], rel_path: str) -> dict[str, Any]:
         "kind": as_str(doc.get("kind")),
         "name": as_str(meta.get("name")),
         "title": title,
+        "tags": plugin_tags(meta),
         "support": support_key,
         "support_label": SUPPORT_LABELS[support_key],
         "lifecycle": as_str(spec.get("lifecycle")),
@@ -195,6 +204,7 @@ def load_plugin_from_text(rel_path: str, text: str) -> dict[str, Any] | None:
             "kind": "",
             "name": "",
             "title": rel_path,
+            "tags": [],
             "support": "unknown",
             "support_label": SUPPORT_LABELS["unknown"],
             "lifecycle": "",
@@ -276,6 +286,13 @@ def load_from_git(repo: Path, ref: str) -> tuple[list[dict[str, Any]], str]:
     return plugins, resolved
 
 
+def search_haystack(plugin: dict[str, Any], *, tags: bool) -> str:
+    parts = [plugin.get("title", ""), plugin.get("name", ""), plugin.get("file", "")]
+    if tags:
+        parts.extend(plugin.get("tags") or [])
+    return " ".join(parts).lower()
+
+
 def matches_filters(
     plugin: dict[str, Any],
     *,
@@ -284,6 +301,7 @@ def matches_filters(
     membership: set[str],
     names: list[str],
     lifecycles: list[str],
+    search_terms: list[str] | None = None,
     core_only: bool = False,
     ootb_enabled: bool = False,
     ootb_disabled: bool = False,
@@ -300,12 +318,12 @@ def matches_filters(
         return False
     if membership and plugin["catalog_membership"] not in membership:
         return False
-    if names:
-        hay = " ".join(
-            [plugin.get("title", ""), plugin.get("name", ""), plugin.get("file", "")]
-        ).lower()
-        if not any(n.lower() in hay for n in names):
-            return False
+    if names and not any(n.lower() in search_haystack(plugin, tags=False) for n in names):
+        return False
+    if search_terms and not any(
+        term.lower() in search_haystack(plugin, tags=True) for term in search_terms
+    ):
+        return False
     if lifecycles:
         life = plugin.get("lifecycle", "").lower()
         if life not in {x.lower() for x in lifecycles}:
@@ -361,12 +379,15 @@ def render_markdown(
     filtered: bool,
     scanned: int,
     core_index: CoreIndex | None = None,
+    package_matches: list[dict[str, Any]] | None = None,
 ) -> str:
     support_counts = Counter(p["support"] for p in plugins)
     yaml_counts = Counter(p["catalog_yaml"] for p in plugins)
     membership_counts = Counter(p.get("catalog_membership") for p in plugins)
+    pre_release = source.get("pre_release") == "true"
+    release_note = ", pre-release" if pre_release else ""
     lines: list[str] = [
-        f"# RHDH {version} plugins (`{ref}`)",
+        f"# RHDH {version} plugins (`{ref}{release_note}`)",
         "",
         f"**{len(plugins)} plugin{'s' if len(plugins) != 1 else ''}**"
         + (" (filtered)" if filtered else ""),
@@ -445,6 +466,26 @@ def render_markdown(
                 )
                 + " |"
             )
+    if package_matches is not None:
+        lines.extend(["", "## Matching packages", ""])
+        if package_matches:
+            lines.extend(
+                _md_table(
+                    ["Workspace", "Title", "Package", "Support", "Core OOTB"],
+                    [
+                        [
+                            md_cell(pkg["workspace"]),
+                            md_cell(pkg["title"]),
+                            md_cell(pkg["package_name"]),
+                            md_cell(pkg["support_label"]),
+                            core_cell(pkg),
+                        ]
+                        for pkg in package_matches
+                    ],
+                )
+            )
+        else:
+            lines.append("No Package metadata matched.")
     lines.append("")
     return "\n".join(lines)
 
@@ -501,8 +542,11 @@ def render_diff_markdown(
 ) -> str:
     support_rows = report.support_changes()
     lifecycle_rows = report.lifecycle_changes()
+    from_note = " (pre-release)" if source.get("pre_release_from") == "true" else ""
+    to_note = " (pre-release)" if source.get("pre_release_to") == "true" else ""
     lines: list[str] = [
-        f"# RHDH plugin diff: {version_from} → {version_to} (`{ref_from}` → `{ref_to}`)",
+        f"# RHDH plugin diff: {version_from}{from_note} → {version_to}{to_note} "
+        f"(`{ref_from}` → `{ref_to}`)",
         "",
         f"_Source: {source_caption_diff(source, ref_from, ref_to)}_",
         "",
@@ -668,6 +712,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Filter by title or metadata.name substring (repeatable)",
     )
     parser.add_argument(
+        "--search",
+        action="append",
+        default=[],
+        metavar="TERM",
+        help=(
+            "Availability check in one call: match plugins by title/name/tags and list "
+            "matching npm packages (repeatable)"
+        ),
+    )
+    parser.add_argument(
         "--lifecycle",
         action="append",
         default=[],
@@ -718,7 +772,7 @@ def membership_filter(in_catalog: bool, not_in_catalog: bool) -> set[str]:
 
 def repo_for_core(source: dict[str, str], repo_arg: str | None) -> Path | None:
     stype = source.get("type")
-    if stype in ("local-git", "clone"):
+    if stype == "local-git":
         return Path(source["path"])
     if repo_arg:
         repo = Path(repo_arg).expanduser().resolve()
@@ -743,13 +797,31 @@ def load_package_rows(
     workdir: bool,
 ) -> list[dict[str, Any]]:
     root = Path(source["path"])
-    if workdir or source.get("type") in {"workdir", "clone"}:
+    if workdir or source.get("type") in {"workdir", "tarball"}:
         return lp_packages.load_from_workdir(root)
     repo = repo_for_core(source, repo_arg)
     if repo:
         rows, _ = lp_packages.load_from_git(repo, ref)
         return rows
     return []
+
+
+def search_packages(
+    terms: list[str],
+    *,
+    source: dict[str, str],
+    repo_arg: str | None,
+    ref: str,
+    workdir: bool,
+    core_index: CoreIndex | None,
+) -> list[dict[str, Any]]:
+    """Package rows matching --search terms, enriched with Core OOTB."""
+    if not terms:
+        return []
+    rows = load_package_rows(source, repo_arg, ref, workdir=workdir)
+    matched = [row for row in rows if lp_packages.matches_filters(row, set(), [], terms)]
+    enrich_packages_with_core(matched, core_index)
+    return lp_packages.sort_packages(matched)
 
 
 def apply_plugin_core(
@@ -790,8 +862,18 @@ def _diff_payload(
 ) -> dict[str, Any]:
     return {
         "mode": "diff",
-        "from": {"version": version_from, "ref": ref_from, "scanned": scanned_from},
-        "to": {"version": version_to, "ref": ref_to, "scanned": scanned_to},
+        "from": {
+            "version": version_from,
+            "ref": ref_from,
+            "pre_release": source.get("pre_release_from") == "true",
+            "scanned": scanned_from,
+        },
+        "to": {
+            "version": version_to,
+            "ref": ref_to,
+            "pre_release": source.get("pre_release_to") == "true",
+            "scanned": scanned_to,
+        },
         "source": source,
         "filtered": filtered,
         "counts": {
@@ -856,6 +938,7 @@ def main(argv: list[str] | None = None) -> int:
                 or catalog_yaml
                 or membership
                 or args.name
+                or args.search
                 or args.lifecycle
                 or args.core
                 or args.enabled_ootb
@@ -916,6 +999,8 @@ def main(argv: list[str] | None = None) -> int:
                 ignored.append("--in-catalog/--not-in-catalog")
             if args.lifecycle:
                 ignored.append("--lifecycle")
+            if args.search:
+                ignored.append("--search")
             if ignored:
                 print(
                     "note: "
@@ -965,11 +1050,9 @@ def main(argv: list[str] | None = None) -> int:
 
             scanned_from = len(from_plugins)
             scanned_to = len(to_plugins)
-            ref_from = version_to_ref(version_from)
-            ref_to = version_to_ref(version_to)
             core_from = apply_plugin_core(
                 from_plugins,
-                source=source,
+                source=source_for_ref(source, ref_from),
                 repo_arg=args.repo,
                 ref=ref_from,
                 workdir=False,
@@ -1067,6 +1150,7 @@ def main(argv: list[str] | None = None) -> int:
             or catalog_yaml
             or membership
             or args.name
+            or args.search
             or args.lifecycle
             or args.core
             or args.enabled_ootb
@@ -1081,6 +1165,7 @@ def main(argv: list[str] | None = None) -> int:
                 catalog_yaml=catalog_yaml,
                 membership=membership,
                 names=args.name,
+                search_terms=args.search,
                 lifecycles=args.lifecycle,
                 core_only=args.core,
                 ootb_enabled=args.enabled_ootb,
@@ -1088,12 +1173,21 @@ def main(argv: list[str] | None = None) -> int:
             )
         ]
         plugins = sort_plugins(plugins)
+        package_matches = search_packages(
+            args.search,
+            source=source,
+            repo_arg=args.repo,
+            ref=ref,
+            workdir=args.workdir,
+            core_index=core_index,
+        )
         warnings = list(_load_notes) + build_warnings(plugins, scanned)
         note_missing_core(core_index, ref, warnings)
 
         payload = {
             "version": args.version,
             "ref": ref,
+            "pre_release": source.get("pre_release") == "true",
             "source": source,
             "scanned": scanned,
             "filtered": filtered,
@@ -1116,6 +1210,8 @@ def main(argv: list[str] | None = None) -> int:
             "warnings": warnings,
             "plugins": plugins,
         }
+        if args.search:
+            payload["packages"] = package_matches
         _emit(
             payload,
             render_markdown(
@@ -1127,6 +1223,7 @@ def main(argv: list[str] | None = None) -> int:
                 filtered=filtered,
                 scanned=scanned,
                 core_index=core_index,
+                package_matches=package_matches if args.search else None,
             ),
             args.json,
         )

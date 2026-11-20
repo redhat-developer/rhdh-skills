@@ -7,7 +7,7 @@ Load this file when a column is empty, support is Unknown, or the user asks wher
 Data is read from [rhdh-plugin-export-overlays](https://github.com/redhat-developer/rhdh-plugin-export-overlays) at the mapped git ref for the requested RHDH version. Prefer a local checkout:
 
 - `--repo PATH` or `RHDH_OVERLAY_REPO` (see `../SKILL.md` → **Overlay repo**)
-- Without a local path: temp sparse clone from GitHub
+- Without a local path: temp tarball download from GitHub
 
 The script never `git checkout`s your tree; it uses `git cat-file` at the ref (or `--workdir` for on-disk files).
 

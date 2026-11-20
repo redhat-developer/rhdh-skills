@@ -9,6 +9,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SKILL_DIR = PROJECT_ROOT / "skills" / "release" / "rhdh-product-catalog"
@@ -19,6 +20,7 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import list_plugins as lp  # noqa: E402
+import overlay_repo as repo_mod  # noqa: E402
 
 
 class FixtureListingTests(unittest.TestCase):
@@ -80,6 +82,10 @@ class FixtureListingTests(unittest.TestCase):
         scale = next(p for p in self.plugins if p["name"] == "3scale")
         self.assertEqual(scale["catalog_yaml"], "pre-installed")
         self.assertTrue(scale["preinstalled"])
+
+    def test_tags_loaded(self) -> None:
+        scale = next(p for p in self.plugins if p["name"] == "3scale")
+        self.assertEqual(scale["tags"], ["openshift", "integration"])
 
     def test_author_provider_publisher(self) -> None:
         scale = next(p for p in self.plugins if p["name"] == "3scale")
@@ -168,38 +174,26 @@ class FixtureListingTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
-    def test_markdown_grouping(self) -> None:
+    def test_cli_grouping(self) -> None:
         buf = StringIO()
         with redirect_stdout(buf):
-            code = lp.main(["1.10", "--repo", str(FIXTURES), "--workdir"])
+            code = lp.main(["1.10", "--repo", str(FIXTURES), "--workdir", "--json"])
         self.assertEqual(code, 0)
-        text = buf.getvalue()
-        self.assertIn("# RHDH 1.10 plugins (`release-1.10`)", text)
-        self.assertIn("## Included in the Catalog", text)
-        self.assertIn("## Packaged, but Not in Catalog", text)
-        self.assertLess(
-            text.index("## Included in the Catalog"),
-            text.index("## Packaged, but Not in Catalog"),
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(payload["catalog_membership"], {"in-catalog": 5, "packaged": 2})
+        self.assertEqual(payload["catalog_yaml"], {"pre-installed": 5, "custom": 2})
+        self.assertEqual(
+            [(plugin["name"], plugin["catalog_membership"]) for plugin in payload["plugins"]],
+            [
+                ("bulk-import", "in-catalog"),
+                ("legacy-ga", "in-catalog"),
+                ("acr", "in-catalog"),
+                ("scorecard", "in-catalog"),
+                ("3scale", "in-catalog"),
+                ("partner-plugin", "packaged"),
+                ("mystery", "packaged"),
+            ],
         )
-        self.assertIn("### Generally Available", text)
-        self.assertIn("### Community", text)
-        self.assertIn("Partner Plugin", text)
-        self.assertIn(
-            "| Title | Support | Lifecycle | Author | Provider | Publisher | Core OOTB | Plugin YAML |",
-            text,
-        )
-        self.assertIn(
-            "| APIs with 3scale | Community | active | Red Hat | Red Hat | Red Hat | — | pre-installed |",
-            text,
-        )
-        self.assertIn(
-            "| Partner Plugin | Community | active | — | Example | — | — | custom |", text
-        )
-        in_cat = text.index("## Included in the Catalog")
-        packaged = text.index("## Packaged, but Not in Catalog")
-        self.assertLess(text.index("Bulk Import"), packaged)
-        self.assertGreater(text.index("Partner Plugin"), packaged)
-        self.assertLess(in_cat, text.index("### Generally Available"))
 
     def test_filters_cli(self) -> None:
         buf = StringIO()
@@ -335,29 +329,150 @@ class DiffCliTests(unittest.TestCase):
             )
             buf = StringIO()
             with redirect_stdout(buf):
-                code = lp.main(["--diff", "1.9", "1.10", "--repo", str(repo)])
-            self.assertEqual(code, 0)
-            text = buf.getvalue()
-            self.assertIn("# RHDH plugin diff: 1.9 → 1.10", text)
-            self.assertIn("## Support level changed", text)
-            self.assertIn("## Newly added (in 1.10, not in 1.9)", text)
-            self.assertIn("## Lifecycle changed", text)
-            self.assertIn("## Removed (in 1.9, not in 1.10)", text)
-            self.assertIn("Developer Preview → **Generally Available**", text)
-            self.assertIn("experimental → **active**", text)
-            self.assertIn("New Plugin", text)
-            self.assertIn("Old Plugin", text)
-
-            jbuf = StringIO()
-            with redirect_stdout(jbuf):
                 code = lp.main(["--diff", "1.9", "1.10", "--repo", str(repo), "--json"])
             self.assertEqual(code, 0)
-            payload = json.loads(jbuf.getvalue())
+            payload = json.loads(buf.getvalue())
             self.assertEqual(payload["mode"], "diff")
             self.assertEqual(payload["counts"]["added"], 1)
             self.assertEqual(payload["counts"]["removed"], 1)
             self.assertEqual(payload["counts"]["support"], 1)
             self.assertEqual(payload["counts"]["lifecycle"], 1)
+
+
+class SearchTests(unittest.TestCase):
+    """--search answers an availability question from both catalog tiles and packages."""
+
+    def test_search_shows_plugins_and_packages(self) -> None:
+        buf = StringIO()
+        with redirect_stdout(buf):
+            code = lp.main(
+                [
+                    "1.10",
+                    "--repo",
+                    str(FIXTURES),
+                    "--workdir",
+                    "--search",
+                    "scorecard",
+                    "--json",
+                ]
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual([plugin["name"] for plugin in payload["plugins"]], ["scorecard"])
+        self.assertEqual(
+            [package["package_name"] for package in payload["packages"]],
+            ["@red-hat-developer-hub/backstage-plugin-scorecard"],
+        )
+
+    def test_search_reports_when_no_package_matches(self) -> None:
+        buf = StringIO()
+        with redirect_stdout(buf):
+            code = lp.main(
+                ["1.10", "--repo", str(FIXTURES), "--workdir", "--search", "3scale", "--json"]
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual([plugin["name"] for plugin in payload["plugins"]], ["3scale"])
+        self.assertEqual(payload["packages"], [])
+
+    def test_search_json_includes_packages(self) -> None:
+        buf = StringIO()
+        with redirect_stdout(buf):
+            code = lp.main(
+                ["1.10", "--repo", str(FIXTURES), "--workdir", "--search", "todo", "--json"]
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual([p["name"] for p in payload["plugins"]], [])
+        self.assertEqual(
+            [p["package_name"] for p in payload["packages"]],
+            ["@backstage-community/plugin-todo"],
+        )
+        self.assertTrue(payload["filtered"])
+
+    def test_search_matches_tags_but_name_filter_does_not(self) -> None:
+        buf = StringIO()
+        with redirect_stdout(buf):
+            code = lp.main(["1.10", "--repo", str(FIXTURES), "--workdir", "--search", "openshift"])
+        self.assertEqual(code, 0)
+        self.assertIn("APIs with 3scale", buf.getvalue())
+
+        nbuf = StringIO()
+        with redirect_stdout(nbuf):
+            lp.main(["1.10", "--repo", str(FIXTURES), "--workdir", "--name", "openshift"])
+        self.assertNotIn("APIs with 3scale", nbuf.getvalue())
+
+    def test_search_without_terms_leaves_output_unchanged(self) -> None:
+        buf = StringIO()
+        with redirect_stdout(buf):
+            lp.main(["1.10", "--repo", str(FIXTURES), "--workdir"])
+        self.assertNotIn("## Matching packages", buf.getvalue())
+
+
+class TarballDiffCoreTests(unittest.TestCase):
+    """Each side of a --diff reads its own default.packages.yaml."""
+
+    @staticmethod
+    def _write_side(root: Path, ref: str) -> Path:
+        name = "old-plugin" if ref == "release-1.9" else "new-plugin"
+        title = "Old Plugin" if ref == "release-1.9" else "New Plugin"
+        ootb = "disabled" if ref == "release-1.9" else "enabled"
+        files = {
+            f"catalog-entities/extensions/plugins/{name}.yaml": (
+                "apiVersion: extensions.backstage.io/v1alpha1\n"
+                "kind: Plugin\n"
+                "metadata:\n"
+                f"  name: {name}\n"
+                f"  title: {title}\n"
+                "spec:\n"
+                "  support:\n"
+                "    level: community\n"
+                "  lifecycle: active\n"
+                "  packages:\n"
+                f"    - {name}-pkg\n"
+            ),
+            f"workspaces/{name}/metadata/{name}.yaml": (
+                "apiVersion: extensions.backstage.io/v1alpha1\n"
+                "kind: Package\n"
+                "metadata:\n"
+                f"  name: {name}-pkg\n"
+                f"  title: {title} Package\n"
+                "spec:\n"
+                f'  packageName: "@acme/{name}"\n'
+                "  support: community\n"
+                "  lifecycle: active\n"
+            ),
+            "default.packages.yaml": (
+                "packages:\n"
+                f"  {ootb}:\n"
+                f"    - package: '@acme/{name}'\n"
+                '      support: "community"\n'
+            ),
+        }
+        for rel, content in files.items():
+            dest = root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+        return root
+
+    def test_added_and_removed_rows_use_their_own_core_list(self) -> None:
+        def fake_fetch(ref: str, dest: Path) -> Path:
+            return self._write_side(dest, ref)
+
+        buf = StringIO()
+        with mock.patch.object(repo_mod, "discover_overlay_repo", return_value=None):
+            with mock.patch.object(
+                repo_mod, "remote_release_branches", return_value={(1, 9), (1, 10)}
+            ):
+                with mock.patch.object(repo_mod, "fetch_overlay_tarball", side_effect=fake_fetch):
+                    with redirect_stdout(buf):
+                        code = lp.main(["--diff", "1.9", "1.10", "--json"])
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue())
+        added = {p["title"]: p["core_ootb"] for p in payload["added"]}
+        removed = {p["title"]: p["core_ootb"] for p in payload["removed"]}
+        self.assertEqual(added, {"New Plugin": "enabled"})
+        self.assertEqual(removed, {"Old Plugin": "disabled"})
 
 
 if __name__ == "__main__":
