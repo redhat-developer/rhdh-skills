@@ -477,6 +477,12 @@
       ]
     },
     {
+      "name": "rhdh-product-catalog",
+      "category": "release",
+      "invocation": "model",
+      "requiresSkills": []
+    },
+    {
       "name": "openspec-journal",
       "category": "reference",
       "invocation": "model",

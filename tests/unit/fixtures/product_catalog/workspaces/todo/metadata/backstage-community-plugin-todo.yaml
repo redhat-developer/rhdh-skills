@@ -1,0 +1,20 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Package
+metadata:
+  name: backstage-community-plugin-todo
+  namespace: rhdh
+  title: "@backstage-community/plugin-todo"
+  links:
+    - title: Bugs
+      url: https://github.com/backstage/community-plugins/issues
+  annotations:
+    backstage.io/source-location: url:https://github.com/backstage/community-plugins/tree/main/workspaces/todo
+spec:
+  packageName: "@backstage-community/plugin-todo"
+  version: 0.4.0
+  backstage:
+    role: frontend-plugin
+    supportedVersions: 1.52.0
+  author: Backstage Community
+  support: community
+  lifecycle: active

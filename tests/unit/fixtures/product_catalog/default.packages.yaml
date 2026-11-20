@@ -1,0 +1,9 @@
+packages:
+  enabled: # inline comment allowed
+  - package: '@red-hat-developer-hub/backstage-plugin-scorecard'
+    support: "generally-available"
+  disabled:
+  - package: '@red-hat-developer-hub/backstage-plugin-adoption-insights'
+    support: "generally-available"
+  - package: '@red-hat-developer-hub/backstage-plugin-adoption-insights-backend'
+    support: "generally-available"
