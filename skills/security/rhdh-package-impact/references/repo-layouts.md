@@ -43,3 +43,32 @@ workflows that set `--base release-1.10` live in the **rhdh core** repo;
 plugins-monorepo Fullsend schedules omit that path.
 
 Env fallback: `RHDH_CORE_ROOT`.
+
+## Catalog midstream (`rhidp/rhdh-plugin-catalog`)
+
+GitLab CEE checkout used for **downstream Dependabot CVE lockfile bumps** on
+`release-X.Y` (especially skip-sync workspaces). Same on-disk shape as a
+plugins monorepo workspace (`workspaces/<name>/yarn.lock`, Yarn Berry under
+that workspace), plus catalog-only tooling:
+
+- `build/scripts/reexport-dist-dynamic.sh` — regenerate
+  `plugins/*/dist-dynamic/` after a workspace lock bump
+- Remotes typically point at `gitlab.cee.redhat.com` (`origin` / `upstream`)
+
+**Dual-checkout:** Dependabot alerts usually live on a **separate GitHub**
+host (staging or upstream plugins). Pass that host as `--repo` and the
+alerts checkout as `--repo-root` only for list/discovery path matching; pass
+the **catalog** checkout as `--repo-root` for classify / bump / `yarn why`.
+
+| Input | Role |
+| --- | --- |
+| `--repo-root` (bump) | Catalog checkout |
+| `--repo` | GitHub Dependabot alerts host (`owner/name`) |
+| `--repo-root` (list only) | Alerts-host checkout (must contain `workspaces/<name>/`) |
+| `--base release-X.Y` | Catalog release train |
+| `--no-dedupe` | Default for catalog release CVE bumps |
+
+Full operator flow: [bump-catalog-midstream.md](../workflows/bump-catalog-midstream.md).
+Human twin: catalog `docs/SYNC_MIDSTREAM.md` (CVE / yarn.lock section).
+Not for Version Packages → overlays → surgical catalog promote
+(`/rhdh-plugin-midstream-propagate`).
