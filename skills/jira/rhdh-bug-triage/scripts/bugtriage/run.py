@@ -251,13 +251,23 @@ def run(config: RunConfig) -> RunResult:
     # A supplied manifest is not permission to bypass current eligibility.
     from .selection import exclusion_reason
 
+    selected_eligible = 0
     for key, entry in selection.items():
         ticket = tickets_by_key[key]
-        if entry.get("kind") == "control":
-            continue
         reason = exclusion_reason(
             ticket, as_of, config.aged_days, config.current_release, config.scope
         )
+        if not reason:
+            selected_eligible += 1
+        if entry.get("kind") == "control":
+            # Controls bypass age/version filters only, including on a rerun
+            # against an export whose customer or completion status changed.
+            reason = exclusion_reason(
+                ticket, as_of, config.aged_days, config.current_release, "all-open"
+            )
+            if reason:
+                raise RunError(f"sample control {key} is no longer eligible: {reason}")
+            continue
         if reason:
             raise RunError(f"sample issue {key} is no longer eligible: {reason}")
 
@@ -300,6 +310,7 @@ def run(config: RunConfig) -> RunResult:
         else {}
     )
     backlog_by_key = {item.key: item for item in backlog}
+    backlog_by_key.update(tickets_by_key)
     for key, evidence in collection.items():
         discovery = evidence.get("discovery", {})
         if discovery and discovery.get("key") != key:
@@ -308,7 +319,6 @@ def run(config: RunConfig) -> RunResult:
             candidate = normalize_issue(record)
             # Fresh collected records supersede the bounded backlog snapshot.
             backlog_by_key[candidate.key] = candidate
-    backlog_by_key.update(tickets_by_key)
     backlog = list(backlog_by_key.values())
     # Duplicate retrieval is only as good as the backlog. A closed canonical
     # report is invisible when the export holds open tickets only, so record
@@ -395,7 +405,7 @@ def run(config: RunConfig) -> RunResult:
         "assessedIssues": len(packets),
         "excludedIssues": len(sample.get("excluded", [])),
         "scope": config.scope,
-        "selectionComplete": len(selection) >= sample.get("eligibleCount", 0),
+        "selectionComplete": selected_eligible == current_eligible,
         "corpusIssues": len(backlog),
         "corpusHasClosed": backlog_has_closed,
         "corpusExhaustive": False,
@@ -453,6 +463,7 @@ def run(config: RunConfig) -> RunResult:
         for name, path in {
             "export": config.input_path,
             "backlog": config.backlog_path or config.input_path,
+            **({"sample": config.sample_path} if config.sample_path else {}),
             **{
                 f"assessment:{key}": str(Path(config.assessments_dir) / f"{key}.json")
                 for key in selection

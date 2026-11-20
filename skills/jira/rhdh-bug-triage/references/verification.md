@@ -44,6 +44,14 @@ facts or reviewers; perform and retain the actual source inspection separately.
 
 ## Exact-comment and no-write safety
 
+Revalidate saved controls against current customer and Done exclusions. Controls
+outside the selection scope do not count toward eligible-backlog coverage. Keep
+freshly hydrated candidate facts ahead of export snapshots, including customer
+signals and completion status. Hash a supplied selection manifest alongside the
+other inputs. Describe recorded investigation and customer-field coverage in
+reports; loading assessments does not prove independent investigation or a
+release-record read occurred.
+
 1. Every selected, investigated bug has a nonempty exact draft and one next step,
    including `unclear`/`needs_repro`. The report includes **every** draft and
    delivery status. Report, packet and any proposal file contain the same body

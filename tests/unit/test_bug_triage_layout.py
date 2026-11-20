@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / "skills/jira/rhdh-bug-triage"
 sys.path.insert(0, str(SKILL / "scripts"))
 
-from bugtriage.layout import fix_outcome  # noqa: E402
+from bugtriage.layout import _investigation_counts, fix_outcome  # noqa: E402
 
 
 def finding(**overrides):
@@ -78,3 +78,15 @@ def test_mixed_or_code_areas_go_to_pull_requests():
 
 def test_complexity_none_is_resolution_only():
     assert fix_outcome(finding(fix_plan={"complexity": "none", "areas": []})) == "resolution"
+
+
+def test_missing_investigations_count_as_not_recorded():
+    counts = _investigation_counts(
+        [
+            finding(investigation={}),
+            finding(investigation={"status": "not_recorded"}),
+            finding(investigation={"status": "blocked"}),
+            finding(),
+        ]
+    )
+    assert counts == {"completed": 1, "blocked": 1, "not_recorded": 2}
