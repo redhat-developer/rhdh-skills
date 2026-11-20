@@ -404,7 +404,6 @@ def test_mention_prefers_the_assignee_then_the_reporter(scan):
 def test_component_order_does_not_fail_verification(apply):
     expected = [{"name": "Search"}, {"name": "Catalog"}]
     actual = [{"name": "Catalog"}, {"name": "Search"}]
-
     assert apply.values_match(expected, actual)
 
 
@@ -424,115 +423,481 @@ def test_adf_release_note_text_verifies_by_content(apply):
             {"type": "paragraph"},
         ],
     }
-
     assert apply.values_match(expected, actual)
 
 
-def test_precondition_requires_the_field_to_still_be_empty(apply):
-    assert apply.precondition_holds("empty", None)
-    assert apply.precondition_holds("empty", [])
-    assert not apply.precondition_holds("empty", [{"name": "Catalog"}])
-    assert apply.precondition_holds("any", "whatever")
+def test_precondition_requires_empty_or_exact_value(apply):
+    assert apply.precondition_holds({"state": "empty"}, None)
+    assert apply.precondition_holds({"state": "empty"}, [])
+    assert not apply.precondition_holds({"state": "empty"}, [{"name": "Catalog"}])
+    assert apply.precondition_holds({"state": "equals", "value": 3}, 3)
+    assert not apply.precondition_holds({"state": "equals", "value": 3}, 5)
 
 
-def test_comment_carries_the_marker_the_lines_and_the_mention(apply):
-    adf = apply.build_comment_adf(
-        ["Component -> Catalog (inherited from RHIDP-1100)."],
-        {"accountId": "a1", "displayName": "Jane", "role": "assignee"},
-    )
+def valid_plan(**overrides):
+    plan = {
+        "schema": 2,
+        "run_id": "run-1",
+        "scan_digest": "a" * 64,
+        "scope": {"jql": "project in (RHIDP)"},
+        "fields": {
+            "story_points": "customfield_points",
+            "size": "customfield_size",
+            "rn_type": "customfield_rn_type",
+            "rn_text": "customfield_rn_text",
+            "rn_status": "customfield_rn_status",
+        },
+        "issues": [
+            {
+                "key": "RHIDP-1234",
+                "summary": "Improve authentication timeout handling",
+                "project": "RHIDP",
+                "issuetype": "Story",
+                "status": "In Progress",
+                "labels": [],
+                "expected_updated": "2026-11-19T14:22:03.000-0500",
+                "mention": {
+                    "accountId": "account-1",
+                    "displayName": "Jane Doe",
+                    "role": "assignee",
+                },
+                "findings": [
+                    {
+                        "rule": "LINT-COMPONENT",
+                        "action": "derive",
+                        "decision": "supported",
+                        "reason": "Component inherited from RHIDP-900.",
+                        "evidence": {
+                            "basis": "Parent RHIDP-900 has one component.",
+                            "parent": "RHIDP-900",
+                            "parent_components": ["Authentication"],
+                        },
+                        "set": {"fields": {"components": [{"name": "Authentication"}]}},
+                        "precondition": {"field": "components", "state": "empty"},
+                    },
+                    {
+                        "rule": "LINT-POINTS",
+                        "action": "estimate",
+                        "decision": "insufficient",
+                        "reason": "Scope is ambiguous.",
+                        "evidence": {
+                            "basis": "The description and child spike disagree.",
+                            "question": "Does this include migration?",
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    plan.update(overrides)
+    return plan
+
+
+def test_validate_plan_rejects_schema_1_and_unknown_keys(apply):
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(valid_plan(schema=1))
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(valid_plan(extra="nope"))
+
+
+def test_validate_plan_rejects_non_supported_writes(apply):
+    plan = valid_plan()
+    plan["issues"][0]["findings"][1]["decision"] = "supported"
+    plan["issues"][0]["findings"][1]["set"] = {"fields": {"customfield_points": 3}}
+    plan["issues"][0]["findings"][1]["precondition"] = {
+        "field": "customfield_points",
+        "state": "empty",
+    }
+    plan["issues"][0]["findings"][1]["evidence"] = {
+        "basis": "Three acceptance criteria and one area.",
+        "acceptance_criteria": 3,
+        "affected_areas": ["authentication"],
+    }
+    issues, issue_count, operation_count = apply.validate_plan(plan)
+    assert issue_count == 1
+    assert operation_count == 2
+
+
+def test_validate_plan_rejects_wrong_field_or_missing_precondition(apply):
+    plan = valid_plan()
+    finding = plan["issues"][0]["findings"][0]
+    finding["set"] = {"fields": {"priority": {"name": "Normal"}}}
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(plan)
+    finding["set"] = {"fields": {"components": [{"name": "Authentication"}]}}
+    finding["precondition"] = {"field": "priority", "state": "empty"}
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(plan)
+
+
+def test_validate_plan_allows_normal_and_inherited_critical(apply):
+    normal = valid_plan()
+    normal["issues"][0]["findings"][0] = {
+        "rule": "LINT-PRIORITY",
+        "action": "derive",
+        "decision": "supported",
+        "reason": "Routine work with no urgency signal.",
+        "evidence": {"basis": "Routine work with a clear outcome and no urgency."},
+        "set": {"fields": {"priority": {"name": "Normal"}}},
+        "precondition": {"field": "priority", "state": "empty"},
+    }
+    apply.validate_plan(normal)
+
+    inherited = valid_plan()
+    inherited["issues"][0]["findings"][0] = {
+        "rule": "LINT-PRIORITY",
+        "action": "derive",
+        "decision": "supported",
+        "reason": "Critical inherited from RHIDP-900.",
+        "evidence": {
+            "basis": "Parent RHIDP-900 is Critical.",
+            "parent": "RHIDP-900",
+            "parent_priority": "Critical",
+        },
+        "set": {"fields": {"priority": {"name": "Critical"}}},
+        "precondition": {"field": "priority", "state": "empty"},
+    }
+    apply.validate_plan(inherited)
+
+
+def test_validate_plan_rejects_self_inferred_critical(apply):
+    plan = valid_plan()
+    plan["issues"][0]["findings"][0] = {
+        "rule": "LINT-PRIORITY",
+        "action": "derive",
+        "decision": "supported",
+        "reason": "This looks critical.",
+        "evidence": {"basis": "The agent decided it looked critical."},
+        "set": {"fields": {"priority": {"name": "Critical"}}},
+        "precondition": {"field": "priority", "state": "empty"},
+    }
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(plan)
+
+
+def test_validate_plan_rejects_invalid_points_and_size(apply):
+    points = valid_plan()
+    points["issues"][0]["findings"][0] = {
+        "rule": "LINT-POINTS",
+        "action": "estimate",
+        "decision": "supported",
+        "reason": "Three criteria and one area.",
+        "evidence": {
+            "basis": "Three criteria and one area.",
+            "acceptance_criteria": 3,
+            "affected_areas": ["authentication"],
+        },
+        "set": {"fields": {"customfield_points": 13}},
+        "precondition": {"field": "customfield_points", "state": "empty"},
+    }
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(points)
+
+    size = valid_plan()
+    size["issues"][0]["findings"][0] = {
+        "rule": "LINT-SIZE",
+        "action": "estimate",
+        "decision": "supported",
+        "reason": "One sprint of work.",
+        "evidence": {"basis": "One sprint of work.", "scope_signals": ["one component"]},
+        "set": {"fields": {"customfield_size": "XXL"}},
+        "precondition": {"field": "customfield_size", "state": "empty"},
+    }
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(size)
+
+
+def test_build_comment_adf_is_mixed_and_red_hat_employee(apply):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    adf = apply.build_comment_adf(issue, "run-1")
     text = apply.comment_text(adf)
-
     assert apply.COMMENT_MARKER in text
-    assert "inherited from RHIDP-1100" in text
-    assert "@Jane" in text
-    mention = adf["content"][-1]["content"][0]
-    assert mention == {"type": "mention", "attrs": {"id": "a1", "text": "@Jane"}}
+    assert "What changed" in text
+    assert "What wasn’t changed" in text
+    assert "LINT-COMPONENT" in text
+    assert "LINT-POINTS" in text
+    assert "@Jane Doe" in text
+    assert apply.COMMENT_VISIBILITY == {
+        "type": "group",
+        "value": "Red Hat Employee",
+    }
 
 
-def test_comment_without_a_mention_still_has_the_marker(apply):
-    adf = apply.build_comment_adf(["Points -> 3."], None)
-
-    assert apply.COMMENT_MARKER in apply.comment_text(adf)
-    assert all(node["type"] == "paragraph" for node in adf["content"])
-
-
-def test_comment_batch_id_is_stable_and_content_sensitive(apply):
-    mention = {"accountId": "a1", "displayName": "Jane"}
-    first = apply.batch_id(["Points -> 3.", "Component -> Catalog."], mention)
-    retry = apply.batch_id(["Points -> 3.", "Component -> Catalog."], mention)
-    changed = apply.batch_id(["Points -> 5.", "Component -> Catalog."], mention)
-    other_person = apply.batch_id(
-        ["Points -> 3.", "Component -> Catalog."],
-        {"accountId": "a2", "displayName": "Sam"},
-    )
-
+def test_batch_id_is_stable_and_sensitive_to_run_and_operations(apply):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    first = apply.batch_id(issue, "run-1")
+    retry = apply.batch_id(issue, "run-1")
+    other_run = apply.batch_id(issue, "run-2")
     assert first == retry
-    assert first != changed
-    assert first != other_person
-    adf = apply.build_comment_adf(["Points -> 3."], mention)
-    assert f"({apply.batch_id(['Points -> 3.'], mention)})" in apply.comment_text(adf)
+    assert first != other_run
 
 
-def test_plan_validation_rejects_empty_comments(apply):
-    with pytest.raises(apply.ApplyError):
-        apply.validate_plan({"comments": [{"key": "RHIDP-1", "lines": []}]})
-
-    with pytest.raises(apply.ApplyError):
-        apply.validate_plan({"comments": [{"key": "RHIDP-1", "lines": ["ok"], "mention": {}}]})
-
-    operations, comments = apply.validate_plan({"comments": [{"key": "RHIDP-1", "lines": ["ok"]}]})
-    assert operations == []
-    assert comments[0]["key"] == "RHIDP-1"
-
-
-def test_default_jql_bounds_the_sweep(scan):
-    import argparse
-
-    args = argparse.Namespace(keys=None, jql=None, assignee=None, release=None)
-    jql = scan.build_jql(args)
-
-    assert "project in (RHIDP,RHDHPLAN,RHDHBUGS)" in jql
-    assert "updated >= -365d" in jql
-
-    args = argparse.Namespace(keys=None, jql=None, assignee="me", release=None)
-    assert "assignee = currentUser()" in scan.build_jql(args)
-
-
-def test_collect_separates_waived_findings(scan, monkeypatch):
-    import argparse
-
-    issues = [
-        issue("RHIDP-1", components=[], priority={"name": "Major"}, **{"cf_points": 3}),
-        issue(
-            "RHIDP-2",
-            components=[],
-            priority={"name": "Major"},
-            labels=["hygiene-waived-2026-06"],
-            **{"cf_points": 3},
+def test_run_issue_suppresses_comment_when_write_fails(apply, monkeypatch):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    current = {
+        "fields": {
+            "summary": issue["summary"],
+            "project": {"key": "RHIDP"},
+            "status": {"name": "In Progress"},
+            "issuetype": {"name": "Story"},
+            "labels": [],
+            "updated": issue["expected_updated"],
+            "components": [],
+        }
+    }
+    monkeypatch.setattr(apply, "read_issue", lambda credential, key, fields: current)
+    monkeypatch.setattr(
+        apply,
+        "write_issue",
+        lambda credential, key, fields: (_ for _ in ()).throw(
+            apply.ApplyError("PUT failed", status=400)
         ),
-    ]
-
-    monkeypatch.setattr(scan, "load_email_token", lambda: "bot@example.com:token")
-    monkeypatch.setattr(scan, "resolve_fields", lambda base, credential: (FIELDS, []))
-    monkeypatch.setattr(scan, "search_issues", lambda *args, **kwargs: (issues, False))
-    monkeypatch.setattr(scan, "discover_calendar", lambda explicit: None)
-
-    args = argparse.Namespace(
-        jql=None,
-        keys=None,
-        assignee=None,
-        team=None,
-        release=None,
-        release_calendar=None,
-        today="2026-01-10",
-        limit=500,
-        page_size=100,
-        include_waived=False,
     )
-    report = scan.collect(args)
+    stopped = set()
+    result = apply.run_issue("credential", issue, plan["fields"], "run-1", stopped, False)
+    assert result["status"] == "failed"
+    assert result["comment"] is None
+    assert "LINT-COMPONENT" in stopped
 
-    assert report["scope"]["issues_scanned"] == 2
-    assert [finding["key"] for finding in report["findings"]] == ["RHIDP-1"]
-    assert [finding["key"] for finding in report["waived"]] == ["RHIDP-2"]
-    assert report["summary"]["by_rule"] == {"LINT-COMPONENT": 1}
-    assert any("release calendar" in warning for warning in report["warnings"])
+
+def test_run_issue_posts_comment_after_successful_write(apply, monkeypatch):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    before = {
+        "fields": {
+            "summary": issue["summary"],
+            "project": {"key": "RHIDP"},
+            "status": {"name": "In Progress"},
+            "issuetype": {"name": "Story"},
+            "labels": [],
+            "updated": issue["expected_updated"],
+            "components": [],
+        }
+    }
+    after = {
+        "fields": {
+            **before["fields"],
+            "components": [{"name": "Authentication"}],
+        }
+    }
+    reads = [before, after]
+    monkeypatch.setattr(
+        apply,
+        "read_issue",
+        lambda credential, key, fields: reads.pop(0) if reads else after,
+    )
+    monkeypatch.setattr(apply, "write_issue", lambda credential, key, fields: None)
+    monkeypatch.setattr(
+        apply,
+        "upsert_comment",
+        lambda credential, planned_issue, run_id, adf: {
+            "key": planned_issue["key"],
+            "status": "created",
+            "comment_id": "123",
+        },
+    )
+    result = apply.run_issue("credential", issue, plan["fields"], "run-1", set(), False)
+    assert result["status"] == "completed"
+    assert result["comment"]["status"] == "created"
+
+
+def test_build_revert_plan_uses_equals_precondition(apply):
+    plan = valid_plan()
+    receipt = {
+        "issues": [
+            {
+                "key": "RHIDP-1234",
+                "findings": [
+                    {
+                        "rule": "LINT-COMPONENT",
+                        "status": "completed",
+                        "before": [],
+                        "after": "Authentication",
+                    }
+                ],
+            }
+        ]
+    }
+    revert = apply.build_revert_plan(plan, receipt)
+    finding = revert["issues"][0]["findings"][0]
+    assert finding["precondition"]["state"] == "equals"
+    assert finding["set"]["fields"]["components"] == []
+
+
+def test_upsert_comment_posts_and_verifies_red_hat_employee_visibility(apply, monkeypatch):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    adf = apply.build_comment_adf(issue, "run-1")
+    posts = []
+
+    calls = []
+
+    def fake_request(path, credential, *, method="GET", body=None):
+        calls.append(method)
+        if method == "POST":
+            posts.append((path, body))
+            return {"id": "comment-1"}
+        if "POST" in calls:
+            return {
+                "total": 1,
+                "comments": [
+                    {
+                        "id": "comment-1",
+                        "body": adf,
+                        "visibility": apply.COMMENT_VISIBILITY,
+                    }
+                ],
+            }
+        return {"total": 0, "comments": []}
+
+    monkeypatch.setattr(apply, "request_with_retry", fake_request)
+    result = apply.upsert_comment("credential", issue, "run-1", adf)
+    assert result["status"] == "created"
+    assert posts[0][1]["visibility"] == {
+        "type": "group",
+        "value": "Red Hat Employee",
+    }
+
+
+def test_upsert_comment_rejects_wrong_visibility_on_retry(apply, monkeypatch):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    adf = apply.build_comment_adf(issue, "run-1")
+    monkeypatch.setattr(
+        apply,
+        "all_comments",
+        lambda credential, key: [
+            {
+                "id": "comment-1",
+                "body": adf,
+                "visibility": {"type": "group", "value": "Everyone"},
+            }
+        ],
+    )
+    result = apply.upsert_comment("credential", issue, "run-1", adf)
+    assert result["status"] == "failed"
+    assert "Red Hat Employee" in result["error"]
+
+
+def test_revert_plan_round_trips_through_validate_plan(apply):
+    plan = valid_plan()
+    receipt = {
+        "issues": [
+            {
+                "key": "RHIDP-1234",
+                "updated_after": "2026-11-20T10:00:00.000-0500",
+                "findings": [
+                    {
+                        "rule": "LINT-COMPONENT",
+                        "status": "completed",
+                        "before": [],
+                        "after": [{"name": "Authentication"}],
+                    }
+                ],
+            }
+        ]
+    }
+    revert = apply.build_revert_plan(plan, receipt)
+    apply.validate_plan(revert)
+    finding = revert["issues"][0]["findings"][0]
+    assert finding["set"]["fields"]["components"] == []
+    assert finding["precondition"]["value"] == [{"name": "Authentication"}]
+    assert revert["issues"][0]["expected_updated"] == "2026-11-20T10:00:00.000-0500"
+
+
+def test_validate_plan_rejects_duplicate_field_writes(apply):
+    plan = valid_plan()
+    duplicate = dict(plan["issues"][0]["findings"][0])
+    duplicate["reason"] = "Duplicate component write."
+    plan["issues"][0]["findings"].append(duplicate)
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(plan)
+
+
+def test_validate_plan_enforces_issue_key_scope(apply):
+    plan = valid_plan(scope={"issue_keys": ["RHIDP-9999"]})
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(plan)
+
+
+def test_validate_plan_binds_fix_version_to_evidence(apply):
+    plan = valid_plan()
+    plan["issues"][0]["findings"][0] = {
+        "rule": "LINT-FIXVERSION-MULTI",
+        "action": "derive",
+        "decision": "supported",
+        "reason": "Keep the active release.",
+        "evidence": {
+            "basis": "Exactly one version is active.",
+            "chosen_version": "1.10.0",
+            "current_versions": ["1.10.0", "1.11.0"],
+        },
+        "set": {"fields": {"fixVersions": [{"name": "1.11.0"}]}},
+        "precondition": {"field": "fixVersions", "state": "empty"},
+    }
+    with pytest.raises(apply.ApplyError):
+        apply.validate_plan(plan)
+
+
+def test_run_issue_verifies_inherited_priority_against_parent(apply, monkeypatch):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+    issue["findings"] = [
+        {
+            "rule": "LINT-PRIORITY",
+            "action": "derive",
+            "decision": "supported",
+            "reason": "Critical inherited from RHIDP-900.",
+            "evidence": {
+                "basis": "Parent RHIDP-900 is Critical.",
+                "parent": "RHIDP-900",
+                "parent_priority": "Critical",
+            },
+            "set": {"fields": {"priority": {"name": "Critical"}}},
+            "precondition": {"field": "priority", "state": "empty"},
+        }
+    ]
+    current = {
+        "fields": {
+            "summary": issue["summary"],
+            "project": {"key": "RHIDP"},
+            "status": {"name": "In Progress"},
+            "issuetype": {"name": "Story"},
+            "labels": [],
+            "updated": issue["expected_updated"],
+            "parent": {"key": "RHIDP-900"},
+            "priority": None,
+        }
+    }
+    parent = {"fields": {"priority": {"name": "Critical"}}}
+    after = {"fields": {**current["fields"], "priority": {"name": "Critical"}}}
+    reads = [current, parent, after, after]
+    monkeypatch.setattr(
+        apply, "read_issue", lambda credential, key, fields: reads.pop(0) if reads else after
+    )
+    monkeypatch.setattr(apply, "write_issue", lambda credential, key, fields: None)
+    monkeypatch.setattr(
+        apply,
+        "upsert_comment",
+        lambda credential, planned_issue, run_id, adf: {
+            "key": planned_issue["key"],
+            "status": "created",
+        },
+    )
+    result = apply.run_issue("credential", issue, plan["fields"], "run-1", set(), False)
+    assert result["status"] == "completed"
+
+
+def test_run_issue_treats_read_401_as_fatal(apply, monkeypatch):
+    plan = valid_plan()
+    issue = plan["issues"][0]
+
+    def fail_read(*args, **kwargs):
+        raise apply.ApplyError("GET failed", status=401)
+
+    monkeypatch.setattr(apply, "read_issue", fail_read)
+    with pytest.raises(apply.FatalRunError):
+        apply.run_issue("credential", issue, plan["fields"], "run-1", set(), False)

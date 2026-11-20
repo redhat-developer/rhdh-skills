@@ -17,12 +17,15 @@ the skill, and no class of write that exists only in a runner configuration.
 
 The executor enforces the limits; the prose is not the control:
 
-- every operation carries the field that must still be empty, checked immediately
-  before the write;
-- the issue must still be in the resolved scope and status set;
+- every supported finding carries rule-specific evidence and an empty-only
+  precondition, checked immediately before the write;
+- the issue must still be in the resolved project, status, issue type, and
+  expected `updated` timestamp;
 - the payload must use a field and value the rule supports;
-- a plan above `--max-operations` (default 50) is refused outright;
-- every write is read back, and a mismatch is reported as failed.
+- plans above 50 issues or 50 operations are refused outright;
+- writes are grouped by issue and every field is read back;
+- a comment is posted only when every field on that issue verifies;
+- comments are restricted to the `Red Hat Employee` Jira group.
 
 If a run needs a write outside that set, it stops and escalates. It does not widen
 its own authority.
@@ -36,9 +39,9 @@ its own authority.
    exemptions, and calendar gaps.
 3. **Investigate.** Each finding is resolved from the issue and its context, per
    [investigation.md](investigation.md).
-4. **Plan.** Build the operation and comment set.
+4. **Plan.** Build a schema 2 plan with one decision per finding.
 5. **Apply.** `scripts/apply.py --confirm` performs the bounded writes and
-   comments.
+   derives comments only from fully successful issues.
 6. **Summarize.** Return what was fixed, what is blocked, and what needs a person.
 
 Steps 1 and 2 are read-only. A failure there stops before any write.
@@ -57,8 +60,10 @@ child inherits the corrected value in the same pass.
 
 **Stop on a shape failure.** A 400 means the payload is wrong for every issue of
 that class: stop the class, keep the receipt, report. A 403 is a permission, not
-a retry. A 429 backs off once. A 401 stops the run; never repair credentials
-inside the sweep.
+a retry. A 429 backs off once and then stops the class. A read-back mismatch
+also stops that class. A 401 or read-permission failure stops the run; never
+repair credentials inside the sweep. If a stopped rule affects one field on an
+issue, the whole issue is skipped to avoid a partial batch.
 
 **Bounded reads.** One issue, its parent, its children, its links, its recent
 comments. A sweep that starts crawling the project for comparables has stopped
@@ -69,7 +74,8 @@ being deterministic.
 A second run with no new work must change nothing.
 
 - Preconditions make a repeat write a skip.
-- The comment carries a batch hash; a retry finds it and posts nothing.
+- The comment carries a batch hash derived from the run ID and canonical
+  operations; a retry finds it and posts nothing.
 - An existing human exemption is honored, not re-litigated.
 - The receipt records before and after, so a value that flipped back is visible.
 
@@ -83,8 +89,8 @@ assignee can check. It is also the only place a run generates notifications.
 - No comment when nothing changed.
 - Mention the assignee, else the reporter; if neither exists, post without a
   mention and escalate the unowned issue.
-- Escalations do not get a comment; they go in the summary.
-- `--max-operations` is also the comment budget for a run.
+- Blocked and escalated findings are reported under “what wasn’t changed”.
+- The hard fifty-issue and fifty-operation caps are also the comment budget.
 
 Jira notifies watchers per comment, so a cap is a notification cap. At the default
 fifty, a run touches at most fifty issues.
@@ -92,8 +98,9 @@ fifty, a run touches at most fifty issues.
 ## Reverting
 
 Field changes are auditable in Jira history but not one-click undoable. The
-receipt carries the before values: a revert is a plan built from the receipt,
-through the same gate, with the preconditions inverted.
+receipt carries the before values and the executor can write a guarded revert
+plan. A revert only restores a field when it still equals the value written by
+the original batch, so it cannot overwrite a newer human edit.
 
 A posted comment can be edited but not removed by the bot, and everyone mentioned
 has already been notified. That is why the batch hash exists and why the body is

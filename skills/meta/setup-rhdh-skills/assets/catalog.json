@@ -43,13 +43,13 @@
       "requiresSkills": [
         "mutation-gate",
         "prose-editing",
-        "rhdh-jira-api"
+        "rhdh-feature-docs",
+        "rhdh-jira-api",
+        "rhdh-jira-authoring",
+        "rhdh-release-schedule"
       ],
       "optionalSkills": [
-        "rhdh-feature-docs",
-        "rhdh-jira-authoring",
-        "rhdh-jira-update",
-        "rhdh-release-schedule"
+        "rhdh-jira-update"
       ]
     },
     {

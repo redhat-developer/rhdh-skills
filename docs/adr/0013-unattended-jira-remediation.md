@@ -1,6 +1,6 @@
 # Unattended remediation for one skill
 
-**Status:** Proposed.
+**Status:** Accepted.
 
 ## Context
 
@@ -33,11 +33,17 @@ classes and limits published in that skill. There is no separate policy file.
 The authorization is bounded by what the executor checks immediately before each
 write:
 
+- the finding is represented in a schema 2 plan with rule-specific evidence;
 - the field still holds the expected empty value;
-- the issue is still in the resolved scope and status set;
+- the issue is still in the resolved project, status, issue type, and expected
+  `updated` timestamp;
 - the payload uses a field and value the rule supports;
-- the plan does not exceed the operation cap;
-- every write is read back, and a mismatch is reported as failed.
+- the plan does not exceed fifty issues or fifty operations;
+- every write is read back, and a mismatch is reported as failed;
+- a comment is posted only when every write on that issue verifies;
+- comments are restricted to the `Red Hat Employee` Jira group;
+- field writes and comments suppress Jira notifications;
+- the receipt and guarded revert plan are written durably after every issue.
 
 The skill never writes transitions, closures, assignments, or exemptions, and
 never derives `Blocker` or `Critical`. Those remain behind `/mutation-gate` and a

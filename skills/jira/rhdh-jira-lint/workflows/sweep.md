@@ -82,46 +82,68 @@ Stop at the first of these that applies:
 Walk the findings in this order: `review-waiver`, `derive`, `escalate`,
 `estimate`, `classify`, `draft`. Parents before children.
 
-| Finding | Plan entry |
-|---|---|
-| `derive` with `proposed` | Copy `proposed` into `set`, with a `reason` |
-| `derive` without `proposed` (`choose`) | Do not write. Block or escalate |
-| `estimate` | Compute the value from the evidence, then `set` it with the basis |
-| `classify` | Resolve the type with `/rhdh-feature-docs`, then `set` it |
-| `draft` | Draft the note, convert to ADF with `/rhdh-jira-api`, then `set` it |
-| `escalate` | Do not write. Add the options to the summary |
-| `review-waiver` | Do not write. Escalate renew, fix, or retire |
+Every finding becomes exactly one schema 2 entry:
 
-The plan is JSON for `scripts/apply.py`. One comment per issue, covering every
-change that issue received in the sweep:
+- `supported` — the evidence is sufficient; carry `set` and an empty-only
+  precondition;
+- `insufficient` — do not write; carry one specific question;
+- `human_required` — do not write; carry the decision and options;
+- `waived` — do not write; record the existing exemption.
+
+One uncertain field does not block other supported fields on the same issue.
 
 ```json
 {
-  "schema": 1,
-  "operations": [
+  "schema": 2,
+  "run_id": "20261120T1015Z-rhidp-backlog",
+  "scan_digest": "b17c9f0ad929e440db6e0d9c7bc1a3d9c4dbcbf3b3ea5cd4b8dd6e4e59a01b70",
+  "scope": {"jql": "project in (RHIDP) AND updated >= -365d"},
+  "fields": {
+    "story_points": "customfield_10028",
+    "size": "customfield_10029",
+    "rn_type": "customfield_10030",
+    "rn_text": "customfield_10031",
+    "rn_status": "customfield_10032"
+  },
+  "issues": [
     {
       "key": "RHIDP-1234",
-      "rule": "LINT-COMPONENT",
-      "reason": "the issue changes the authentication provider",
-      "set": {"fields": {"components": [{"name": "Authentication"}]}},
-      "precondition": {"field": "components", "state": "empty"}
-    },
-    {
-      "key": "RHIDP-1235",
-      "rule": "LINT-POINTS",
-      "reason": "3 acceptance criteria, one component, integration tests",
-      "set": {"fields": {"customfield_10028": 3}},
-      "precondition": {"field": "customfield_10028", "state": "empty"}
-    }
-  ],
-  "comments": [
-    {
-      "key": "RHIDP-1234",
-      "lines": [
-        "Component -> Authentication (the issue changes the authentication provider).",
-        "Story Points -> 3 (3 acceptance criteria, one component, integration tests)."
-      ],
-      "mention": {"accountId": "5b10a...", "displayName": "Jane", "role": "assignee"}
+      "summary": "Improve authentication timeout handling",
+      "project": "RHIDP",
+      "issuetype": "Story",
+      "status": "In Progress",
+      "labels": [],
+      "expected_updated": "2026-11-19T14:22:03.000-0500",
+      "mention": {
+        "accountId": "5b10a...",
+        "displayName": "Jane Doe",
+        "role": "assignee"
+      },
+      "findings": [
+        {
+          "rule": "LINT-COMPONENT",
+          "action": "derive",
+          "decision": "supported",
+          "reason": "Component inherited from RHIDP-900.",
+          "evidence": {
+            "basis": "Parent RHIDP-900 has one component: Authentication.",
+            "parent": "RHIDP-900",
+            "parent_components": ["Authentication"]
+          },
+          "set": {"fields": {"components": [{"name": "Authentication"}]}},
+          "precondition": {"field": "components", "state": "empty"}
+        },
+        {
+          "rule": "LINT-POINTS",
+          "action": "estimate",
+          "decision": "insufficient",
+          "reason": "Scope is ambiguous between the provider change and migration.",
+          "evidence": {
+            "basis": "The description and child spike disagree about migration scope.",
+            "question": "Is the scope the provider change alone, or does it include migration?"
+          }
+        }
+      ]
     }
   ]
 }
@@ -129,7 +151,8 @@ change that issue received in the sweep:
 
 Use the API field name for standard fields (`components`, `priority`,
 `fixVersions`) and the resolved ID from the scan's `fields` map for custom ones.
-The precondition is the same field the operation writes, `state: empty`.
+The precondition is always the same field the finding writes, and normal writes
+always use `state: "empty"`.
 
 Write the plan to the temporary directory, not into a checkout.
 
@@ -139,29 +162,35 @@ Write the plan to the temporary directory, not into a checkout.
 uv run scripts/apply.py --plan /tmp/lint-plan.json --dry-run
 ```
 
-A `skipped` outcome means the field stopped being empty between the scan and now
-— someone else fixed it. Drop that operation. A comment `planned` with a batch id
-is a new batch; the same id on a retry means the comment already exists.
+A `skipped` outcome means the issue or a field stopped matching the plan. Drop
+that issue from the next attempt. A blocked or escalated finding is not a write
+and remains in the report.
 
 Interactive: invoke `/mutation-gate` and state the set as a table — one row per
-issue with the field, before, after, basis, and the exact comment body. An
-unattended run is authorized by the skill's published procedures; the executor
-enforces the preconditions and the operation cap. Nothing outside those
-procedures is authorized.
+issue with the field, before, after, basis, and the derived comment body. An
+unattended run is authorized only by the schema 2 plan and the executor's
+mechanical checks.
 
 ## 7. Apply
 
 ```bash
-uv run scripts/apply.py --plan /tmp/lint-plan.json --confirm --receipt /tmp/lint-receipt.json
+uv run scripts/apply.py \
+  --plan /tmp/lint-plan.json \
+  --confirm \
+  --receipt /tmp/lint-receipt.json \
+  --revert-plan /tmp/lint-revert.json
 ```
 
-`apply.py` writes the fields, reads each issue back, then posts one comment per
-changed issue. Exemptions and human-authored comments go through
-`/rhdh-jira-update`; this sweep does not create exemptions.
+`apply.py` groups writes by issue, verifies scope and preconditions, writes the
+issue once, reads every field back, and only then posts one comment. If any
+write on an issue fails, that issue gets no comment. Comments are restricted to
+the `Red Hat Employee` Jira group.
 
-When an operation fails, stop adding operations of that class. A validation
-failure usually means the payload shape is wrong for the whole batch, and
-repeating it forty times is not recovery.
+The executor stops a rule or field class after a `400`, `403`, repeated `429`,
+or read-back mismatch. It stops the whole run on `401` or a permission failure
+while reading an issue. If any supported rule on an issue is stopped, the whole
+issue is skipped so the run never leaves a partial field batch. Other issues and
+unaffected rules continue.
 
 ## 8. Escalations and blocked findings
 
@@ -187,9 +216,13 @@ team lead named in the scope, not into the void.
 
 Report the counts by outcome, every completed operation with before and after,
 every comment outcome (`created`, `unchanged`, `planned`), and the blocked and
-escalated items. Keep the receipt path: the next sweep diffs against it.
+escalated items. The receipt is required for confirmed writes and contains the
+run ID, plan hash, scan digest, Jira host, evidence, before and after values,
+comment ID, and comment visibility. Keep it: the next sweep and any guarded
+rollback depend on it.
 
 A sweep is not finished when the report is printed. It is finished when every
 finding has an outcome, every changed issue carries exactly one comment for that
-batch addressed to its assignee or reporter, and every blocked finding names the
-one piece of evidence it needs.
+batch addressed to its assignee or reporter, every blocked finding names the
+one piece of evidence it needs, and the durable receipt and guarded revert plan
+have been written.

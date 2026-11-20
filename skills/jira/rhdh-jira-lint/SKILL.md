@@ -13,7 +13,7 @@ description: >-
   "fix the hygiene violations", "sweep the open issues", or "why is lint still
   flagging this". Reads and remediates existing work; it does not create issues,
   build a sprint, or judge a single issue's readiness.
-compatibility: "acli on PATH with a Jira session, or JIRA_TOKEN_FILE, for the bundled scanner and executor; Python 3.9+. Release dates come from the release skills, so no calendar file has to be prepared first."
+compatibility: "JIRA_TOKEN_FILE or `.jira-token` next to acli for the bundled scanner and executor; Python 3.9+. /rhdh-release-schedule and /rhdh-jira-authoring are required. The Jira host is fixed to redhat.atlassian.net."
 ---
 
 # RHDH Jira lint
@@ -128,8 +128,10 @@ uv run scripts/apply.py --plan /tmp/lint-plan.json --dry-run
 uv run scripts/apply.py --plan /tmp/lint-plan.json --confirm --receipt /tmp/lint-receipt.json
 ```
 
-Comments, transitions, links, and waivers are not batch field writes. Those go
-through `/rhdh-jira-update` so their prose and workflow rules stay in one place.
+Human-authored comments, transitions, links, and waivers are not batch field
+writes. Those go through `/rhdh-jira-update` so their prose and workflow rules
+stay in one place. `/rhdh-jira-lint` owns only the automated receipt comments
+that `scripts/apply.py` derives from successful writes.
 
 ## The comment is a receipt
 
@@ -145,8 +147,8 @@ escalation and goes in the summary, not into the issue as a reminder.
 
 ## Rules that are not negotiable
 
-- **Never invent Blocker or Critical.** Priority follows the procedure or is
-  escalated.
+- **Never infer Blocker or Critical.** They may only be inherited from a
+  parent whose key and priority are recorded; otherwise the finding is escalated.
 - **Never write a number the evidence does not support.** Block it and ask the
   one question that unblocks it.
 - **Only fill an empty field.** A field someone set is not a lint finding, and a

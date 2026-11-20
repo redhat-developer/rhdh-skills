@@ -29,17 +29,21 @@ One marker comment per distinct batch of changes on an issue, written by
 | Situation | Comment |
 |---|---|
 | A field changed | Yes — every change in that batch, with its basis |
+| A field changed and another finding is blocked or escalated | Yes — separate “what changed” and “what wasn’t changed” sections |
 | Nothing changed on the issue | No comment |
-| A decision needs a person | No comment; it goes in the summary with the options |
+| A write failed or a precondition no longer held | No comment; the issue is reported as needs review |
+| A decision needs a person | It is included under “what wasn’t changed” and in the run summary |
 | A person already exempted the issue | No comment; the exemption stands |
 
 Address the assignee. When the issue is unassigned, address the reporter — they
 raised it, so they are the only person with context. When both are absent, post
 without a mention and surface the issue as an escalation.
 
-The comment says what was done and why. It never asks for the work, because the
-work was done. If the change is one a human should reverse, it says how: clear
-the field, or reply with the reason the basis is wrong.
+Every comment is restricted to the `Red Hat Employee` Jira group. The comment
+says what was done, why, and what could not be safely decided. It never asks for
+the work, because the supported work was done. If the change is one a human
+should reverse, it says how: clear the field, or reply with the reason the basis
+is wrong.
 
 ## `LINT-COMPONENT` — derive
 
@@ -61,27 +65,24 @@ Inheritance comes first:
 |---|---|
 | Blocker | Production outage, data loss, or an exploitable security defect with no workaround, in the current release |
 | Critical | Major user-facing breakage, release-blocking, workaround costly or unavailable |
-| Major | Standard work with a clear user or business outcome and no urgency signal |
+| Normal | Routine work with a clear user or business outcome and no urgency signal |
+| Major | Significant work with a clear user or business outcome and no urgency signal |
 | Minor | Cosmetic or low-impact change with no delivery pressure |
 
-**The sweep never writes Blocker or Critical on its own.** Those two change
-release scope and require a named exception; the finding is escalated with that
-recommendation. The sweep may write `Major` or `Minor` when the evidence above is
-present, and must say which row it used.
+**The sweep never infers Blocker or Critical by itself.** Those two may be
+written only when inherited from a parent whose key and priority are recorded;
+otherwise the finding is escalated with that recommendation. The sweep may write
+`Normal`, `Major`, or `Minor` when the evidence above is present, and must say
+which row it used.
 
 ## `LINT-POINTS` — estimate
 
-Use the Fibonacci scale and its scope descriptions in `/rhdh-jira-authoring`.
-Read the issue's own scope, not its title alone.
+Load `/rhdh-jira-authoring` and use its Story/Task Fibonacci scale. Read the
+issue's own scope, not its title alone.
 
-| Evidence | Points |
-|---|---|
-| `SPIKE:` summary, time-boxed | 2 or 3, never more |
-| 1–2 acceptance criteria, one area, no new tests | 1 or 2 |
-| 3–5 criteria, new unit or integration tests, small doc change | 3 |
-| Multiple PRs or several codebase areas | 5 |
-| Research or unknowns, external library, cross-team review | 8 |
-| Unbound scope | Do not write 13; escalate for a split or a spike |
+The executor permits only `1`, `2`, `3`, `5`, or `8`. Do not write `13`; unbound
+scope is escalated for a split or a spike. A time-boxed `SPIKE:` may use `2` or
+`3`, never more.
 
 Do not estimate when the description has no scope signals — no acceptance
 criteria, no affected area, and nothing to distinguish a one-day change from a
@@ -90,18 +91,15 @@ blocked and ask the one question that changes the answer: what is the scope?
 
 ## `LINT-SIZE` — estimate
 
-T-shirt sizes describe effort in sprints, not story points. Use
-`/rhdh-jira-authoring` for the bands.
+Load `/rhdh-jira-authoring` and use its T-shirt bands and aggregation rules.
 
-1. Epic with sized child Stories → sum their points into sprints (use the team's
-   current velocity; if it is unknown, block rather than assume) and place the sum
-   in the band.
-2. Feature with sized child Epics → the Feature is at least its largest Epic;
-   several L or XL children make it L or XL regardless of the arithmetic.
-3. No sized children → use the scope signals only if the description is specific
-   enough to distinguish the bands. Otherwise block.
-4. `XL` is a finding in itself: record that the issue is a split candidate; do
-   not quietly set the largest value to close the rule.
+The sweep may write a size only when the issue’s own scope evidence maps
+unambiguously to one band. If the team velocity is unknown, the child sizes are
+insufficient, or the description cannot distinguish the bands, block rather than
+assume.
+
+`XL` is a split candidate, not a routine value to close the rule. Record that
+finding and escalate the split decision.
 
 ## `LINT-FIXVERSION-MULTI` — derive, or escalate
 

@@ -26,7 +26,7 @@ freeze and release-note rules do not run and the report says so.
 
 Token discovery: JIRA_TOKEN_FILE if set, otherwise `.jira-token` next to the
 real acli binary. Format is one line `email:token`. Never printed.
-Optional JIRA_BASE_URL (default https://redhat.atlassian.net).
+The Jira host is fixed to the Red Hat instance.
 
 Exit codes: 0 findings or none; 2 usage; 3 no credentials; 4 Jira request failed.
 """
@@ -34,19 +34,30 @@ Exit codes: 0 findings or none; 2 usage; 3 no credentials; 4 Jira request failed
 from __future__ import annotations
 
 import argparse
-import base64
+import hashlib
 import json
 import os
 import re
-import shutil
 import sys
-import urllib.error
-import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-DEFAULT_BASE = "https://redhat.atlassian.net"
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from jira_client import (  # noqa: E402
+    JIRA_HOST,
+    JiraClientError,
+)
+from jira_client import (  # noqa: E402
+    load_email_token as load_jira_email_token,
+)
+from jira_client import (  # noqa: E402
+    request_with_retry as jira_request_with_retry,
+)
+
 PROJECTS = ("RHIDP", "RHDHPLAN", "RHDHBUGS")
 EXCLUDED_STATUSES = ("Closed", "Release Pending")
 DOCS_TEAM = "RHIDP - Documentation"
@@ -93,84 +104,29 @@ class ScanError(RuntimeError):
         self.code = code
 
 
-# --------------------------------------------------------------------------- #
-# Credentials
-# --------------------------------------------------------------------------- #
-
-
-def find_token_file(acli_path: str | None = None) -> Path | None:
-    """Return the token path if the file exists. Never read its contents here."""
-    override = os.environ.get("JIRA_TOKEN_FILE")
-    if override:
-        path = Path(override)
-        return path if path.is_file() else None
-    if not acli_path:
-        acli_path = shutil.which("acli")
-    if not acli_path:
-        return None
-    token_path = Path(acli_path).resolve().parent / ".jira-token"
-    return token_path if token_path.is_file() else None
-
-
-def load_email_token(acli_path: str | None = None) -> str:
-    """Return the `email:token` line for Basic auth. Never print it."""
-    path = find_token_file(acli_path)
-    if path is None:
-        raise ScanError(
-            "Jira token file not found next to acli (or JIRA_TOKEN_FILE). "
-            "Run /setup-rhdh-skills atlassian-mcp or authenticate acli.",
-            code=3,
-        )
+def load_email_token() -> str:
     try:
-        line = path.read_text(encoding="utf-8").strip().splitlines()[0].strip()
-    except (OSError, IndexError) as exc:
-        raise ScanError(f"could not read the Jira token file: {exc}", code=3) from exc
-    if ":" not in line:
-        raise ScanError(
-            "the Jira token file is not in `email:token` form; a bare token 401s",
-            code=3,
-        )
-    return line
-
-
-# --------------------------------------------------------------------------- #
-# HTTP
-# --------------------------------------------------------------------------- #
+        return load_jira_email_token()
+    except JiraClientError as exc:
+        raise ScanError(str(exc), code=3) from exc
 
 
 def _request(
-    base: str,
     path: str,
     credential: str,
     *,
     method: str = "GET",
     body: dict[str, Any] | None = None,
 ) -> Any:
-    url = f"{base.rstrip('/')}{path}"
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    encoded = base64.b64encode(credential.encode("utf-8")).decode("ascii")
-    request = urllib.request.Request(url, data=data, method=method)
-    request.add_header("Authorization", f"Basic {encoded}")
-    request.add_header("Accept", "application/json")
-    if data is not None:
-        request.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:400]
-        raise ScanError(
-            f"{method} {path} failed with HTTP {exc.code}: {detail}",
-            status=exc.code,
-        ) from exc
-    except urllib.error.URLError as exc:
-        raise ScanError(f"{method} {path} could not reach Jira: {exc.reason}") from exc
-    return json.loads(payload) if payload.strip() else None
+        return jira_request_with_retry(path, credential, method=method, body=body)
+    except JiraClientError as exc:
+        raise ScanError(str(exc), status=exc.status) from exc
 
 
 def resolve_fields(base: str, credential: str) -> tuple[dict[str, str], list[str]]:
     """Map each logical field to its live custom-field id."""
-    raw = _request(base, "/rest/api/3/field", credential) or []
+    raw = _request("/rest/api/3/field", credential) or []
     by_name: dict[str, str] = {}
     for field in raw:
         name = str(field.get("name") or "").strip().lower()
@@ -200,7 +156,7 @@ def _search_enhanced(
         body: dict[str, Any] = {"jql": jql, "maxResults": page_size, "fields": fields}
         if next_token:
             body["nextPageToken"] = next_token
-        payload = _request(base, "/rest/api/3/search/jql", credential, method="POST", body=body)
+        payload = _request("/rest/api/3/search/jql", credential, method="POST", body=body)
         batch = payload.get("issues") or []
         issues.extend(batch)
         next_token = payload.get("nextPageToken")
@@ -217,7 +173,7 @@ def _search_classic(
     start_at = 0
     while True:
         body = {"jql": jql, "startAt": start_at, "maxResults": page_size, "fields": fields}
-        payload = _request(base, "/rest/api/3/search", credential, method="POST", body=body)
+        payload = _request("/rest/api/3/search", credential, method="POST", body=body)
         batch = payload.get("issues") or []
         issues.extend(batch)
         start_at += len(batch)
@@ -569,6 +525,8 @@ def _finding(
         "reporter": (fields.get("reporter") or {}).get("emailAddress"),
         "mention": mention_for(fields),
         "summary": fields.get("summary"),
+        "labels": fields.get("labels") or [],
+        "updated": fields.get("updated"),
         "field": field,
         "action": action,
         "severity": severity,
@@ -979,7 +937,7 @@ def build_jql(args: argparse.Namespace) -> str:
 
 
 def collect(args: argparse.Namespace) -> dict[str, Any]:
-    base = os.environ.get("JIRA_BASE_URL", DEFAULT_BASE).rstrip("/")
+    base = JIRA_HOST
     credential = load_email_token()
     finders, missing = resolve_fields(base, credential)
     warnings: list[str] = []
@@ -1118,9 +1076,18 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         summary[finding["rule"]] = summary.get(finding["rule"], 0) + 1
         by_action[finding["action"]] = by_action.get(finding["action"], 0) + 1
 
+    scan_digest = hashlib.sha256(
+        json.dumps(
+            {"scope": jql, "fields": finders, "findings": findings, "waived": waived},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
     return {
         "schema": 1,
         "generated": datetime.now().isoformat(timespec="seconds"),
+        "scan_digest": scan_digest,
         "scope": {
             "jql": jql,
             "issues_scanned": len(issues),
