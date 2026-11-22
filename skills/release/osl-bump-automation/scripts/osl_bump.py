@@ -11,12 +11,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, NoReturn
 
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+SKILL_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = SKILL_DIR / "references" / "osl-releases.json"
 
 CHART_FILES = (
     "charts/orchestrator-infra/Chart.yaml",
@@ -84,6 +87,34 @@ def bump_patch(version: str) -> str:
         fail(f"chart version is not MAJOR.MINOR.PATCH: {version!r}")
     major, minor, patch = map(int, match.groups())
     return f"{major}.{minor}.{patch + 1}"
+
+def release_branches(config_path: Path, release: str) -> dict[str, str]:
+    """Return the expected branch per repository for a release line."""
+    try:
+        config = json.loads(Path(config_path).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"could not read {config_path}: {exc}")
+    lines = config.get("release_lines", {})
+    if release not in lines:
+        fail(f"unknown release line {release!r}; expected one of {sorted(lines)}")
+    return lines[release]
+
+
+def current_branch(repo: Path) -> str | None:
+    """Return the checked-out branch, or None for detached HEAD or a failed call."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    return None if branch in {"", "HEAD"} else branch
 
 
 def chart_changes(root: Path, osl: str, new_chart_version: str | None) -> list[Change]:
@@ -292,6 +323,17 @@ def main(argv: list[str]) -> int:
         "--kn-workflow-version",
         help="kn-workflow tool tag; defaults to preserving the checked-in pin",
     )
+    parser.add_argument(
+        "--release",
+        choices=("1.9", "1.10", "main"),
+        help="release line; validates each checkout is on its expected branch",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG,
+        help="path to osl-releases.json",
+    )
     parser.add_argument("--write", action="store_true", help="required by apply to modify files")
     parser.add_argument("--json", action="store_true", help="emit a machine-readable plan summary")
     args = parser.parse_args(argv)
@@ -301,7 +343,17 @@ def main(argv: list[str]) -> int:
         fail("provide --chart-repo, --operator-repo, or both")
     if args.action == "apply" and not args.write:
         fail("apply is dry-run by default; pass --write to modify files")
-
+    if args.release:
+        expected = release_branches(args.config, args.release)
+        for kind, repo in (("chart", args.chart_repo), ("operator", args.operator_repo)):
+            if repo is None:
+                continue
+            want = expected.get(f"{kind}_branch")
+            branch = current_branch(repo)
+            if branch is None:
+                print(f"note: cannot read the branch of {repo}; release check skipped")
+            elif branch != want:
+                fail(f"{repo} is on {branch!r}; release {args.release} expects {want!r}")
     changes: list[Change] = []
     if args.chart_repo:
         changes.extend(chart_changes(args.chart_repo, osl, args.chart_version))
