@@ -88,6 +88,7 @@ def bump_patch(version: str) -> str:
     major, minor, patch = map(int, match.groups())
     return f"{major}.{minor}.{patch + 1}"
 
+
 def release_branches(config_path: Path, release: str) -> dict[str, str]:
     """Return the expected branch per repository for a release line."""
     try:

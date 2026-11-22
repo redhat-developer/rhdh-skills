@@ -185,15 +185,15 @@ def extract_pr_links(value: Any) -> list[str]:
 
     return links
 
+
 def annotate_hold(pr: dict[str, Any]) -> dict[str, Any]:
     """Return the PR with a derived hold flag from its labels."""
     labels = pr.get("labels") or []
     held = any(
-        "hold" in str(label.get("name", "")).lower()
-        for label in labels
-        if isinstance(label, dict)
+        "hold" in str(label.get("name", "")).lower() for label in labels if isinstance(label, dict)
     )
     return {**pr, "hold": held}
+
 
 def fetch_github_prs(
     *,
