@@ -41,13 +41,10 @@
   },
   "jira": {
     "source_issue": "RHIDP-17562",
-    "related_projects": [
-      "RHDHBUGS",
-      "SRVLOGIC"
-    ],
     "reference_issues": [
       "RHDHBUGS-3766",
-      "RHDHBUGS-3767"
+      "RHDHBUGS-3767",
+      "SRVLOGIC-1303"
     ]
   },
   "github": {

@@ -185,6 +185,15 @@ def extract_pr_links(value: Any) -> list[str]:
 
     return links
 
+def annotate_hold(pr: dict[str, Any]) -> dict[str, Any]:
+    """Return the PR with a derived hold flag from its labels."""
+    labels = pr.get("labels") or []
+    held = any(
+        "hold" in str(label.get("name", "")).lower()
+        for label in labels
+        if isinstance(label, dict)
+    )
+    return {**pr, "hold": held}
 
 def fetch_github_prs(
     *,
@@ -195,10 +204,11 @@ def fetch_github_prs(
     """Find related PRs by Jira issue key using GitHub MCP JSON or gh."""
     if github_json:
         ok, data, error = read_json_file(github_json)
+        prs = data if ok and isinstance(data, list) else []
         return {
             "source": "github-mcp-json",
             "available": ok,
-            "pull_requests": data if ok else [],
+            "pull_requests": [annotate_hold(pr) for pr in prs if isinstance(pr, dict)],
             "error": error if not ok else None,
         }
 
@@ -258,7 +268,7 @@ def fetch_github_prs(
                     {
                         "repository": repository,
                         "matched_issue": issue_key,
-                        **pr,
+                        **annotate_hold(pr),
                     }
                 )
 
@@ -447,7 +457,9 @@ def main() -> int:
         )
 
         print(f"Related pull requests: {len(result['github']['pull_requests'])}")
-
+        for pr in result["github"]["pull_requests"]:
+            if pr.get("hold"):
+                print(f"ON HOLD: {pr.get('repository')}#{pr.get('number')}")
         print(
             "Catalog source: "
             f"{result['catalog']['source']} "
