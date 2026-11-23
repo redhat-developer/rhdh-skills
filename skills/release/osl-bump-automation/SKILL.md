@@ -33,6 +33,7 @@ valid catalog answer, and a Jira status never proves that a CSV is published.
 ## Commands
 
 Run from the skill's directory. `status`, `plan`, and `verify` are read-only; `apply` without `--write` is a dry run.
+--release 1.9|1.10|main refuses to run when a checkout is on the wrong branch for that release line.
 
 Summarise the current state:
 
@@ -64,13 +65,13 @@ python3 scripts/osl_bump.py verify --version 1.40.0 \
 `--kn-workflow-version <tag>` moves the kn-workflow tool tag only when it is passed; omitting it preserves the checked-in pin. Exit codes: `0` clean, `1` ran and found a mismatch, `2` could not run.
 
 ## Rules
-
-- Never touch git history. `apply --write` edits the working tree only; committing and pushing stay with the engineer.
+- `apply --write` edits the working tree only. Do not commit, push, or open a pull request unless the engineer explicitly asks for the PRs.
+- When they do: commit one signed-off change per repository, then hand off to `/rhdh-pr-mr` with the base branch from `references/osl-releases.json`. That skills owns push, PR/MR creation, attribution checks, and Jira linking - do not reimplement any of it here.
+- Never merge, never remove a hold, and never publish to OperatorHub.
 - Never infer catalog availability from a Jira status. If the catalog cannot be read, report `unknown`.
 - Generated files must match their source: `dist/rhdh/install.yaml`, `bundle/rhdh/manifests/rhdh-plugin-deps_v1_configmap.yaml`, `README.md`, `values.schema.json`.
 - The kn-workflow tool tag is not the OSL version. Rebuilds have shipped a CSV newer than the tool (SRVLOGIC-1303), so the pin is preserved unless `--kn-workflow-version` is passed.
 - One commit per repository, signed off with `git commit -s`.
-- Opening pull requests is out of scope. Do not merge, do not remove a hold, and do not publish to OperatorHub.
 
 ## Reference
 

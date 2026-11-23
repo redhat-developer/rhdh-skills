@@ -306,7 +306,7 @@
       "name": "osl-bump-automation",
       "category": "release",
       "invocation": "model",
-      "requiresSkills" : []
+      "requiresSkills" : ["rhdh-pr-mr"]
     },
     {
       "name": "rhdh-overlay-cve-export",
