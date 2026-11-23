@@ -128,7 +128,13 @@ instead of reported as current. Filtered `No sources found for` /
 An update is complete when the target branch was verified to exist against a
 clean working tree before any edit, every approved operation has been reported by
 target and outcome, and the push and PR state is stated explicitly — including
-"not pushed" when the default local behavior was kept. When Node headers /
+"not pushed" when the default local behavior was kept. A run that left any
+component unresolved (RPM lock, node headers, go.mod, overlays `versions.json`)
+exits non-zero and reports each one, so callers do not open or keep a PR whose
+base-image bump has no matching lock or headers; pass `--status-file PATH` to
+have those failures appended as `kind|branch|component|fail|detail`, which
+`weekly-maintenance.sh` uses to autoclose incomplete PRs (RHIDP-18915). When
+Node headers /
 `.nvmrc` changed, name the plugin-catalog FROM old→new, confirm
 `grep konflux.additional-tags build/containerfiles/builder.Containerfile`
 contains `node-v` matching `.nvmrc`, and name the overlays `versions.json`
