@@ -155,6 +155,11 @@ always apply:
 - When the changelog contradicts the measured facts, trust the facts and say
   so in `notes`.
 
+A package resolved at more than one version is one row per bump: `jondoe`
+2.1.1 → 2.2.1 and `jondoe` 5.1.1 → 5.2.0 are separate judgments, keyed
+`jondoe@2.1.1->2.2.1`. A bare package name still applies to every row of that
+package that has no row key.
+
 Judge only the packages worth the effort: direct dependencies, and anything
 with a major or minor effective delta. Omit the rest from the judgments file.
 

@@ -77,6 +77,15 @@ minor effective delta.
 Lockstep ecosystems (all `@backstage/*` packages of one release train) may
 share one changelog; applying the shared release notes to each member is fine.
 
+## Multiple resolved versions of one package
+
+A lockfile can carry two copies of one package, and a bump can move each copy
+on its own. `jondoe` 2.1.1 → 2.2.1 and `jondoe` 5.1.1 → 5.2.0 are two rows in
+`changes.json`. Judge each row from the changelog entries between that row's
+`from` and `to` only. Key the judgment `jondoe@2.1.1->2.2.1`. A bare package
+name applies to every row of that package that has no row key, which merges
+two lines that diverged.
+
 ## Where to look up a changelog
 
 This is the normal path for a Fullsend or human-opened bump, not an exception —

@@ -21,6 +21,68 @@ const { loadSupportData, resolveSupportLevel } = await import(
   path.join(skillDir, 'scripts/lib/support.ts')
 );
 const { scoreAll } = await import(path.join(skillDir, 'scripts/score.ts'));
+const { diffVersionMaps } = await import(path.join(skillDir, 'scripts/compare-manifests.ts'));
+
+function bumps(oldVersions, newVersions, direct = false) {
+  return diffVersionMaps(
+    new Map([['jondoe', new Set(oldVersions)]]),
+    new Map([['jondoe', new Set(newVersions)]]),
+    new Set(direct ? ['jondoe'] : []),
+  ).map((c) => ({
+    from: c.from,
+    to: c.to,
+    kind: c.kind,
+    type: c.delta.type,
+    effectiveType: c.delta.effectiveType,
+    direct: c.direct,
+  }));
+}
+
+describe('multiple resolved versions', () => {
+  it('rates each compatibility line as its own bump', () => {
+    assert.deepEqual(bumps(['2.1.1', '5.1.1'], ['2.2.1', '5.2.0'], true), [
+      { from: '2.1.1', to: '2.2.1', kind: 'updated', type: 'minor', effectiveType: 'minor', direct: true },
+      { from: '5.1.1', to: '5.2.0', kind: 'updated', type: 'minor', effectiveType: 'minor', direct: true },
+    ]);
+  });
+
+  it('keeps a single major jump as one update', () => {
+    assert.deepEqual(bumps(['1.2.3'], ['2.0.0']), [
+      { from: '1.2.3', to: '2.0.0', kind: 'updated', type: 'major', effectiveType: 'major', direct: false },
+    ]);
+  });
+
+  it('treats a new major line beside an unchanged version as an add', () => {
+    assert.deepEqual(bumps(['9.4.0'], ['9.4.0', '10.1.0']), [
+      { from: null, to: '10.1.0', kind: 'added', type: 'unknown', effectiveType: 'unknown', direct: false },
+    ]);
+  });
+
+  it('rates every copy that converged on one version', () => {
+    assert.deepEqual(bumps(['2.0.0', '2.1.2'], ['2.1.3']), [
+      { from: '2.0.0', to: '2.1.3', kind: 'updated', type: 'minor', effectiveType: 'minor', direct: false },
+      { from: '2.1.2', to: '2.1.3', kind: 'updated', type: 'patch', effectiveType: 'patch', direct: false },
+    ]);
+  });
+
+  it('drops a line that disappeared while another line moved', () => {
+    assert.deepEqual(bumps(['2.1.1', '5.1.1'], ['5.2.0']), [
+      { from: '2.1.1', to: null, kind: 'removed', type: 'unknown', effectiveType: 'unknown', direct: false },
+      { from: '5.1.1', to: '5.2.0', kind: 'updated', type: 'minor', effectiveType: 'minor', direct: false },
+    ]);
+  });
+
+  it('keeps 0.x minor lines apart', () => {
+    assert.deepEqual(bumps(['0.2.1', '0.3.1'], ['0.2.2', '0.3.2']), [
+      { from: '0.2.1', to: '0.2.2', kind: 'updated', type: 'patch', effectiveType: 'minor', direct: false },
+      { from: '0.3.1', to: '0.3.2', kind: 'updated', type: 'patch', effectiveType: 'minor', direct: false },
+    ]);
+  });
+
+  it('emits nothing when every resolved version is unchanged', () => {
+    assert.deepEqual(bumps(['1.0.0', '2.0.0'], ['1.0.0', '2.0.0']), []);
+  });
+});
 
 describe('semver', () => {
   it('parses versions and rejects non-versions', () => {
@@ -189,6 +251,39 @@ describe('trusted packages', () => {
     const scored = scoreAll({ metrics, config: defaults });
     assert.equal(scored.packages[0].band, 'HIGH');
     assert.ok(scored.packages[0].flags.includes('trusted-but-security-signal'));
+  });
+});
+
+describe('separate bumps of one package', () => {
+  it('applies each row judgment and each Backstage result on its own', () => {
+    const metrics = structuredClone(baseMetrics);
+    const minor = { type: 'minor', effectiveType: 'minor', downgrade: false, prereleaseTarget: false };
+    metrics.packages = [
+      { ...clean, name: 'jondoe', from: '2.1.1', to: '2.2.1', delta: minor, osv: { fixed: [], introduced: [] } },
+      { ...clean, name: 'jondoe', from: '5.1.1', to: '5.2.0', delta: minor, osv: { fixed: [], introduced: [] } },
+    ];
+    metrics.counts = { ...baseMetrics.counts, total: 2, direct: 2, major: 0, minor: 2, patch: 0 };
+    const scored = scoreAll({
+      metrics,
+      judgments: {
+        'jondoe@2.1.1->2.2.1': { changelog: 'significant' },
+        'jondoe@5.1.1->5.2.0': { changelog: 'bugfix-only' },
+      },
+      backstage: {
+        release: '1.39.0',
+        results: [
+          { name: 'jondoe', to: '2.2.1', status: 'mismatch', expected: '2.2.0' },
+          { name: 'jondoe', to: '5.2.0', status: 'match', expected: '5.2.0' },
+        ],
+      },
+      config: defaults,
+    });
+    const byFrom = Object.fromEntries(scored.packages.map((p) => [p.from, labelsOf(p)]));
+    assert.match(byFrom['2.1.1'], /changelog: significant changes/);
+    assert.match(byFrom['2.1.1'], /does NOT match the Backstage release manifest/);
+    assert.match(byFrom['5.1.1'], /changelog: bugfixes only/);
+    assert.match(byFrom['5.1.1'], /matches the pinned Backstage release manifest/);
+    assert.match(scored.overall.drivers[0], /^jondoe 2\.1\.1 -> 2\.2\.1:/);
   });
 });
 

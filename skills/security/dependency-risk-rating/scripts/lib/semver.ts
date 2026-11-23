@@ -58,6 +58,14 @@ export function compareVersions(aRaw: string, bRaw: string): number | null {
   return 0;
 }
 
+/** Sort order for versions. Nulls come first; unparseable versions use string order. */
+export function compareVersionOrder(a: string | null | undefined, b: string | null | undefined): number {
+  if (a === b) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  return compareVersions(a, b) ?? a.localeCompare(b);
+}
+
 /** Semver-aware maximum; falls back to string comparison for unparseable entries. */
 export function maxVersion(versions: Iterable<string>): string | null {
   let best: string | null = null;
@@ -73,8 +81,8 @@ export function maxVersion(versions: Iterable<string>): string | null {
 }
 
 /**
- * Pick the highest concrete version out of values like "2.0.0, 2.1.2" (multiple
- * resolved versions) or "^4.1.0" (a range). Returns null when nothing parses.
+ * Pick the highest concrete version out of a range ("^4.1.0") or a legacy
+ * comma-joined list ("2.0.0, 2.1.2"). Returns null when nothing parses.
  */
 export function concreteVersion(value: string | null | undefined): string | null {
   if (!value) return null;

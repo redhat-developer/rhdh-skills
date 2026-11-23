@@ -16,7 +16,7 @@
 
 import { pathToFileURL } from 'node:url';
 import type { Change } from './compare-manifests.ts';
-import { concreteVersion } from './lib/semver.ts';
+import { compareVersionOrder, concreteVersion } from './lib/semver.ts';
 import { parseArgs, readJsonInput } from './lib/cli.ts';
 import { fetchJson, pLimit } from './lib/http.ts';
 import { loadConfig } from './lib/yaml.ts';
@@ -128,7 +128,9 @@ export async function collectMetrics(args: {
     (a, b) =>
       Number(b.direct) - Number(a.direct) ||
       (severityRank[b.delta.effectiveType] ?? 0) - (severityRank[a.delta.effectiveType] ?? 0) ||
-      a.name.localeCompare(b.name),
+      a.name.localeCompare(b.name) ||
+      compareVersionOrder(a.from, b.from) ||
+      compareVersionOrder(a.to, b.to),
   );
   const maxDetailed = args.maxDetailed ?? config.maxPackagesDetailed;
 

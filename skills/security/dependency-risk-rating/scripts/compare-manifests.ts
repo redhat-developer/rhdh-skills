@@ -11,16 +11,24 @@
 //
 // Output (JSON): { format, changes: [{name, from, to, kind, direct, delta}], counts }
 
-import { classifyDelta, concreteVersion, compareVersions, maxVersion, type Delta } from './lib/semver.ts';
+import {
+  classifyDelta,
+  concreteVersion,
+  compareVersionOrder,
+  compareVersions,
+  maxVersion,
+  parseVersion,
+  type Delta,
+} from './lib/semver.ts';
 import { parseArgs, readInput } from './lib/cli.ts';
 
 export type LockFormat = 'yarn' | 'yarn-berry' | 'npm' | 'package-json';
 
 export interface Change {
   name: string;
-  /** Version(s) before; null for added packages. Multiple resolved versions join with ", ". */
+  /** Version before; null for an added resolution. One row per bump. */
   from: string | null;
-  /** Version(s) after; null for removed packages. */
+  /** Version after; null for a removed resolution. */
   to: string | null;
   kind: 'added' | 'removed' | 'updated';
   /** True when the package appears in the old or new package.json. */
@@ -190,15 +198,168 @@ function directDepRanges(pkgJson: string | null): Map<string, string> {
 // Diffing
 // --------------------------------------------------------------------------
 
-function versionsLabel(set: Set<string> | undefined): string | null {
-  if (!set || set.size === 0) return null;
-  return [...set].sort((a, b) => compareVersions(a, b) ?? a.localeCompare(b)).join(', ');
+/**
+ * Compatibility line. Releases on one line can move together; a second line
+ * is a separate bump. For 0.x the minor is the breaking boundary.
+ */
+function lineKey(version: string): string {
+  const parsed = parseVersion(version);
+  if (!parsed) return `raw:${version}`;
+  if (parsed.major === 0) return `0.${parsed.minor}`;
+  return String(parsed.major);
 }
 
-/** Single version for delta classification: the semver-highest of the set. */
-function primaryVersion(set: Set<string> | undefined): string | null {
-  if (!set || set.size === 0) return null;
-  return maxVersion(set);
+function sortedVersions(versions: Iterable<string>): string[] {
+  return [...versions].sort((a, b) => compareVersionOrder(a, b));
+}
+
+/** Prefer a short upgrade over an equal-distance downgrade. */
+function pairDistance(from: string, to: string): number {
+  const a = parseVersion(from);
+  const b = parseVersion(to);
+  if (!a || !b) return Number.MAX_SAFE_INTEGER / 4;
+  const gap =
+    Math.abs(b.major - a.major) * 1_000_000 + Math.abs(b.minor - a.minor) * 1_000 + Math.abs(b.patch - a.patch);
+  const cmp = compareVersions(from, to);
+  return (cmp !== null && cmp > 0 ? 500_000_000 : 0) + gap;
+}
+
+function closest(from: string, versions: string[]): string {
+  return sortedVersions(versions).sort((a, b) => {
+    const d = pairDistance(from, a) - pairDistance(from, b);
+    return d !== 0 ? d : compareVersionOrder(a, b);
+  })[0];
+}
+
+interface Pairing {
+  updates: Array<[string, string]>;
+  removed: string[];
+  added: string[];
+}
+
+/** Pair versions that already share a compatibility line, or a line that moved. */
+function matchVersions(oldVersions: string[], newVersions: string[]): Pairing {
+  const olds = sortedVersions(oldVersions);
+  const news = sortedVersions(newVersions);
+  if (olds.length === 0) return { updates: [], removed: [], added: news };
+  if (news.length === 0) return { updates: [], removed: olds, added: [] };
+  // Several copies deduped onto one version are several bumps, not one.
+  if (news.length === 1) return { updates: olds.map((from) => [from, news[0]]), removed: [], added: [] };
+  if (olds.length === 1) {
+    const target = closest(olds[0], news);
+    return { updates: [[olds[0], target]], removed: [], added: news.filter((v) => v !== target) };
+  }
+  const candidates = olds.flatMap((from) => news.map((to) => ({ from, to, dist: pairDistance(from, to) })));
+  candidates.sort(
+    (a, b) => a.dist - b.dist || compareVersionOrder(a.from, b.from) || compareVersionOrder(a.to, b.to),
+  );
+  const usedFrom = new Set<string>();
+  const usedTo = new Set<string>();
+  const updates: Array<[string, string]> = [];
+  for (const c of candidates) {
+    if (usedFrom.has(c.from) || usedTo.has(c.to)) continue;
+    usedFrom.add(c.from);
+    usedTo.add(c.to);
+    updates.push([c.from, c.to]);
+  }
+  return {
+    updates,
+    removed: olds.filter((v) => !usedFrom.has(v)),
+    added: news.filter((v) => !usedTo.has(v)),
+  };
+}
+
+interface VersionLine {
+  key: string;
+  versions: string[];
+}
+
+function groupByLine(versions: string[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const version of versions) {
+    const key = lineKey(version);
+    const list = groups.get(key);
+    if (list) list.push(version);
+    else groups.set(key, [version]);
+  }
+  return groups;
+}
+
+/** A disappeared line and an appeared line are one major move when nothing closer explains them. */
+function pairLines(removed: VersionLine[], added: VersionLine[]): Pairing {
+  const candidates: Array<{ removed: VersionLine; added: VersionLine; dist: number }> = [];
+  for (const oldLine of removed) {
+    for (const newLine of added) {
+      const from = maxVersion(oldLine.versions);
+      const to = maxVersion(newLine.versions);
+      candidates.push({
+        removed: oldLine,
+        added: newLine,
+        dist: from && to ? pairDistance(from, to) : Number.MAX_SAFE_INTEGER / 4,
+      });
+    }
+  }
+  candidates.sort(
+    (a, b) => a.dist - b.dist || a.removed.key.localeCompare(b.removed.key) || a.added.key.localeCompare(b.added.key),
+  );
+  const usedOld = new Set<string>();
+  const usedNew = new Set<string>();
+  const updates: Array<[string, string]> = [];
+  const extraRemoved: string[] = [];
+  const extraAdded: string[] = [];
+  for (const c of candidates) {
+    if (usedOld.has(c.removed.key) || usedNew.has(c.added.key)) continue;
+    usedOld.add(c.removed.key);
+    usedNew.add(c.added.key);
+    const paired = matchVersions(c.removed.versions, c.added.versions);
+    updates.push(...paired.updates);
+    extraRemoved.push(...paired.removed);
+    extraAdded.push(...paired.added);
+  }
+  return {
+    updates,
+    removed: [
+      ...extraRemoved,
+      ...removed.filter((l) => !usedOld.has(l.key)).flatMap((l) => sortedVersions(l.versions)),
+    ],
+    added: [
+      ...extraAdded,
+      ...added.filter((l) => !usedNew.has(l.key)).flatMap((l) => sortedVersions(l.versions)),
+    ],
+  };
+}
+
+function diffPackageVersions(oldSet: Set<string> | undefined, newSet: Set<string> | undefined): Pairing {
+  const oldVersions = oldSet ?? new Set<string>();
+  const newVersions = newSet ?? new Set<string>();
+  const oldLines = groupByLine([...oldVersions].filter((v) => !newVersions.has(v)));
+  const newLines = groupByLine([...newVersions].filter((v) => !oldVersions.has(v)));
+  const updates: Array<[string, string]> = [];
+  const removed: string[] = [];
+  const added: string[] = [];
+  const removedLines: VersionLine[] = [];
+  const addedLines: VersionLine[] = [];
+  for (const key of new Set([...oldLines.keys(), ...newLines.keys()])) {
+    const olds = oldLines.get(key) ?? [];
+    const news = newLines.get(key) ?? [];
+    if (olds.length > 0 && news.length > 0) {
+      // Leftovers inside a line stay removed or added. They are not a major move.
+      const paired = matchVersions(olds, news);
+      updates.push(...paired.updates);
+      removed.push(...paired.removed);
+      added.push(...paired.added);
+    } else if (olds.length > 0) {
+      removedLines.push({ key, versions: olds });
+    } else {
+      addedLines.push({ key, versions: news });
+    }
+  }
+  const crossed = pairLines(removedLines, addedLines);
+  return {
+    updates: [...updates, ...crossed.updates],
+    removed: [...removed, ...crossed.removed],
+    added: [...added, ...crossed.added],
+  };
 }
 
 export function diffVersionMaps(
@@ -207,22 +368,18 @@ export function diffVersionMaps(
   direct: Set<string>,
 ): Change[] {
   const changes: Change[] = [];
-  const names = new Set([...oldMap.keys(), ...newMap.keys()]);
-  for (const name of names) {
-    const oldSet = oldMap.get(name);
-    const newSet = newMap.get(name);
-    const from = versionsLabel(oldSet);
-    const to = versionsLabel(newSet);
-    if (from === to) continue;
-    const kind = !from ? 'added' : !to ? 'removed' : 'updated';
-    changes.push({
-      name,
-      from,
-      to,
-      kind,
-      direct: direct.has(name),
-      delta: classifyDelta(primaryVersion(oldSet), primaryVersion(newSet)),
-    });
+  for (const name of new Set([...oldMap.keys(), ...newMap.keys()])) {
+    const paired = diffPackageVersions(oldMap.get(name), newMap.get(name));
+    const isDirect = direct.has(name);
+    for (const [from, to] of paired.updates) {
+      changes.push({ name, from, to, kind: 'updated', direct: isDirect, delta: classifyDelta(from, to) });
+    }
+    for (const from of paired.removed) {
+      changes.push({ name, from, to: null, kind: 'removed', direct: isDirect, delta: classifyDelta(null, null) });
+    }
+    for (const to of paired.added) {
+      changes.push({ name, from: null, to, kind: 'added', direct: isDirect, delta: classifyDelta(null, null) });
+    }
   }
   return sortChanges(changes);
 }
@@ -251,7 +408,13 @@ export function diffManifests(oldPkg: string | null, newPkg: string | null): Cha
 }
 
 function sortChanges(changes: Change[]): Change[] {
-  return changes.sort((a, b) => (Number(b.direct) - Number(a.direct)) || a.name.localeCompare(b.name));
+  return changes.sort(
+    (a, b) =>
+      Number(b.direct) - Number(a.direct) ||
+      a.name.localeCompare(b.name) ||
+      compareVersionOrder(a.from, b.from) ||
+      compareVersionOrder(a.to, b.to),
+  );
 }
 
 export function buildResult(format: LockFormat, changes: Change[]): CompareResult {

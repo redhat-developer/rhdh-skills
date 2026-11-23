@@ -12,8 +12,9 @@ numbers by hand. Wrap it as follows.
 <score.ts --format md output>
 
 ### Changelog summary
-- <package>: <notes from the judgments file, one line each — only packages
-  with a non-"routine" judgment or interesting notes>
+- <package, or package@from->to when that package has more than one row>:
+  <notes from the judgments file, one line each — only packages with a
+  non-"routine" judgment or interesting notes>
 
 ### Data gaps (only if any)
 Already listed by score.ts; add remediation hints if useful (e.g. "api.osv.dev

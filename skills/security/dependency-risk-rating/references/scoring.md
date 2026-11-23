@@ -5,8 +5,9 @@ explains the model so you can interpret results and explain them to the user.
 
 ## Model
 
-Each package gets an additive score, clamped to 0–10 internally and displayed
-×10 as 0–100. Score bands (configurable via `bands:` in `.dependency-risk.yaml`):
+Each resolved-version bump gets an additive score, clamped to 0–10 internally
+and displayed ×10 as 0–100. One package resolved at two versions is two rows.
+Score bands (configurable via `bands:` in `.dependency-risk.yaml`):
 
 | Internal score | Band |
 |---|---|

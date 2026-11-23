@@ -9,6 +9,8 @@
 // Judgments file (written by Claude after reading the PR changelog):
 //   { "<package>": { "changelog": "bugfix-only"|"routine"|"significant"|"unknown",
 //                    "majorIsNodeDropOnly": true|false, "notes": "..." } }
+//   A package with two bumps uses one key per row, "<package>@<from>-><to>",
+//   which wins over the bare package name.
 //
 // The internal score is 0-10 (clamped); it is displayed as 0-100.
 
@@ -16,6 +18,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs, readJsonInput } from './lib/cli.ts';
 import { SIGNIFICANT_SEVERITIES, type PackageMetrics } from './collect-metrics.ts';
 import type { WorkspaceCoverage } from './fetch-codecov.ts';
+import { compareVersionOrder } from './lib/semver.ts';
 import { loadConfig, type RiskConfig } from './lib/yaml.ts';
 
 export const DEFAULT_WEIGHTS: Record<string, number> = {
@@ -72,8 +75,21 @@ export interface PackageScore {
 
 interface BackstageResult {
   skipped?: boolean;
-  results?: Array<{ name: string; status: string; expected: string | null }>;
+  results?: Array<{ name: string; to?: string | null; status: string; expected: string | null }>;
   release?: string;
+}
+
+function bumpKey(name: string, to: string | null | undefined): string {
+  return `${name}\0${to ?? ''}`;
+}
+
+/** Row key wins. A bare package name applies to every bump that has no row key. */
+function judgmentFor(
+  p: { name: string; from: string | null; to: string | null },
+  judgments: Record<string, Judgment> | null | undefined,
+): Judgment | undefined {
+  if (!judgments) return undefined;
+  return judgments[`${p.name}@${p.from ?? '-'}->${p.to ?? '-'}`] ?? judgments[p.name];
 }
 
 function bandFor(score: number, bands: RiskConfig['bands']): Band {
@@ -263,11 +279,11 @@ export function scoreAll(inputs: {
   // backstage.enabled: false in the repo config opts out of the manifest check
   // entirely, even when a backstage result file was passed.
   const backstage = config.backstage.enabled ? inputs.backstage : null;
-  const backstageByName = new Map(
-    (backstage?.results ?? []).map((r) => [r.name, { status: r.status, expected: r.expected }]),
+  const backstageByBump = new Map(
+    (backstage?.results ?? []).map((r) => [bumpKey(r.name, r.to), { status: r.status, expected: r.expected }]),
   );
   const packages = metrics.packages.map((p) =>
-    scorePackage(p, inputs.judgments?.[p.name], backstageByName.get(p.name), config),
+    scorePackage(p, judgmentFor(p, inputs.judgments), backstageByBump.get(bumpKey(p.name, p.to)), config),
   );
 
   const total = metrics.counts.total;
@@ -307,11 +323,16 @@ export function scoreAll(inputs: {
           : 'medium';
 
   // Highest score first, same order as the markdown table.
+  const nameCount = new Map<string, number>();
+  for (const p of packages) nameCount.set(p.name, (nameCount.get(p.name) ?? 0) + 1);
   const drivers = [...packages]
-    .sort((a, b) => b.score100 - a.score100 || a.name.localeCompare(b.name))
+    .sort((a, b) => b.score100 - a.score100 || a.name.localeCompare(b.name) || compareVersionOrder(a.from, b.from))
     .filter((p) => p.band !== 'LOW')
     .slice(0, 5)
-    .map((p) => `${p.name}: ${p.reasons.map((r) => r.label).slice(0, 3).join('; ')}`);
+    .map((p) => {
+      const who = (nameCount.get(p.name) ?? 0) > 1 ? `${p.name} ${p.from ?? '-'} -> ${p.to ?? '-'}` : p.name;
+      return `${who}: ${p.reasons.map((r) => r.label).slice(0, 3).join('; ')}`;
+    });
 
   let recommendation: string;
   if (overallBand === 'LOW') {
@@ -367,7 +388,9 @@ export function renderMarkdown(r: ScoreResult): string {
   lines.push('');
   lines.push('| Package | Change | Risk | Score | Why |');
   lines.push('|---|---|---|---|---|');
-  const sorted = [...r.packages].sort((a, b) => b.score100 - a.score100 || a.name.localeCompare(b.name));
+  const sorted = [...r.packages].sort(
+    (a, b) => b.score100 - a.score100 || a.name.localeCompare(b.name) || compareVersionOrder(a.from, b.from),
+  );
   const shown = sorted.slice(0, MAX_TABLE_ROWS);
   for (const p of shown) {
     const change = `${p.from ?? '-'} -> ${p.to ?? '-'}`;
