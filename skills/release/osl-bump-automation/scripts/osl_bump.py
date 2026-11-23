@@ -185,7 +185,8 @@ def operator_changes(root: Path, osl: str, kn_version: str | None) -> list[Chang
     version: OSL rebuilds have shipped a CSV newer than the tool (SRVLOGIC-1303).
     ``None`` means preserve whatever pin is checked in.
     """
-    paths = {relative: require_file(root, relative) for relative in OPERATOR_FILES}
+    required = (OPERATOR_FILES[0], OPERATOR_FILES[2], OPERATOR_FILES[3], OPERATOR_FILES[4])
+    paths = {relative: require_file(root, relative) for relative in required}
     changes: list[Change] = []
 
     # Required: OLM v0 Subscription.
@@ -198,15 +199,17 @@ def operator_changes(root: Path, osl: str, kn_version: str | None) -> list[Chang
         )
     )
 
-    # Required: OLM v1 ClusterExtension. Same fact, different schema.
-    changes.append(
-        replace_checked(
-            paths[OPERATOR_FILES[1]],
-            r'(version:\s*")\d+\.\d+\.\d+(")',
-            rf"\g<1>{osl}\g<2>",
-            "operator OLM v1 version",
+    # Optional: OLM v1 ClusterExtension exists only from the 2.1 line onward.
+    v1_path = root / OPERATOR_FILES[1]
+    if v1_path.is_file():
+        changes.append(
+            replace_checked(
+                v1_path,
+                r'(version:\s*")\d+\.\d+\.\d+(")',
+                rf"\g<1>{osl}\g<2>",
+                "operator OLM v1 version",
+            )
         )
-    )
 
     # Conditional: the kn-workflow tool tag in source and its two generated copies.
     kn_files = (OPERATOR_FILES[2], OPERATOR_FILES[3], OPERATOR_FILES[4])
@@ -283,9 +286,11 @@ def verify_operator(root: Path, osl: str, kn_version: str | None) -> list[str]:
     if f"logic-operator.v{osl}" not in csv_path.read_text():
         errors.append(f"{csv_path}: missing logic-operator.v{osl}")
 
-    v1_path = require_file(root, OPERATOR_FILES[1])
-    if not re.search(rf'version:\s*"{re.escape(osl)}"', v1_path.read_text()):
-        errors.append(f'{v1_path}: missing version: "{osl}"')
+    # OLM v1 manifests exist only from the 2.1 line onward.
+    v1_path = root / OPERATOR_FILES[1]
+    if v1_path.is_file():
+        if not re.search(rf'version:\s*"{re.escape(osl)}"', v1_path.read_text()):
+            errors.append(f'{v1_path}: missing version: "{osl}"')
 
     kn_pattern = re.compile(r"serverless-logic/(\d+\.\d+\.\d+)/kn-workflow-linux-amd64\.tar\.gz")
     seen_tags: set[str] = set()
@@ -324,9 +329,13 @@ def main(argv: list[str]) -> int:
         "--kn-workflow-version",
         help="kn-workflow tool tag; defaults to preserving the checked-in pin",
     )
+    try:
+        release_choices = tuple(json.loads(DEFAULT_CONFIG.read_text()).get("release_lines", {}))
+    except (OSError, json.JSONDecodeError):
+        release_choices = ()
     parser.add_argument(
         "--release",
-        choices=("1.9", "1.10", "main"),
+        choices=release_choices,
         help="release line; validates each checkout is on its expected branch",
     )
     parser.add_argument(
@@ -337,9 +346,17 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--write", action="store_true", help="required by apply to modify files")
     parser.add_argument("--json", action="store_true", help="emit a machine-readable plan summary")
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        help="directory containing rhdh-chart and rhdh-operator",
+    )
     args = parser.parse_args(argv)
     osl = parse_version(args.version)
     kn_version = parse_version(args.kn_workflow_version) if args.kn_workflow_version else None
+    if args.workspace:
+        args.chart_repo = args.chart_repo or args.workspace / "rhdh-chart"
+        args.operator_repo = args.operator_repo or args.workspace / "rhdh-operator"
     if not args.chart_repo and not args.operator_repo:
         fail("provide --chart-repo, --operator-repo, or both")
     if args.action == "apply" and not args.write:
