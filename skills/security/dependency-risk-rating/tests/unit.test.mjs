@@ -21,7 +21,20 @@ const { loadSupportData, resolveSupportLevel } = await import(
   path.join(skillDir, 'scripts/lib/support.ts')
 );
 const { scoreAll } = await import(path.join(skillDir, 'scripts/score.ts'));
-const { diffVersionMaps } = await import(path.join(skillDir, 'scripts/compare-manifests.ts'));
+const { diffVersionMaps, mergeChanges, mergeLockOverManifest } = await import(
+  path.join(skillDir, 'scripts/compare-manifests.ts')
+);
+
+function bumpRow(name, from, to, direct = false) {
+  return {
+    name,
+    from,
+    to,
+    kind: from && to ? 'updated' : from ? 'removed' : 'added',
+    direct,
+    delta: { type: 'patch', effectiveType: 'patch', downgrade: false, prereleaseTarget: false },
+  };
+}
 
 function bumps(oldVersions, newVersions, direct = false) {
   return diffVersionMaps(
@@ -81,6 +94,39 @@ describe('multiple resolved versions', () => {
 
   it('emits nothing when every resolved version is unchanged', () => {
     assert.deepEqual(bumps(['1.0.0', '2.0.0'], ['1.0.0', '2.0.0']), []);
+  });
+});
+
+describe('bumps from several lockfiles', () => {
+  const pair = (row) => `${row.name} ${row.from} -> ${row.to}`;
+
+  it('keeps every distinct version pair', () => {
+    const merged = mergeChanges(
+      [bumpRow('brace-expansion', '1.1.16', '1.1.18'), bumpRow('brace-expansion', '2.1.2', '2.1.4')],
+      [bumpRow('brace-expansion', '5.0.8', '5.0.9'), bumpRow('left-pad', '1.3.0', '1.3.1')],
+    );
+    assert.deepEqual(merged.map(pair), [
+      'brace-expansion 1.1.16 -> 1.1.18',
+      'brace-expansion 2.1.2 -> 2.1.4',
+      'brace-expansion 5.0.8 -> 5.0.9',
+      'left-pad 1.3.0 -> 1.3.1',
+    ]);
+  });
+
+  it('keeps one row when two lockfiles describe the same bump', () => {
+    const merged = mergeChanges(
+      [bumpRow('brace-expansion', '5.0.8', '5.0.9')],
+      [bumpRow('brace-expansion', '5.0.8', '5.0.9')],
+    );
+    assert.equal(merged.length, 1);
+  });
+
+  it('drops a package.json range when a lockfile already changed that package', () => {
+    const merged = mergeLockOverManifest(
+      [bumpRow('brace-expansion', '5.0.8', '5.0.9')],
+      [bumpRow('brace-expansion', '^5.0.0', '^5.0.9'), bumpRow('left-pad', '^1.3.0', '^1.3.1')],
+    );
+    assert.deepEqual(merged.map(pair), ['brace-expansion 5.0.8 -> 5.0.9', 'left-pad ^1.3.0 -> ^1.3.1']);
   });
 });
 

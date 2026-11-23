@@ -27,6 +27,7 @@ import {
   diffVersionMaps,
   directDepNames,
   mergeChanges,
+  mergeLockOverManifest,
   parseLock,
   type Change,
   type CompareResult,
@@ -115,7 +116,7 @@ async function diffManifestFiles(
     manifestChanges = mergeChanges(manifestChanges, diffManifests(old, neu));
   }
 
-  return buildResult(format, mergeChanges(lockChanges, manifestChanges));
+  return buildResult(format, mergeLockOverManifest(lockChanges, manifestChanges));
 }
 
 // --------------------------------------------------------------------------

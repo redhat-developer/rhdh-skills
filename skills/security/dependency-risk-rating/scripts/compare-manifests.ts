@@ -434,10 +434,36 @@ export function buildResult(format: LockFormat, changes: Change[]): CompareResul
   return { format, changes, counts };
 }
 
-/** Merge change lists from several files; lockfile-derived entries win over manifest-derived. */
+/** One resolved bump. The same pair from a second lockfile is the same bump. */
+function changeKey(c: Change): string {
+  return `${c.name}\0${c.kind}\0${c.from ?? ''}\0${c.to ?? ''}`;
+}
+
+/** Union bumps from several files. An identical name, kind, and version pair is kept once. */
 export function mergeChanges(primary: Change[], secondary: Change[]): Change[] {
-  const seen = new Set(primary.map((c) => c.name));
-  return sortChanges([...primary, ...secondary.filter((c) => !seen.has(c.name))]);
+  const seen = new Set(primary.map(changeKey));
+  return sortChanges([
+    ...primary,
+    ...secondary.filter((c) => {
+      const key = changeKey(c);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  ]);
+}
+
+/**
+ * Resolved lockfile bumps stay. A package.json range is dropped when any
+ * lockfile already changed that package, so the range is not rated again
+ * beside its resolved versions.
+ */
+export function mergeLockOverManifest(lockChanges: Change[], manifestChanges: Change[]): Change[] {
+  const locked = new Set(lockChanges.map((c) => c.name));
+  return mergeChanges(
+    lockChanges,
+    manifestChanges.filter((c) => !locked.has(c.name)),
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -469,7 +495,7 @@ export function compareContents(args: {
     );
     // package.json may declare bumps the lockfile diff already covers; merge for completeness.
     const manifestChanges = oldPkg || newPkg ? diffManifests(oldPkg, newPkg) : [];
-    return buildResult(format, mergeChanges(lockChanges, manifestChanges));
+    return buildResult(format, mergeLockOverManifest(lockChanges, manifestChanges));
   }
 
   if (oldPkg || newPkg) {
