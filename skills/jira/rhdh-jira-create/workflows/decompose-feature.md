@@ -21,10 +21,15 @@ the description. Invoke `/prose-editing` once on the issue text in the
 project, type, team, Security Level, and acceptance criteria.
 
 Before publishing, confirm the parent and finish duplicate checks. Use
-`/rhdh-jira-api` to prepare the create and link payloads and apply its required
-field, visibility, and customer identity rules. Group exact operations with
-known targets for `/mutation-gate`. If dependent writes need new Jira keys,
-present those operations for approval once Jira returns the keys.
+`/rhdh-jira-api` to check fields required for the initial RHDH status and by Jira
+at create. Apply its visibility and customer identity rules when preparing
+payloads. Plan parent creates before their children, and put blockers before
+dependents when practical. Use `Blocks` links for agreed dependencies. If Jira
+cannot link them, record them in the issue text for review.
+
+Group exact operations with known targets for `/mutation-gate`. If dependent
+writes need new Jira keys, present those operations for approval once Jira
+returns the keys.
 
 Read back each new issue to verify fields and relationships. Stop on failure and
 report the partial results. If a create outcome is uncertain, verify that the

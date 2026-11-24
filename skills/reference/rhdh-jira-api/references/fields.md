@@ -15,7 +15,7 @@
 | Sprint(s) | `customfield_10020` | array | Array of sprint objects with `name`, `state`, `startDate`, `endDate`. Not available via `--fields` — use `--json`. |
 | Release Note Type | `customfield_10785` | dropdown | Values: Feature, Enhancement, Developer Preview, Deprecated Functionality, Removed Functionality, Release Note Not Required. |
 | Release Note Text | `customfield_10783` | textarea (ADF) | Actual release note content. Should be populated when RN Type is customer-facing. |
-| Acceptance Criteria | `customfield_10718` | textarea | Fetch explicitly. If the fetched field is empty, check the description and comments for legacy criteria. Before writing, confirm field availability for the project and issue type and use the selected adapter's text or rich-text format. |
+| Acceptance Criteria | `customfield_10718` | textarea | Fetch explicitly. If the fetched field is empty or the project and issue type do not have it, check the description and comments for legacy criteria. Before writing, confirm field availability and use the selected adapter's text or rich-text format. |
 | Feature Status | `customfield_10807` | dropdown | Found on RHDHPLAN Features. Values include `Proposed`. |
 | Rank | `customfield_10019` | string | Lexorank ordering. Generally not needed for agent operations. |
 

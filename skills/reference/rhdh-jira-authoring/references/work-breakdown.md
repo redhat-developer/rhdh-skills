@@ -5,9 +5,10 @@ Use when splitting a Feature into Epics or an Epic into Stories and Tasks.
 ## Start from what is settled
 
 Carry forward the source outcomes, constraints, exclusions, and customer or
-documentation considerations. Capture implementation and test decisions in the
-draft or review notes. Use the RHDH templates as a starting point and adapt them
-to the team's conventions. Ask only about gaps that change the work.
+documentation considerations. Put implementation and test decisions that affect
+delivery in the issue text. Keep supporting context in the review notes. Adapt
+the RHDH templates to the team's conventions. Ask only about gaps that change
+the work.
 
 ## Slice by delivery outcome
 
