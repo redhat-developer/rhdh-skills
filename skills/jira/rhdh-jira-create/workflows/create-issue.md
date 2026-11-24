@@ -57,14 +57,8 @@ get created: ask "Spikes require a time-box. How many story points?" and wait.
 
 ## Step 2 — Establish context
 
-Two entry modes, and they change how much you ask:
-
-- **Chained** — created as a child during a decomposition. The parent's scope,
-  acceptance criteria, and customer considerations are already settled. Narrow
-  the interview to this node's own delivery slice. Do not re-ask settled
-  parent-level topics.
-- **Standalone** — full interview. Ask whether there is a parent: "Is this part
-  of an existing Feature/Epic? [key / no]"
+Ask about a parent if the conversation has not established one. When a parent is
+known, carry forward its scope and settled decisions.
 
 ### Sibling awareness (Epic under a Feature only)
 
@@ -116,7 +110,7 @@ benefits, Requirements and acceptance criteria including non-functional ones, Ou
 of Scope, Customer Considerations, Documentation Considerations, and upstream
 Backstage engagement.
 
-**Epic, chained** — what does *this team's* delivery achieve within the parent
+**Epic, with a parent** — what does *this team's* delivery achieve within the parent
 Feature; internal and external dependencies; team-specific acceptance criteria
 (DEV, QE, DOC).
 
@@ -159,8 +153,7 @@ By type, the fields that matter most:
 | Story / Task / Spike | Priority, Component, Assignee, Story Points (required for Spikes), Security Level when private |
 | Bug (RHDHBUGS) | Priority, Component, Assignee, **Affects Version** (required at create — see `/rhdh-jira-api`), Security Level when the bug must not be project-public |
 
-When chained, inherit Priority, Team, and Component from the parent unless the
-conversation contradicts them.
+Use the parent's Priority, Team, and Component as context when proposing fields.
 
 **Components** are required on an Epic at New status and affect Feature Freeze
 and Code Freeze queries, so they are not a detail to skip. Infer them, validate
@@ -195,8 +188,7 @@ Jira label search is case-insensitive and the two spellings collide.
 component. After creating a Feature, prompt the user to run the Jira UI action
 **Feature → More → Create Doc EPIC from RHDHPlan** — an agent cannot.
 
-**Cross-team dependencies.** Ask whether other scrum teams are affected. If so,
-note them; they become Epics in Step 10.
+**Cross-team dependencies.** Record affected teams and their dependencies.
 
 ## Step 6 — Review before creating
 
@@ -395,53 +387,9 @@ only when the project supports security levels.
 Leaf types stop here. A Story, Task, Bug, or Spike is not decomposed further — if
 the scope is too large, split it into sibling issues or promote it to an Epic.
 
-**After a Feature:** "Break this Feature into Epics? The RHDH process typically
-creates Epics per team (Eng, QE, Doc). [y/N]"
-
-Load `/rhdh-jira-authoring` for the breakdown rules, then:
-
-1. Ask which teams are involved. Default suggestion: Eng and Doc, since QE is
-   often covered inside the Eng Epic.
-2. Propose the whole batch **before creating any of it**, as a table with
-   blocking edges and a team-scoped outcome per Epic — not a horizontal tech
-   layer.
-3. Run the batch review below.
-4. For each approved Epic, re-enter this workflow at Step 2 in chained mode.
-   The Feature's scope, acceptance criteria, and customer considerations are
-   settled; the Epic interview narrows to that team's delivery slice,
-   dependencies, and team-specific acceptance criteria.
-5. Link each Epic to the parent Feature with the cross-project Parent Link from
-   Step 8.
-
-### Batch review (Feature → Epics)
-
-| # | Epic summary | Size | Blocked by | Overlaps with |
-|---|---|---|---|---|
-| 1 | Entity-Provider SDK | M | None | — |
-| 2 | OCI Skill Registry | S | #1 (SDK) | — |
-| 3 | Annotation Scheme | XS | #1 (SDK) | #1 (same package) |
-
-- **Overlap check** — would any two of these naturally ship in the same PR or
-  package? Flag the pair.
-- **Count challenge** — more than five Epics under one Feature is a signal.
-  "Are any of these implementation details that should be acceptance criteria on
-  a broader Epic?"
-- **Consolidation check** — several XS or S Epics targeting the same technical
-  domain usually want merging.
-
-The user merges, drops, or approves before any Epic is created.
-
-**After an Epic:** "Break this Epic into Stories/Tasks? [y/N]"
-
-1. Draft **tracer bullet** slices — vertical, demoable or verifiable on their
-   own — not horizontal backend/frontend/docs splits of one behavior. When
-   unknowns block slicing, propose a prefactor or spike first.
-2. Present a numbered batch with **Blocked by** per slice and quiz granularity
-   and edges before creating anything.
-3. For each approved slice, re-enter this workflow at Step 2 in chained mode with
-   the type inferred per slice — Story if user-facing, Task if internal.
-4. Create in dependency order when practical, blockers first, and set `Blocks`
-   links where the edges are real.
+For a Feature or Epic, offer to break it down. If requested, continue through
+[decompose-feature.md](decompose-feature.md) with the new parent key and the
+decisions already made.
 
 ## Error handling
 

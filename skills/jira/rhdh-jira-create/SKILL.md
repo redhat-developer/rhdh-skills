@@ -6,10 +6,10 @@ description: >-
   RHIDP, Bug in RHDHBUGS, support conversation in RHDHSUPP — then interviews,
   drafts, and creates it with the right fields and parent link. Use for "file a
   ticket", "create a feature", "open an epic for this", "raise a bug", "log a
-  spike", "we should track this in Jira", or turning an RHDHSUPP support case
-  into an RHDHBUGS defect or an RHDHPLAN feature request. Picking the issue type
-  is this skill's job, not the caller's. Editing or transitioning an issue that
-  already exists, such as RHIDP-1234, is not creation.
+  spike", "we should track this in Jira", "break down RHDHPLAN-1234", or turning
+  an RHDHSUPP support case into an RHDHBUGS defect or an RHDHPLAN feature request.
+  Picking the issue type is this skill's job, not the caller's. Editing or
+  transitioning an issue that already exists, such as RHIDP-1234, is not creation.
 compatibility: "acli on PATH with a Jira session; Python 3.9+ and uv. Requires the external grilling skill — creation is blocked without it."
 ---
 
@@ -25,9 +25,8 @@ front and out loud, and the user confirms it before anything is created.
 
 ## Route
 
-Load `workflows/create-issue.md`. One workflow covers every level of the
-hierarchy — the type decision is its first real step, and the steps after it
-converge.
+- For a Feature or Epic breakdown, use [decompose-feature.md](workflows/decompose-feature.md).
+- For a single issue, use [create-issue.md](workflows/create-issue.md).
 
 Add `references/support-intake.md` when the work originates from a support case:
 an RHDHSUPP conversation, a customer escalation, an SLA question, or a request to
