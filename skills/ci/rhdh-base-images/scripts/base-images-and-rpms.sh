@@ -716,8 +716,15 @@ commit_push_paths() {
 
     git commit -s -m "${message}"
     if ! git push -u origin "${push_branch}"; then
-        status_fail "${CURRENT_KIND:-unknown}" "${branch}" push "git push failed for origin/${push_branch}; commit remains local"
-        return 0
+        # Another automation run may have pushed to the same bot branch mid-run
+        # (non-fast-forward). These branches are disposable: rebase and retry once.
+        if git pull --rebase origin "${push_branch}" \
+            && git push -u origin "${push_branch}"; then
+            log "Pushed ${message} to origin/${push_branch} (after rebase)"
+        else
+            status_fail "${CURRENT_KIND:-unknown}" "${branch}" push "git push failed for origin/${push_branch}; commit remains local"
+            return 0
+        fi
     fi
     log "Pushed ${message} to origin/${push_branch}"
 
@@ -747,7 +754,7 @@ node_version_from_image() {
     err_file=$(mktemp)
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
-    out=$("${runner}" run --rm --entrypoint node "${image}" --version 2>"${err_file}") || true
+    out=$("${runner}" run --rm --network=none --entrypoint node "${image}" --version 2>"${err_file}") || true
     if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
         warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
     fi
@@ -1314,7 +1321,10 @@ go_version_from_toolset_image() {
     local image="$1"
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    "${runner}" run --rm --entrypoint go "${image}" version 2>/dev/null \
+    # --network=none: version probes need no container networking, and podman's
+    # default pasta networking fails on CI runner pods without /dev/net/tun
+    # (RHIDP-18915). Image pull happens on the host before the netns is set up.
+    "${runner}" run --rm --network=none --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
 
