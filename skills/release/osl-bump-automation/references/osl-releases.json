@@ -28,19 +28,23 @@
   "release_lines": {
     "1.9": {
       "chart_branch": "release-1.9",
-      "operator_branch": "release-1.9"
+      "operator_branch": "release-1.9",
+      "kn_workflow_policy": "follow"
     },
     "1.10": {
       "chart_branch": "release-1.10",
-      "operator_branch": "release-1.10"
+      "operator_branch": "release-1.10",
+      "kn_workflow_policy": "follow"
     },
     "2.1": {
       "chart_branch": "release-2.1",
-      "operator_branch": "release-2.1"
+      "operator_branch": "release-2.1",
+      "kn_workflow_policy": "preserve"
     },
     "main": {
       "chart_branch": "main",
-      "operator_branch": "main"
+      "operator_branch": "main",
+      "kn_workflow_policy": "preserve"
     }
   },
   "jira": {
@@ -89,6 +93,6 @@
   },
   "osl_versions": {
     "operator_version_is_distinct_from_kn_workflow_version": true,
-    "default_kn_workflow_version_policy": "preserve_existing_unless_explicitly_changed"
+    "kn_workflow_policy": "'follow' tracks --version; 'preserve' keeps the checked-in pin; --kn-workflow-version overrides both"
   }
 }

@@ -101,6 +101,27 @@ def release_branches(config_path: Path, release: str) -> dict[str, str]:
     return lines[release]
 
 
+def head_is_based_on(repo: Path, branch: str) -> bool:
+    """True when HEAD descends from the branch tip, or when that cannot be determined."""
+    for ref in (f"origin/{branch}", branch):
+        exists = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", ref],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if exists.returncode != 0:
+            continue
+        ancestor = subprocess.run(
+            ["git", "-C", str(repo), "merge-base", "--is-ancestor", ref, "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return ancestor.returncode == 0
+    return True
+
+
 def current_branch(repo: Path) -> str | None:
     """Return the checked-out branch, or None for detached HEAD or a failed call."""
     try:
@@ -127,7 +148,7 @@ def chart_changes(root: Path, osl: str, new_chart_version: str | None) -> list[C
 
     replacements = {
         CHART_FILES[0]: [
-            (r"^(version:)\s*[^\s#]+\s*$", rf"\g<1> {chart}", "chart version"),
+            (r"^(version:)[ \t]*[^\s#]+", rf"\g<1> {chart}", "chart version"),
         ],
         CHART_FILES[1]: [
             (r"(Version:\s*)\d+\.\d+\.\d+", rf"\g<1>{chart}", "README chart badge"),
@@ -371,11 +392,11 @@ def main(argv: list[str]) -> int:
             if repo is None:
                 continue
             want = expected.get(f"{kind}_branch")
-            branch = current_branch(repo)
-            if branch is None:
-                print(f"note: cannot read the branch of {repo}; release check skipped")
-            elif branch != want:
-                fail(f"{repo} is on {branch!r}; release {args.release} expects {want!r}")
+            if not head_is_based_on(repo, want):
+                fail(f"{repo}: HEAD is not based on {want!r} (release {args.release})")
+    if kn_version is None and args.release:
+        if expected.get("kn_workflow_policy", "preserve") == "follow":
+            kn_version = osl
     changes: list[Change] = []
     if args.chart_repo:
         changes.extend(chart_changes(args.chart_repo, osl, args.chart_version))

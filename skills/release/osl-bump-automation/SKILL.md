@@ -64,7 +64,7 @@ python3 scripts/osl_bump.py verify --version 1.40.0 \
   --chart-repo <chart> --operator-repo <operator>
 ```
 
-`--kn-workflow-version <tag>` moves the kn-workflow tool tag only when it is passed; omitting it preserves the checked-in pin. Exit codes: `0` clean, `1` ran and found a mismatch, `2` could not run.
+`--kn-workflow-version <tag>` overrides the line's policy. Omitting it follows `kn_workflow_policy` in `references/osl-releases.json`: `follow` tracks the OSL version (1.9, 1.10), `preserve` keeps the checked-in pin (2.1, main). Exit codes: `0` clean, `1` ran and found a mismatch, `2` could not run.
 
 ## Rules
 - `apply --write` edits the working tree only. Do not commit, push, or open a pull request unless the engineer explicitly asks for the PRs.
@@ -72,11 +72,11 @@ python3 scripts/osl_bump.py verify --version 1.40.0 \
 - Never merge, never remove a hold, and never publish to OperatorHub.
 - Never infer catalog availability from a Jira status. If the catalog cannot be read, report `unknown`.
 - Generated files must match their source: `dist/rhdh/install.yaml`, `bundle/rhdh/manifests/rhdh-plugin-deps_v1_configmap.yaml`, `README.md`, `values.schema.json`.
-- The kn-workflow tool tag is not the OSL version. Rebuilds have shipped a CSV newer than the tool (SRVLOGIC-1303), so the pin is preserved unless `--kn-workflow-version` is passed.
+- The kn-workflow tool tag is not the OSL version. Rebuilds have shipped a CSV newer than the tool (SRVLOGIC-1303), so 2.1 and main preserve the pin; 1.9 and 1.10 follow the OSL version. `--kn-workflow-version` overrides both.
 
 ## Reference
 
-Read [references/osl-releases.json](references/osl-releases.json) before preparing a bump on a release line. It maps `1.9`, `1.10`, and `main` to their branches, records the kn-workflow pin policy, and lists the files each repository must change.
+Read [references/osl-releases.json](references/osl-releases.json) before preparing a bump on a release line. It maps each release line (`1.9`, `1.10`, `2.1`, `main`) to its branches and policy, and lists the files each repository must change.
 
 ## Completion
 
