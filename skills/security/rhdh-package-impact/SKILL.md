@@ -13,7 +13,7 @@ description: >-
   Dependabot alerts, or doing a downstream catalog Dependabot CVE lockfile bump
   on release-X.Y (skip-sync workspaces, reexport-dist-dynamic) when alerts come
   from an upstream GitHub Dependabot host — not for Version Packages / overlay
-  promote into catalog (/rhdh-plugin-midstream-propagate).
+  promote into catalog.
 ---
 
 # plugins package impact
