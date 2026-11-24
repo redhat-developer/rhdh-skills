@@ -6,7 +6,8 @@
 """List and classify open Renovate and Dependabot PRs across RHDH repositories.
 
 Fetches open PRs authored by bot accounts, classifies each by branch type,
-dependency type, CI status, and semver level. Output is consumed by the
+dependency type, CI status, semver level, and go.mod directive changes (with
+the `godebug` pin in effect on the base branch). Output is consumed by the
 triage workflow.
 
 Examples:
@@ -30,6 +31,17 @@ DEFAULT_REPOS = [
 ]
 
 BOT_AUTHORS = ["app/renovate", "app/dependabot"]
+
+# Root files that mark a branch as a Go codebase, in the order they are probed.
+GO_MARKERS = ["go.mod", "go.work"]
+
+DIRECTIVE_PATTERNS = {
+    "go": re.compile(r"^go\s+(\d+\.\d+(?:\.\d+)?)$"),
+    "toolchain": re.compile(r"^toolchain\s+(go\d+\.\d+(?:\.\d+)?)$"),
+    "godebug": re.compile(r"^godebug\s+(.+)$"),
+}
+
+SECURITY_LABEL = "kind/security"
 
 
 def log(msg):
@@ -133,19 +145,210 @@ def detect_dep_type(title, files):
     return "other"
 
 
-def detect_go_directives(diff_text):
-    go_bumped = False
-    toolchain_bumped = False
-
+def _directive_values(diff_text):
+    """Collect go.mod directive values from the added and removed diff lines."""
+    added = {}
+    removed = {}
     for line in diff_text.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
-            stripped = line[1:].strip()
-            if re.match(r"^go\s+\d+\.\d+", stripped) and not stripped.startswith("golang"):
-                go_bumped = True
-            if re.match(r"^toolchain\s+go\d+\.\d+", stripped):
-                toolchain_bumped = True
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if len(line) < 2 or line[0] not in "+-":
+            continue
+        bucket = added if line[0] == "+" else removed
+        stripped = line[1:].strip()
+        for name, pattern in DIRECTIVE_PATTERNS.items():
+            match = pattern.match(stripped)
+            if match:
+                bucket[name] = match.group(1).strip()
+    return added, removed
 
-    return go_bumped, toolchain_bumped
+
+def detect_go_directives(diff_text):
+    """Return the go.mod directive changes a PR makes, as a flat dict.
+
+    A directive counts as changed only when the added value differs from the
+    removed one, so a diff that touches unrelated lines leaves it False. A
+    removed `godebug` line yields `go_godebug_changed` with no value.
+    """
+    added, removed = _directive_values(diff_text)
+
+    def changed(name):
+        return (name in added or name in removed) and added.get(name) != removed.get(name)
+
+    return {
+        "go_directive_bumped": changed("go"),
+        "go_toolchain_bumped": changed("toolchain"),
+        "go_godebug_changed": changed("godebug"),
+        "go_directive_value": added.get("go"),
+        "go_godebug_value": added.get("godebug"),
+    }
+
+
+def parse_gomod_directives(gomod_text):
+    """Return the go, toolchain and godebug directive values from a go.mod file."""
+    values = {"go": None, "toolchain": None, "godebug": None}
+    for line in gomod_text.splitlines():
+        stripped = line.split("//")[0].strip()
+        for name, pattern in DIRECTIVE_PATTERNS.items():
+            match = pattern.match(stripped)
+            if match:
+                values[name] = match.group(1).strip()
+    return values
+
+
+def is_security_pr(labels, title):
+    """Whether a PR carries a security marker in its own labels or title.
+
+    Renovate labels vulnerability PRs `kind/security` and appends `[security]` to
+    the title. dependabot-core emits a `[security]` title prefix too, but not
+    every Dependabot deployment uses that renderer — so this is only one half of
+    the signal; `security_from_alerts` supplies the other.
+    """
+    if SECURITY_LABEL in labels:
+        return True
+    return "[security]" in title.lower()
+
+
+def fetch_open_alerts(repo, cache):
+    """Map open Dependabot alert package names to their first patched version.
+
+    Returns None when the alerts endpoint is unreadable — alerts disabled for the
+    repository, or a token without the scope — because that means "no alert
+    signal", not "no vulnerability", and it must not abort a run over a
+    repository that publishes no alerts.
+    """
+    key = ("alerts", repo)
+    if key in cache:
+        return cache[key]
+
+    result = run_gh(
+        [
+            "api",
+            f"repos/{repo}/dependabot/alerts?state=open&per_page=100",
+            "--paginate",
+            "--jq",
+            ".[] | {pkg: .dependency.package.name,"
+            " patched: .security_vulnerability.first_patched_version.identifier}",
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        cache[key] = None
+        return None
+
+    alerts = {}
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        package = (entry.get("pkg") or "").strip().lower()
+        if package:
+            alerts[package] = entry.get("patched")
+    cache[key] = alerts
+    return alerts
+
+
+def extract_target_version(title):
+    """The version a bot PR moves a dependency to, when the title names one."""
+    match = re.search(r"\bto\s+v?(\d+(?:\.\d+)*)", title, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def parse_version(text):
+    """Numeric components of a version string, padded so tuples compare.
+
+    A string that is not a plain version yields None rather than a partial
+    number, so a title fragment cannot be mistaken for a version below the fix.
+    """
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)", (text or "").strip())
+    if not match:
+        return None
+    return [int(part) for part in match.group(1).split(".")]
+
+
+def version_at_least(candidate, floor):
+    """Whether `candidate` is `floor` or newer, padding the shorter tuple with 0."""
+    left = parse_version(candidate)
+    right = parse_version(floor)
+    if not left or not right:
+        return None
+    width = max(len(left), len(right))
+    left += [0] * (width - len(left))
+    right += [0] * (width - len(right))
+    return left >= right
+
+
+def security_from_alerts(alerts, dep_name, target_version=None):
+    """Whether an open alert covers the package a PR bumps.
+
+    Dependabot security updates, and Renovate's vulnerability PRs, are created
+    from these alerts, so the alert is what makes the PR a security fix
+    regardless of how the bot renders its title. A bump that stops short of the
+    alert's first patched version is not a fix, which keeps an ordinary version
+    update of a flagged package from borrowing the security exception.
+    """
+    if not alerts:
+        return False
+    package = dep_name.strip().lower()
+    if package not in alerts:
+        return False
+
+    patched = alerts[package]
+    if patched and version_at_least(target_version, patched) is False:
+        return False
+    return True
+
+
+def fetch_branch_file(repo, path, ref, cache):
+    """Fetch a file from a branch, or None when the path is not there.
+
+    A 404 means the branch genuinely lacks the file. Any other failure aborts the
+    run instead of returning None, because "absent" drives a policy decision
+    here: a transient error must not quietly switch the Go checks off for a Go
+    repository. Results are cached per repository, path and ref — a batch usually
+    holds several PRs against the same base branch.
+    """
+    key = (repo, path, ref)
+    if key in cache:
+        return cache[key]
+
+    result = run_gh(
+        [
+            "api",
+            f"repos/{repo}/contents/{path}?ref={ref}",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        ],
+        check=False,
+    )
+
+    if result.returncode == 0:
+        text = result.stdout
+    elif "404" in result.stderr or "Not Found" in result.stderr:
+        text = None
+    else:
+        error_exit(
+            "gh_error",
+            f"repos/{repo}/contents/{path}?ref={ref}: {result.stderr.strip()}",
+        )
+
+    cache[key] = text
+    return text
+
+
+def is_go_repo(repo, branch, cache):
+    """Whether a branch roots a Go codebase, judged from its own files.
+
+    Discovering this beats a hardcoded repository list: the list goes stale when
+    a repository gains or drops Go, and a chart or local-environment PR whose
+    title mentions a Go module is classified `go-module` without shipping any Go
+    at all.
+    """
+    return any(fetch_branch_file(repo, marker, branch, cache) is not None for marker in GO_MARKERS)
 
 
 def detect_chart_folders(files):
@@ -226,6 +429,7 @@ def find_duplicates(prs):
 def fetch_prs_for_repo(repo):
     log(f"Fetching bot PRs from {repo}...")
     prs = []
+    file_cache = {}
     for author in BOT_AUTHORS:
         raw = run_gh_json(
             [
@@ -257,18 +461,45 @@ def fetch_prs_for_repo(repo):
             semver_level = detect_semver_level(title)
             chart_folders = detect_chart_folders(files) if repo.endswith("/rhdh-chart") else []
 
-            go_directive_bumped = False
-            go_toolchain_bumped = False
-            if dep_type == "go-module" and repo.endswith("/rhdh-operator"):
+            # Security PRs get the release-branch exceptions, so the signal has
+            # to be right. Labels and titles cover Renovate; the open alert set
+            # covers GitHub-hosted Dependabot, which marks nothing in the title.
+            is_security = is_security_pr(labels, title)
+            if not is_security:
+                is_security = security_from_alerts(
+                    fetch_open_alerts(repo, file_cache),
+                    dep_name,
+                    extract_target_version(title),
+                )
+
+            go_directives = {
+                "go_directive_bumped": False,
+                "go_toolchain_bumped": False,
+                "go_godebug_changed": False,
+                "go_directive_value": None,
+                "go_godebug_value": None,
+            }
+            base_godebug_pin = None
+
+            if dep_type == "go-module" and is_go_repo(repo, base_ref, file_cache):
                 log(f"  Checking Go directives for #{number}...")
                 diff_result = run_gh(
                     ["pr", "diff", str(number), "--repo", repo],
                     check=False,
                 )
                 if diff_result.returncode == 0:
-                    go_directive_bumped, go_toolchain_bumped = detect_go_directives(
-                        diff_result.stdout
-                    )
+                    go_directives = detect_go_directives(diff_result.stdout)
+
+                # The pin a Go release branch inherits at branch cut is what
+                # bounds a security-driven directive bump, and the only rule that
+                # reads it is gated on the security signal: for an ordinary
+                # dependency update the directive is frozen and the PR closes
+                # before the pin matters. Read it only where it decides
+                # something.
+                if go_directives["go_directive_bumped"] and is_security:
+                    gomod = fetch_branch_file(repo, "go.mod", base_ref, file_cache)
+                    if gomod:
+                        base_godebug_pin = parse_gomod_directives(gomod)["godebug"]
 
             log(f"  Checking CI for #{number}...")
             checks_raw = run_gh(
@@ -301,14 +532,15 @@ def fetch_prs_for_repo(repo):
                     "branch_type": classify_branch(base_ref, repo),
                     "author": author_login,
                     "labels": labels,
+                    "is_security": is_security,
                     "ci_status": ci_status,
                     "is_draft": pr_data.get("isDraft", False),
                     "is_conflicted": is_conflicted,
                     "dep_type": dep_type,
                     "dep_name": dep_name,
                     "semver_level": semver_level,
-                    "go_directive_bumped": go_directive_bumped,
-                    "go_toolchain_bumped": go_toolchain_bumped,
+                    **go_directives,
+                    "base_godebug_pin": base_godebug_pin,
                     "chart_folders": chart_folders,
                     "duplicate_of": None,
                 }

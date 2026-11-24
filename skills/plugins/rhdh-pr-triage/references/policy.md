@@ -12,6 +12,38 @@ section; the first matching rule wins.
 | PR has conflicts, author is `dependabot[bot]` | recreate | `@dependabot recreate` |
 | Same dependency from both bots | merge Renovate, close Dependabot | Renovate title includes `[security]`, preserving the reason in commit history |
 
+### Security PRs
+
+The release-branch rules give a security PR its exceptions, so the signal has to
+be right. A PR is a security PR when the listing's `is_security` is true, which
+holds when any of these do:
+
+- the `kind/security` label is on it — Renovate sets it on vulnerability PRs, and
+  also appends `[security]` to the title;
+- the title carries a `[security]` marker, which is what dependabot-core emits for
+  a security fix;
+- an open Dependabot alert covers the package the PR bumps, at a version at or
+  above the alert's first patched version.
+
+The third is the one that matters for Dependabot. GitHub's hosted Dependabot
+writes nothing into the title of a security update — live PRs read plainly
+"chore(deps): bump x from a to b" — and its body footer about "automated security
+fix PRs" appears on ordinary version updates too, so neither is a usable signal.
+The open alert is, because it is what created the PR; it also covers Renovate
+vulnerability PRs that arrive without the label. A bump that stops short of the
+first patched version is a version update that happens to touch a flagged
+package, not a fix, which is why the comparison is made.
+
+When the alerts endpoint is unreadable the script falls back to labels and titles
+alone rather than failing: rhdh-chart has Dependabot alerts disabled, and it takes
+no Dependabot PRs at all.
+
+None of these repositories carries a `.github/dependabot.yml`, and version updates
+require that file, so every Dependabot PR here is a security update today. Confirm
+with `gh api repos/redhat-developer/<repo>/automated-security-fixes` rather than
+assuming it: the setting can be paused, and adding a config file later adds
+ordinary version-update PRs to the mix.
+
 ### Addressing the bot
 
 Send the command to the app that opened the PR, and to the other one never:
@@ -57,9 +89,20 @@ Without a bot command it is simply the last line — the flag comment is the
 common case:
 
 ```
-Triage flag: golang.org/x/net v0.62.0 also bumps the go directive 1.25.0 to
-1.26.0 on release-1.10. Security fix plus a frozen go directive — needs human
-review, not auto-merge.
+Triage flag: golang.org/x/net v0.62.0 on release-2.1 of rhdh-must-gather also
+rewrites the godebug line from default=go1.26 to default=go1.27. A release
+branch never re-pins its runtime semantics — needs human review.
+
+_Assisted by AI, using the rhdh-pr-triage skill._
+```
+
+The same PR on a branch that carries the pin merges under the ordinary
+release-branch rules, and says so:
+
+```
+Approved by triage: security fix, and the godebug pin holds this branch's
+runtime semantics at branch cut, so the go directive bump only raises the
+language version.
 
 _Assisted by AI, using the rhdh-pr-triage skill._
 ```
@@ -70,9 +113,22 @@ Main is a development branch — major version bumps are allowed.
 
 | Condition | Decision | Reason |
 |-----------|----------|--------|
+| Go repo: `go` directive bumped, `godebug` not set to `default=go<major.minor>` of the new value | flag | Main carries `godebug` equal to its `go` directive |
+| Go repo: `godebug` line removed | flag | Main pins GODEBUG to the declared version |
 | CI green | approve+merge | CI passing |
 | CI pending | skip | Waiting for CI |
 | CI failing | skip | CI failing |
+
+On main the `go` and `godebug` lines move together in one change: a module
+declaring `go 1.26.0` carries `godebug default=go1.26`. Directive bumps are
+allowed there, including when a dependency update needs a newer Go version that
+go-toolset already ships, provided the `godebug` line moves with the `go` line.
+The scheduled cycle bump is deliberate and tracked by a Jira issue, not raised by
+Renovate. When it lands, `.github/renovate.json` also needs its `constraints.go`
+value moved to the new `go` version — Renovate reads that file from the default
+branch only, and a stale value makes its `go mod tidy` runs resolve against the
+wrong Go version. Note it in the merge comment rather than blocking on it; it is
+not a runtime risk.
 
 ## Release branch (release-x.y)
 
@@ -89,13 +145,15 @@ imminent GA. Always use the live result.
 | Minor bump of a builder-stage image (`go-toolset`, `golang:1.x`, `node:22`, any vendor) | normal rules | Build-time image — minor allowed on release branches |
 | Minor bump of a GitHub Actions `uses:` version | normal rules | CI-only — actions do not ship in the artifact |
 | Minor bump of a Red Hat UBI base image (`ubi9`, `ubi10`, `-minimal`, `-micro`) | normal rules | Vendor stream — minor allowed on release branches |
-| Minor version bump, PR has `[security]` label | normal rules | Security fix — minor allowed on release branches |
+| Minor version bump, security PR | normal rules | Security fix — minor allowed on release branches |
 | Minor version bump | close | Release branches take patch-level updates only |
-| Go repo: `go` directive bumped in go.mod, PR has `[security]` label | flag | Human review — security + go directive bump |
+| Go repo: `godebug` line added, removed, or changed in go.mod | flag | Runtime semantics are pinned; a release branch never re-pins them |
+| Go repo: `go` directive bumped, security PR, base branch carries a `godebug` pin | normal rules | Security fix — the inherited pin holds GODEBUG defaults at branch cut |
+| Go repo: `go` directive bumped, security PR, base branch carries no `godebug` pin | flag | Unpinned branch — a security `go` bump moves its runtime semantics |
 | Go repo: `go` directive bumped in go.mod | close | Go directive frozen on release branches |
-| Go repo: `toolchain` non-patch bump, PR has `[security]` label | flag | Human review — security + toolchain bump |
+| Go repo: `toolchain` non-patch bump, security PR | flag | Human review — security + toolchain bump |
 | Go repo: `toolchain` non-patch bump | close | Only toolchain patch bumps on release branches |
-| Go pseudo-version (`v0.0.0-…`) bump, PR has `[security]` label | normal rules | Security fix — pseudo-version allowed on release branches |
+| Go pseudo-version (`v0.0.0-…`) bump, security PR | normal rules | Security fix — pseudo-version allowed on release branches |
 | Go pseudo-version (`v0.0.0-…`) bump | close | Pseudo-versions stay off release branches |
 | Release state is TBD or unknown | unknown | Cannot determine CF/FF/GA state for x.y.z — report as undecidable |
 | At CF or FF | hold | /hold until x.y.z is out |
@@ -279,19 +337,102 @@ All must confirm before unholding.
 
 ## Go repo policy
 
-The `go` directive and `toolchain` rules above apply to every repo that ships a
-Go binary. Currently:
+The `go` directive, `toolchain` and `godebug` rules above apply to every repo
+that ships a Go binary. Triage discovers that from the base branch rather than
+from a maintained list: a branch that roots a `go.mod` or a `go.work` is a Go
+branch, and the rules apply. The list would otherwise go stale as repositories
+gain or drop Go, and a chart or local-environment PR whose title names a Go
+module is classified `go-module` without shipping any Go at all. Today that
+means:
 
 - **rhdh-operator** — all branches
-- **rhdh-must-gather** — `main` and `release-2.y+` branches only (the must-gather
-  was rewritten in Go; `release-1.10` and earlier are still shell-based and have
-  no `go.mod`)
+- **rhdh-must-gather** — `main` and `release-2.1` (the must-gather was rewritten
+  in Go; `release-1.10` and earlier are still shell-based and have no `go.mod`)
+- **rhdh-chart**, **rhdh-local** — no Go at all, whatever a title says
 
-When `go_directive_bumped` or `go_toolchain_bumped` is true in a PR from one of
-these repos on a release branch, close it per the rules above — unless the PR
-also carries a `[security]` label, in which case flag it for human review
-instead of closing. The security fix may need to land via a manual patch that
-does not bump the directive.
+### Two controls, not one
+
+`go.mod` declares the language version. The go-toolset builder image supplies the
+compiler and standard library that end up in the shipped binary. They move
+independently, and a gap between them is the intended state rather than drift to
+correct: a release branch declaring `go 1.25.0` while building with Go 1.26
+still receives every standard-library security fix through the image, while the
+module keeps declaring the compatibility surface it shipped with. Never close or
+flag a go-toolset image bump for disagreeing with `go.mod` — the builder-image
+allowance already covers it.
+
+### The `godebug` pin
+
+Raising the `go` directive re-pins every GODEBUG default compiled into the
+binary, dependency code included, so it changes runtime behaviour with no source
+change to review. Release branches therefore carry a `godebug` line inherited
+from `main` at branch cut — `godebug default=go1.25` on a branch that declares
+`go 1.26.0` — which holds those defaults at the branch-cut version. That line is
+what makes a security-driven directive bump safe: the language version rises,
+the gated behaviour does not. It is a no-op on `main`, where it always equals the
+`go` directive, and a release branch never edits it.
+
+Pin state decides the security rule, once the branch has survived the rows above
+it:
+
+- **Pin on the base branch** — the bump only raises the language version. Merge
+  under the ordinary release-branch rules, with no Security-team escalation and
+  no case-by-case risk review.
+- **No pin on the base branch** — the bump re-pins that branch's runtime
+  semantics for real. Flag it.
+
+The no-pin row is a guard, not a routine outcome. Every supported branch that
+carries a `go.mod` now has the pin: `rhdh-operator` `release-1.10` and
+`release-2.1`, and `rhdh-must-gather` `release-2.1`. Release branches cut from
+here on inherit it at branch cut. The row still earns its place because a branch
+cut before the pin existed would reach it — the operator's `release-1.5` through
+`release-1.9` are all EOL now, so they close on the first row instead — and
+because it catches a branch whose pin was dropped, which is the state `main`'s own
+rows exist to prevent.
+
+A pin equal to the branch's declaration is not a dead line. `rhdh-must-gather`
+`release-2.1` carries `godebug default=go1.26` beside `go 1.26.0`, so it is a
+no-op today and takes effect the moment the directive is raised — which is the
+whole point of inheriting it. Judge the pin by its presence, not by whether it
+currently differs from the `go` line.
+
+A change to the `godebug` line itself flags on a supported release branch
+whatever else the PR carries: it is the one thing the branch must not re-pin, so
+a security PR that touches it needs the line dropped, not merged.
+
+Example: rhdh-operator #4178 raises `go 1.25.0` to `go 1.26.0` on `release-1.9`
+with the otel v1.47.0 security fix. That branch is EOL, so it closes on the first
+row — the missing pin never comes into it. The same shape on `release-1.10`, whose
+`go.mod` holds `godebug default=go1.25` under a declared `go 1.26.0`, merges under
+the ordinary rules; that branch has already raised its directive once, and the pin
+is what keeps it on 1.25 semantics.
+
+### Judging a security `go` bump
+
+`base_godebug_pin` carries the pin in effect on the base branch. It is read only
+for a security PR that raises the directive, because that is the only decision it
+feeds — an ordinary dependency update hits the frozen-directive rule first and
+closes regardless. A `null` therefore means "no pin", or "not a security PR"; the
+rows above only consult the field on the security row, where the lookup ran. The
+pin is read from the root `go.mod`, which is where these repositories declare it.
+A workspace layout that roots only a `go.work`, with modules in subdirectories,
+has no root pin and lands on the flag row — the safe direction, since the pin
+cannot be confirmed.
+
+The field is a snapshot, so re-read the base branch's `go.mod` live before
+approving, the same way CI status is re-checked — the pin is what authorises the
+approval, and an approval on a stale snapshot merges a re-pin. The PR itself must
+leave the `godebug` line untouched: a PR that adds, changes, or removes it flags
+whatever the base branch carries.
+
+A directive bump is a last resort, not the routine answer to a dependency
+conflict. An older release of the dependency that fixes the vulnerability while
+still declaring a compatible `go` version is preferable, and Renovate often
+offers both. Triage cannot enumerate the upstream versions, so the merge comment
+asks the author to confirm the target is the lowest fixing version rather than
+running a parallel search. The bump and the fix land in one PR: a security PR
+that raises the directive with no dependency change is flagged, because there is
+no fix in it to review.
 
 To avoid spamming on repeated triage runs, only post a new flag comment when the
 PR's actual diff has changed since the last flag comment — not merely when
@@ -308,9 +449,6 @@ Flag comments must always include the dependency target version (e.g.
 
 If a previous triage run already left a flag comment and the dependency version
 has not changed since, skip the PR silently.
-
-On main, Go directive and toolchain bumps are allowed and follow normal
-main-branch rules.
 
 ## Chart repo special rules
 

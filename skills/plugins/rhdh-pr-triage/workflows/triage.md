@@ -23,11 +23,30 @@ Consume the full JSON output. The top-level object contains:
 
 ```
 dry_run: true | false
-prs: [{repo, number, url, title, base_branch, author, labels, ci_status,
-       is_draft, is_conflicted, dep_type, dep_name, semver_level,
-       go_directive_bumped, go_toolchain_bumped, chart_folders,
-       duplicate_of}]
+prs: [{repo, number, url, title, base_branch, author, labels, is_security,
+       ci_status, is_draft, is_conflicted, dep_type, dep_name, semver_level,
+       go_directive_bumped, go_toolchain_bumped, go_godebug_changed,
+       go_directive_value, go_godebug_value, base_godebug_pin,
+       chart_folders, duplicate_of}]
 ```
+
+`is_security` folds every signal into one boolean — the `kind/security` label, a
+`[security]` title marker, or an open Dependabot alert for the bumped package at
+or above its first patched version. Do not re-derive it from `labels` and
+`title`: GitHub-hosted Dependabot marks nothing in the title of a security
+update, so the alert is the only thing that identifies it, and it is not visible
+in the JSON. The rules in `references/policy.md` say "security PR" and mean this
+field.
+
+The Go fields are populated for a PR classified `go-module` whose base branch
+roots a `go.mod` or `go.work` — discovered per repository and branch, so a Go
+repository added to the run is covered without editing the script, and a chart or
+local-environment PR that merely names a Go module is not. `base_godebug_pin` is
+read from the base branch's root `go.mod` only when the PR raises the `go`
+directive **and** is a security PR — for any other PR the directive is frozen and
+the pin cannot change the decision. A `null` there therefore means "no pin on that
+branch", "not a security directive bump", or "a `go.work`-only workspace with no
+root `go.mod`". See "Go repo policy" in `references/policy.md`.
 
 ## Step 2 — Release state
 
@@ -67,12 +86,14 @@ columns — keep cell content concise so the table is scannable at a glance:
 
 - **Title**: truncate to the dependency name (e.g. "update golang.org/x/exp
   digest", not the full Renovate title with version tags).
-- **Reason**: under ~30 characters (e.g. "CI green", "Go directive frozen").
+- **Reason**: under ~30 characters (e.g. "CI green", "Go directive frozen",
+  "Go bump, pinned").
 
 ```
 | Repo | PR | Title | Branch | Decision | Reason |
 |------|-----|-------|--------|----------|--------|
 | rhdh-operator | #42 | update go toolchain | main | approve+merge | CI green, patch bump |
+| rhdh-must-gather | #43 | update golang.org/x/net | release-2.1 | flag | godebug rewritten |
 | rhdh-chart | #18 | update chart dep X | release-1.10 | hold | CF — hold until 1.10.5 |
 | ... | ... | ... | ... | ... | ... |
 ```
@@ -108,6 +129,31 @@ skip-for-CI-failure, or any decision that would change if CI flipped). Run
 `gh pr checks` for each and compare against the script snapshot. Update the
 decision table for any PR whose CI status has changed before proceeding.
 
+## Step 4c — Verify the Go pin before approving
+
+A security PR that raises the `go` directive on a release branch is mergeable only
+because that branch's `godebug` pin holds its runtime semantics at branch cut.
+`base_godebug_pin` from Step 1 is a snapshot, so re-read it live for every such PR
+whose decision is approve+merge or unhold+approve+merge, immediately before the
+mutation gate:
+
+```bash
+gh api 'repos/redhat-developer/<repo>/contents/go.mod?ref=<base_branch>' \
+  -H 'Accept: application/vnd.github.raw' | grep -E '^godebug '
+```
+
+If that prints nothing, or the request fails because the branch has no `go.mod`,
+the pin is not in effect: downgrade the decision to **flag**, state that the
+branch carries no pin, and do not approve. Merging the PR does not supply the
+pin — a release branch inherits it at branch cut, so a branch missing one keeps
+the new GODEBUG defaults the bump introduces.
+
+Also confirm the PR's own diff leaves the `godebug` line alone. If it adds,
+changes, or removes the line, flag it even when the base branch has a pin: the
+branch must not re-pin, and the fix needs the line dropped.
+
+PRs that do not raise the `go` directive skip this step entirely.
+
 ## Step 5 — Approve plan
 
 Skipped in dry-run mode.
@@ -121,7 +167,8 @@ Invoke `/mutation-gate` with the full operation list. Each operation states:
 - **Target:** repository and PR number
 - **Command:** the exact `gh` command to run
 - **Preview:** one-line description of the effect
-- **Precondition:** CI status, release state, or label check that must hold
+- **Precondition:** CI status, release state, `godebug` pin, or label check that
+  must hold
 - **Failure recovery:** what to do if the command fails
 
 Every action must include a comment on the PR stating the reason briefly. For
