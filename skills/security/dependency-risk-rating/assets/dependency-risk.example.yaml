@@ -47,9 +47,10 @@ backstage:
 #codecov:
 #  service: github
 #  owner: redhat-developer
-#  tokenEnv: CODECOV_TOKEN        # env var holding the codecov API token
 #  repos:
 #    ".": rhdh                    # workspace directory -> codecov repo slug
+# The API token is always the CODECOV_TOKEN environment variable.
+# A tokenEnv key in this file is ignored.
 
 # Manual fallback/override when codecov is not configured or unreachable.
 # Values: high | medium | low

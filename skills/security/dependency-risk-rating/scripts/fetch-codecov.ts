@@ -11,7 +11,7 @@
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from './lib/cli.ts';
 import { fetchJson } from './lib/http.ts';
-import { loadConfig } from './lib/yaml.ts';
+import { CODECOV_TOKEN_ENV, loadConfig } from './lib/yaml.ts';
 
 export interface WorkspaceCoverage {
   path: string;
@@ -68,8 +68,14 @@ export async function fetchCodecov(args: {
 
   if (config.codecov) {
     const codecov = config.codecov;
-    const token = process.env[codecov.tokenEnv || 'CODECOV_TOKEN'];
-    if (!token) notes.push(`codecov: env var ${codecov.tokenEnv || 'CODECOV_TOKEN'} not set; trying anonymous access`);
+    if (codecov.tokenEnvIgnored) {
+      notes.push(
+        `codecov: tokenEnv in config is ignored; the API token is read only from ${CODECOV_TOKEN_ENV}`,
+      );
+    }
+    // Pinned. Do not read process.env under a name taken from config.
+    const token = process.env.CODECOV_TOKEN;
+    if (!token) notes.push(`codecov: env var ${CODECOV_TOKEN_ENV} not set; trying anonymous access`);
     const entries = Object.entries(codecov.repos).filter(([path]) => wanted(path));
     const coverages = await Promise.all(
       entries.map(([, repo]) => codecovCoverage(codecov.service, codecov.owner, repo, token, notes)),

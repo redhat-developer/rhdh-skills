@@ -255,6 +255,13 @@ function parseFlow(text: string, lineNo: number): unknown {
 // .dependency-risk config loading
 // ---------------------------------------------------------------------------
 
+/**
+ * Environment variable that holds the Codecov API token.
+ * Pinned here: `.dependency-risk.yaml` must not choose the name, because Mode C
+ * loads that file from the pull-request head.
+ */
+export const CODECOV_TOKEN_ENV = 'CODECOV_TOKEN';
+
 export interface RiskConfig {
   version: number;
   trustedPackages: string[];
@@ -268,8 +275,12 @@ export interface RiskConfig {
   codecov: {
     service: string;
     owner: string;
-    tokenEnv: string;
     repos: Record<string, string>;
+    /**
+     * True when the file set `tokenEnv` to something other than
+     * CODECOV_TOKEN. The requested name is not stored.
+     */
+    tokenEnvIgnored: boolean;
   } | null;
   testConfidence: Record<string, string>;
   /** Where the config came from, for reporting. */
@@ -383,11 +394,14 @@ function mergeConfig(
       case 'codecov': {
         expect(typeof value === 'object' && !Array.isArray(value), key, 'a map');
         const c = value as Record<string, unknown>;
+        // `tokenEnv` is accepted and discarded. Keeping the name would let a
+        // pull-request config choose which process.env entry is sent as a bearer token.
+        const requestedEnv = c.tokenEnv;
         base.codecov = {
           service: typeof c.service === 'string' ? c.service : 'github',
           owner: String(c.owner ?? ''),
-          tokenEnv: typeof c.tokenEnv === 'string' ? c.tokenEnv : 'CODECOV_TOKEN',
           repos: (typeof c.repos === 'object' && c.repos ? c.repos : {}) as Record<string, string>,
+          tokenEnvIgnored: typeof requestedEnv === 'string' && requestedEnv !== CODECOV_TOKEN_ENV,
         };
         break;
       }

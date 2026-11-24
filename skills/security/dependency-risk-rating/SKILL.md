@@ -67,7 +67,10 @@ to report, not a reason to stop. Configuration comes from
 `.dependency-risk.yaml` in the root of the repository being analysed — schema
 in [references/config.md](references/config.md), annotated starting point in
 [assets/dependency-risk.example.yaml](assets/dependency-risk.example.yaml).
-A missing config means defaults.
+A missing config means defaults. The Codecov API token is always read from
+the `CODECOV_TOKEN` environment variable. A `tokenEnv` key in the config file
+is ignored, including when that file was fetched from a pull request head, so
+the file cannot choose a different credential such as `GITHUB_TOKEN`.
 
 ## Mode A — local diff
 

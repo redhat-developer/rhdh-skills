@@ -48,10 +48,11 @@ backstage:
   enabled: true                     # false = score.ts ignores the @backstage/*
                                     # manifest check even when it was run
 
-codecov:                            # optional coverage lookup
+codecov:                            # optional coverage lookup. The API token is
+                                    # always the CODECOV_TOKEN env var;
+                                    # tokenEnv in this file is ignored.
   service: github                   # codecov "service" segment
   owner: redhat-developer
-  tokenEnv: CODECOV_TOKEN           # env var holding the API token
   repos:
     ".": rhdh                       # workspace dir -> codecov repo slug
 
