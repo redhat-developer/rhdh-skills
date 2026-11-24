@@ -32,7 +32,7 @@ valid catalog answer, and a Jira status never proves that a CSV is published.
 
 ## Commands
 
-Run from the skill's directory. `status`, `plan`, and `verify` are read-only; `apply` requires `--write`.
+Run from the skill's directory. `status`, `plan`, and `verify` are read-only; `apply` requires `--write`, `plan` previews without it.
 
 Run with `--workspace` pointing at the directory that contains `rhdh-chart/` and `rhdh-operator/`, or pass `--chart-repo` / `--operator-repo` explicitly.
 Keep `--release` on: it refuses to run when a checkout is on the wrong branch for that release line.

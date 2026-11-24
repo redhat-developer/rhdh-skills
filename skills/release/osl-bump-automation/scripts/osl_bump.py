@@ -131,6 +131,7 @@ def chart_changes(root: Path, osl: str, new_chart_version: str | None) -> list[C
         ],
         CHART_FILES[1]: [
             (r"(Version:\s*)\d+\.\d+\.\d+", rf"\g<1>{chart}", "README chart badge"),
+            (r"(badge/Version-)\d+\.\d+\.\d+", rf"\g<1>{chart}", "README badge URL"),
             (r"(--version )\d+\.\d+\.\d+", rf"\g<1>{chart}", "README install version"),
             (r"(logic-operator\.v)\d+\.\d+\.\d+", rf"\g<1>{osl}", "README startingCSV"),
             (r"(serverless-operator-bundle:)\d+\.\d+\.\d+", rf"\g<1>{osl}", "README bundle tag"),
@@ -261,6 +262,9 @@ def apply_changes(changes: Iterable[Change], write: bool) -> None:
 
 def verify_chart(root: Path, osl: str) -> list[str]:
     errors: list[str] = []
+    chart = chart_version(root / CHART_FILES[0])
+    if f"badge/Version-{chart}" not in (root / CHART_FILES[1]).read_text():
+        errors.append(f"{root / CHART_FILES[1]}: badge does not say {chart}")
     for relative in CHART_FILES:
         path = require_file(root, relative)
         text = path.read_text()
