@@ -716,11 +716,20 @@ commit_push_paths() {
 
     git commit -s -m "${message}"
     if ! git push -u origin "${push_branch}"; then
-        # Another automation run may have pushed to the same bot branch mid-run
-        # (non-fast-forward). These branches are disposable: rebase and retry once.
-        if git pull --rebase origin "${push_branch}" \
-            && git push -u origin "${push_branch}"; then
-            log "Pushed ${message} to origin/${push_branch} (after rebase)"
+        # A previous run can have pushed to this bot branch against an older main,
+        # so the push is rejected as non-fast-forward. Rebasing is wrong here:
+        # both sides edit the same generated lines (builder pins, release bumps,
+        # PipelineRun params), a conflicted rebase leaves the checkout unusable
+        # for the rest of the run, and a fresh MR would be opened against a
+        # branch that still carries stale commits. This branch is bot-owned and
+        # disposable, and this run just recomputed every change against current
+        # ${branch}: replace the tip. The lease keeps this from touching anything
+        # that is not the ref we just fetched.
+        if [[ "${push_branch}" == chore/automated-* ]] \
+            && git fetch -q origin "${push_branch}" \
+            && git push --force-with-lease=refs/heads/"${push_branch}":"$(git rev-parse "refs/remotes/origin/${push_branch}")" \
+                -u origin "${push_branch}"; then
+            log "Pushed ${message} to origin/${push_branch} (replaced a previous run's commits)"
         else
             status_fail "${CURRENT_KIND:-unknown}" "${branch}" push "git push failed for origin/${push_branch}; commit remains local"
             return 0
