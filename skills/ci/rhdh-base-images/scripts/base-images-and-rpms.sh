@@ -336,8 +336,11 @@ resolve_rpm_lockfile_prototype() {
     fi
     log "Installing rpm-lockfile-prototype to ${HOME}/.local/bin"
     mkdir -p "${HOME}/.local/bin"
+    # Suppress pip's stdout as well: callers capture this function's stdout
+    # into RPM_TOOL, and pip's "Collecting …" progress would corrupt the
+    # variable into an unexecutable multi-line command name (RHIDP-18915).
     python3 -m pip install --user \
-        https://github.com/konflux-ci/rpm-lockfile-prototype/archive/refs/heads/main.zip 2>/dev/null
+        https://github.com/konflux-ci/rpm-lockfile-prototype/archive/refs/heads/main.zip >/dev/null 2>&1
     [[ -x "${HOME}/.local/bin/rpm-lockfile-prototype" ]] \
         || die "rpm-lockfile-prototype install failed; pass --rpm-lockfile-prototype PATH"
     echo "${HOME}/.local/bin/rpm-lockfile-prototype"
@@ -426,6 +429,13 @@ open_automation_pr_in_browser() {
 # lockfile is still valid; never surface those lines to the agent.
 filter_rpm_lockfile_source_warnings() {
     grep -viE -- 'no sources found for |no matching sources' || true
+}
+
+# Last non-empty line of filtered rpm-lockfile-prototype stderr, flattened to
+# one line and safe for the pipe-delimited status file. This is the actual
+# error (e.g. a skopeo CalledProcessError), not just "it failed" (RHIDP-18915).
+rpm_lockfile_failure_reason() {
+    grep -v '^[[:space:]]*$' | tail -n 1 | tr '\n' ' ' | tr -d '|' | cut -c1-200 || true
 }
 
 # Product life cycle behind
@@ -607,15 +617,25 @@ update_rpm_lockfile() {
     rpm_err=$(mktemp)
     rpm_rc=0
     read -r -a proto_cmd <<< "${proto_args}"
-    "${rpm_tool}" "${proto_cmd[@]}" 2>"${rpm_err}" || rpm_rc=$?
+    local attempt reason
+    # Transient registry/skopeo failures (e.g. arm64 blob copy) are common
+    # enough to retry once before recording a component failure (RHIDP-18915).
+    for attempt in 1 2; do
+        rpm_rc=0
+        "${rpm_tool}" "${proto_cmd[@]}" 2>"${rpm_err}" || rpm_rc=$?
+        [[ ${rpm_rc} -eq 0 ]] && break
+        [[ ${attempt} -eq 1 ]] && warn "rpm-lockfile-prototype failed (attempt 1 of 2); retrying"
+    done
     filter_rpm_lockfile_source_warnings <"${rpm_err}" >&2
-    rm -f "${rpm_err}"
     if [[ ${rpm_rc} -ne 0 ]]; then
-        status_fail "${kind}" "${branch}" rpm_lock "rpm-lockfile-prototype failed; keeping existing rpms.lock.yaml"
+        reason=$(rpm_lockfile_failure_reason <"${rpm_err}")
+        status_fail "${kind}" "${branch}" rpm_lock "rpm-lockfile-prototype failed (${reason:-exit ${rpm_rc}}); keeping existing rpms.lock.yaml"
         git checkout -- rpms.lock.yaml rpms.in.yaml 2>/dev/null || true
+        rm -f "${rpm_err}"
         popd >/dev/null
         return 0
     fi
+    rm -f "${rpm_err}"
     commit_push_rpm_lockfile "${branch}"
     popd >/dev/null
 }
@@ -721,10 +741,18 @@ rhdh_nodejs_builder_image() {
 }
 
 node_version_from_image() {
-    local image="$1"
+    local image="$1" out err_file
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    "${runner}" run --rm --entrypoint node "${image}" --version 2>/dev/null | tr -d '\n\r'
+    err_file=$(mktemp)
+    # Keep the runtime's stderr: an empty result must be diagnosable, not a
+    # silent "could not read node version" (RHIDP-18915).
+    out=$("${runner}" run --rm --entrypoint node "${image}" --version 2>"${err_file}") || true
+    if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
+        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
+    fi
+    rm -f "${err_file}"
+    tr -d '\n\r' <<< "${out}"
 }
 
 container_runtime() {
@@ -889,7 +917,11 @@ update_rhdh_node_headers() {
     local node_version node_version_plain headers_file readme_file current_nvmrc old
     node_version=$(node_version_from_image "${image}") || true
     if [[ -z "${node_version}" ]]; then
-        status_fail "rhdh" "${branch}" node_headers "Node headers: could not read node version from ${image}"
+        # Cannot determine is not stale: a CI container-runtime outage must not
+        # autoclose otherwise-complete PRs. node_version_from_image already
+        # warned with the runtime's stderr; downstream CI still checks headers
+        # against the base image, so skipping here is safe (RHIDP-18915).
+        warn "Node headers: cannot determine node version in ${image}; skipping check"
         popd >/dev/null
         return 0
     fi
