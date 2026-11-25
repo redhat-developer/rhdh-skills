@@ -749,10 +749,23 @@ commit_push_paths() {
     if [[ "${push_branch}" == chore/automated-update-rpm-lockfile/* ]] \
         && command -v gh >/dev/null 2>&1 \
         && ! gh pr list --head "${push_branch}" --state open --json number -q '.[0].number' 2>/dev/null | grep -q .; then
+        # Title from what the branch actually carries: the funnel branch is
+        # shared by rpm-lockfile, node-headers, catalog and overlays updates,
+        # and a fixed "update RPM lockfile" title mislabels node-only PRs
+        # (RHIDP-18915).
+        local subjects subject_count pr_title
+        subjects=$(git log --format=%s "${branch}"..HEAD 2>/dev/null \
+            | sed -e 's/ \[skip-build\]$//' | awk '!seen[$0]++')
+        subject_count=$(grep -c . <<< "${subjects}" || true)
+        if [[ "${subject_count}" -eq 1 ]]; then
+            pr_title="${subjects} (${branch}) [skip-build]"
+        else
+            pr_title="chore: automated updates in branch (${branch}) [skip-build]"
+        fi
         gh pr create \
             --base "${branch}" \
             --head "${push_branch}" \
-            --title "chore: update RPM lockfile in branch (${branch}) [skip-build]" \
+            --title "${pr_title}" \
             --body "${CREATE_PR_BODY}" \
             2>/dev/null \
             || warn "Could not open RPM lockfile PR for ${push_branch}"
