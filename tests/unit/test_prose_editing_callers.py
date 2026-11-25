@@ -184,6 +184,7 @@ def _assert_static_template(report: dict[str, object]) -> None:
         ("skills/plugins/rhdh-plugin-midstream-propagate/SKILL.md", "flavored", 1),
         ("skills/ci/rhdh-prow-release-branch/workflows/commission-release.md", "flavored", 1),
         ("skills/ci/rhdh-prow-release-branch/workflows/decommission-release.md", "flavored", 1),
+        ("skills/security/dependency-risk-rating/SKILL.md", "flavored", 1),
     ],
 )
 def test_final_composers_name_one_register_per_artifact(
@@ -235,6 +236,7 @@ def test_transport_layers_do_not_reedit_prose() -> None:
         "skills/jira/rhdh-jira-link/scripts/link-pr-mr.js",
         "skills/ci/rhdh-base-images/scripts/base-images-and-rpms.sh",
         "skills/ci/rhdh-konflux-rpa/scripts/update_rpa_tags.py",
+        "skills/security/dependency-risk-rating/references/report-template.md",
     ):
         assert "/prose-editing" not in _text(relative)
 

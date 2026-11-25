@@ -65,3 +65,12 @@ hand-write CVE tables.
 
 Re-run `check-dependabot-patch-status.js` if dismiss is next. Prefer SBOM bumps
 for exact `PLUGIN_DEV` / `WORKSPACE_DEV` even when dismissable.
+
+## Catalog Dependabot CVE bumps (rhdh-plugin-catalog)
+
+When the bump target is GitLab `rhdh-plugin-catalog` on `release-X.Y` (alerts
+often from a separate GitHub Dependabot host), use
+[bump-catalog-midstream.md](bump-catalog-midstream.md): `--no-dedupe`, selective
+dedupe only, mandatory `reexport-dist-dynamic.sh`, then skill-shaped MR body.
+Not for Version Packages / overlay promote (`/rhdh-plugin-midstream-propagate`).
+Human twin: catalog `docs/SYNC_MIDSTREAM.md` (CVE / yarn.lock section).

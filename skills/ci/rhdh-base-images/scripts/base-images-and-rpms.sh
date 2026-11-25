@@ -598,6 +598,15 @@ update_rpm_lockfile() {
     local -a proto_cmd=()
     containerfile=$(rpm_containerfile_for "${repo_dir}" "${kind}" "${branch}")
 
+    # Guard (RHIDP-18915): a ":tag@" ref with an empty digest makes
+    # rpm-lockfile-prototype die with a cryptic "Unknown format for image
+    # specification" error. Refuse to regenerate the lockfile and say so.
+    if grep -En '@([[:space:]]|$)' "${repo_dir}/${containerfile}" >/dev/null; then
+        status_fail "${kind}" "${branch}" rpm_lock \
+            "invalid image ref ending in '@' in ${containerfile}; fix the FROM line before regenerating rpms.lock.yaml"
+        return 0
+    fi
+
     [[ -f "${repo_dir}/${containerfile}" ]] || die "${repo_dir}: missing ${containerfile}"
     [[ -f "${repo_dir}/rpms.in.yaml" ]] || die "${repo_dir}: missing rpms.in.yaml"
 
@@ -716,11 +725,20 @@ commit_push_paths() {
 
     git commit -s -m "${message}"
     if ! git push -u origin "${push_branch}"; then
-        # Another automation run may have pushed to the same bot branch mid-run
-        # (non-fast-forward). These branches are disposable: rebase and retry once.
-        if git pull --rebase origin "${push_branch}" \
-            && git push -u origin "${push_branch}"; then
-            log "Pushed ${message} to origin/${push_branch} (after rebase)"
+        # A previous run can have pushed to this bot branch against an older main,
+        # so the push is rejected as non-fast-forward. Rebasing is wrong here:
+        # both sides edit the same generated lines (builder pins, release bumps,
+        # PipelineRun params), a conflicted rebase leaves the checkout unusable
+        # for the rest of the run, and a fresh MR would be opened against a
+        # branch that still carries stale commits. This branch is bot-owned and
+        # disposable, and this run just recomputed every change against current
+        # ${branch}: replace the tip. The lease keeps this from touching anything
+        # that is not the ref we just fetched.
+        if [[ "${push_branch}" == chore/automated-* ]] \
+            && git fetch -q origin "${push_branch}" \
+            && git push --force-with-lease=refs/heads/"${push_branch}":"$(git rev-parse "refs/remotes/origin/${push_branch}")" \
+                -u origin "${push_branch}"; then
+            log "Pushed ${message} to origin/${push_branch} (replaced a previous run's commits)"
         else
             status_fail "${CURRENT_KIND:-unknown}" "${branch}" push "git push failed for origin/${push_branch}; commit remains local"
             return 0
@@ -729,12 +747,26 @@ commit_push_paths() {
     log "Pushed ${message} to origin/${push_branch}"
 
     if [[ "${push_branch}" == chore/automated-update-rpm-lockfile/* ]] \
+        && git remote get-url origin 2>/dev/null | grep -q 'github.com' \
         && command -v gh >/dev/null 2>&1 \
         && ! gh pr list --head "${push_branch}" --state open --json number -q '.[0].number' 2>/dev/null | grep -q .; then
+        # Title from what the branch actually carries: the funnel branch is
+        # shared by rpm-lockfile, node-headers, catalog and overlays updates,
+        # and a fixed "update RPM lockfile" title mislabels node-only PRs
+        # (RHIDP-18915).
+        local subjects subject_count pr_title
+        subjects=$(git log --format=%s "${branch}"..HEAD 2>/dev/null \
+            | sed -e 's/ \[skip-build\]$//' | awk '!seen[$0]++')
+        subject_count=$(grep -c . <<< "${subjects}" || true)
+        if [[ "${subject_count}" -eq 1 ]]; then
+            pr_title="${subjects} (${branch}) [skip-build]"
+        else
+            pr_title="chore: automated updates in branch (${branch}) [skip-build]"
+        fi
         gh pr create \
             --base "${branch}" \
             --head "${push_branch}" \
-            --title "chore: update RPM lockfile in branch (${branch}) [skip-build]" \
+            --title "${pr_title}" \
             --body "${CREATE_PR_BODY}" \
             2>/dev/null \
             || warn "Could not open RPM lockfile PR for ${push_branch}"
@@ -754,9 +786,13 @@ node_version_from_image() {
     err_file=$(mktemp)
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
-    out=$("${runner}" run --rm --network=none --entrypoint node "${image}" --version 2>"${err_file}") || true
+    # --network=host --cgroups=disabled: CI runner pods have a read-only
+    # /proc/sys and cgroup fs. Creating any netns (even --network=none) makes
+    # crun write /proc/sys/net/ipv4/ping_group_range and fail; host networking
+    # skips netns creation, and the probe needs no isolation (RHIDP-18915).
+    out=$("${runner}" run --rm --network=host --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
     if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
-        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
+        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-2000)"
     fi
     rm -f "${err_file}"
     tr -d '\n\r' <<< "${out}"
@@ -794,7 +830,10 @@ nodejs_rpm_version_in_image() {
     local runner out
     runner=$(container_runtime)
     [[ -n "${runner}" && -n "${major}" ]] || return 0
-    out=$("${runner}" run --rm --user 0 --entrypoint bash "${image}" -lc \
+    # --network=host --cgroups=disabled: read-only /proc/sys and cgroup fs on
+    # runner pods make crun fail on netns creation and controller setup; dnf
+    # needs network, and host networking avoids the netns entirely (RHIDP-18915).
+    out=$("${runner}" run --rm --network=host --cgroups=disabled --user 0 --entrypoint bash "${image}" -lc \
         "dnf module enable nodejs:${major} -y >/dev/null && dnf repoquery -q --latest-limit 1 nodejs" \
         2>/dev/null) || return 0
     printf '%s\n' "${out}" | python3 -c '
@@ -1318,13 +1357,26 @@ write_go_mod_versions() {
 }
 
 go_version_from_toolset_image() {
-    local image="$1"
+    local image="$1" env_version
+    # Prefer image config Env: go-toolset images carry VERSION=<go X.Y.Z>,
+    # readable with skopeo — no container runtime needed, so this works on CI
+    # runner pods where podman cannot start containers (RHIDP-18915).
+    # skopeo rejects tag@digest refs ("both a tag and digest are currently
+    # not supported"), and FROM lines carry digests; normalize to the
+    # digest-only ref (RHIDP-18915).
+    local inspect_ref
+    inspect_ref=$(printf '%s' "${image}" | sed -E 's/:[^:@/]+(@sha256:[0-9a-f]+)$/\1/')
+    env_version=$(skopeo inspect --no-tags "docker://${inspect_ref}" 2>/dev/null \
+        | jq -r '.Env[]? | select(startswith("VERSION="))' 2>/dev/null \
+        | sed -r -e "s/VERSION=//")
+    if [[ "${env_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf '%s\n' "${env_version}"
+        return 0
+    fi
+    # Fallback: run the toolchain binary where a container runtime works.
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    # --network=none: version probes need no container networking, and podman's
-    # default pasta networking fails on CI runner pods without /dev/net/tun
-    # (RHIDP-18915). Image pull happens on the host before the netns is set up.
-    "${runner}" run --rm --network=none --entrypoint go "${image}" version 2>/dev/null \
+    "${runner}" run --rm --network=host --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
 

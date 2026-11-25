@@ -14,11 +14,16 @@ compatibility: "Node.js 22+, Yarn, Git, and a rhdh-plugins or community-plugins 
 
 # RHDH Plugin Bug Fix
 
-Own the path from a bug report to a verified fix. Reproduce before diagnosing,
-diagnose before editing, and verify before reporting. The reproduction test is
+Own the path from a bug report to a verified fix. In the default fix workflow,
+reproduce before diagnosing, diagnose before editing, and verify before reporting. The reproduction test is
 diagnostic evidence and never ships.
 
 ## Start here
+
+When the caller explicitly requests **inspection-only**, follow
+`workflows/inspect-bug.md` instead. That branch inspects existing source and test
+evidence without reproducing, installing, building, editing product code or
+creating a fix. Its result is not a completed reproduction or a verified fix.
 
 Follow `workflows/fix-bug.md` from the top. It resolves the issue reference,
 triages the report for agent readiness, discovers the workspace, picks the
@@ -59,7 +64,7 @@ another skill's files.
 
 ## Invariants
 
-- Reproduce the failure before editing product code. A "before" recording
+- In the default fix workflow, reproduce the failure before editing product code. A "before" recording
   cannot be reconstructed after the fix.
 - The temporary `_repro-<issue>.test.ts` is evidence, not a deliverable. Remove
   the exact file before handing the change off.
@@ -79,6 +84,8 @@ another skill's files.
 - Do not stage, commit, push, or open a pull request here.
 
 ## Completion
+
+For `inspection-only`, use that branch's bounded completion contract instead.
 
 Report the resolved issue and workspace, the reproduction and what it proved,
 the root cause with its evidence, the files changed and left unstaged, the
