@@ -779,11 +779,64 @@ rhdh_nodejs_builder_image() {
         | grep -v minimal | head -1 | awk '{print $2}'
 }
 
+# Container-free node version: extract the image's rpmdb the same way
+# rpm-lockfile-prototype does (skopeo copy to a dir: layout, untar the known
+# rpmdb locations from every layer in manifest order) and query it with the
+# local rpm. CI runner pods cannot start any container (crun: mount proc:
+# Permission denied, RHIDP-18915), so this is the primary source and the
+# podman path below stays only as a fallback for runtime-capable hosts.
+node_version_from_image_rpmdb() {
+    local image="$1" inspect_ref tmp dest dbdir version digest candidate
+    command -v skopeo >/dev/null 2>&1 || return 1
+    command -v rpm >/dev/null 2>&1 || return 1
+    # skopeo rejects tag@digest refs; FROM lines carry digests
+    inspect_ref=$(printf '%s' "${image}" | sed -E 's/:[^:@/]+(@sha256:[0-9a-f]+)$/\1/')
+    tmp=$(mktemp -d)
+    dest=$(mktemp -d)
+    if ! skopeo copy --override-arch=amd64 "docker://${inspect_ref}" "dir:${tmp}" >/dev/null 2>&1; then
+        rm -rf "${tmp}" "${dest}"
+        return 1
+    fi
+    # extract in manifest order so later layers overwrite earlier ones,
+    # matching how the container filesystem is assembled
+    while IFS= read -r digest; do
+        [[ -f "${tmp}/${digest}" ]] || continue
+        tar -xf "${tmp}/${digest}" -C "${dest}" \
+            --wildcards '*var/lib/rpm*' '*usr/lib/sysimage/rpm*' 2>/dev/null || true
+    done < <(jq -r '.layers[].digest | split(":")[1]' "${tmp}/manifest.json" 2>/dev/null)
+    rm -rf "${tmp}"
+    # ubi10 keeps the rpmdb under usr/lib/sysimage/rpm; ubi9 under var/lib/rpm
+    dbdir=""
+    for candidate in "${dest}/var/lib/rpm" "${dest}/usr/lib/sysimage/rpm"; do
+        # compgen, not ls: ls fails when any single operand is missing
+        if compgen -G "${candidate}/*.sqlite" >/dev/null 2>&1 \
+            || compgen -G "${candidate}/Packages" >/dev/null 2>&1; then
+            dbdir="${candidate}"
+            break
+        fi
+    done
+    if [[ -z "${dbdir}" ]]; then
+        rm -rf "${dest}"
+        return 1
+    fi
+    # ubi9 names the package "nodejs"; ubi10 names it "nodejs24"
+    version=$(rpm -q --dbpath "${dbdir}" -a --qf '%{NAME} %{VERSION}\n' 2>/dev/null \
+        | awk '$1 ~ /^nodejs[0-9]*$/ { print $2; exit }')
+    rm -rf "${dest}"
+    [[ -n "${version}" ]] || return 1
+    printf 'v%s\n' "${version}"
+}
+
 node_version_from_image() {
     local image="$1" out err_file
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    err_file=$(mktemp)
+    out=$(node_version_from_image_rpmdb "${image}") || true
+    if [[ -n "${out}" ]]; then
+        printf '%s\n' "${out}"
+        return 0
+    fi
+    local err_file
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
     # --network=host --cgroups=disabled: CI runner pods have a read-only
