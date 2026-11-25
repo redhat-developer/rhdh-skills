@@ -776,7 +776,7 @@ node_version_from_image() {
     # enable controllers and every container start fails (RHIDP-18915).
     out=$("${runner}" run --rm --network=none --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
     if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
-        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
+        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-2000)"
     fi
     rm -f "${err_file}"
     tr -d '\n\r' <<< "${out}"
@@ -1340,14 +1340,25 @@ write_go_mod_versions() {
 }
 
 go_version_from_toolset_image() {
-    local image="$1"
+    local image="$1" env_version
+    # Prefer image config Env: go-toolset images carry GO_MAJOR/MINOR/PATCH_VERSION
+    # (and VERSION), readable with skopeo — no container runtime needed, so this
+    # works on CI runner pods where podman cannot start containers (RHIDP-18915).
+    env_version=$(skopeo inspect --no-tags "docker://${image}" 2>/dev/null | jq -r '
+        (.Env // []) as $e
+        | ([$e[] | select(startswith("GO_MAJOR_VERSION="))] | .[0] // "" | sub("^GO_MAJOR_VERSION=";"")) as $maj
+        | ([$e[] | select(startswith("GO_MINOR_VERSION="))] | .[0] // "" | sub("^GO_MINOR_VERSION=";"")) as $min
+        | ([$e[] | select(startswith("GO_PATCH_VERSION="))] | .[0] // "" | sub("^GO_PATCH_VERSION=";"")) as $pat
+        | if ($maj != "" and $min != "" and $pat != "") then "\($maj).\($min).\($pat)"
+          else ([$e[] | select(startswith("VERSION="))] | .[0] // "" | sub("^VERSION=";""))
+          end')
+    if [[ "${env_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf '%s\n' "${env_version}"
+        return 0
+    fi
+    # Fallback: run the toolchain binary where a container runtime works.
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    # --network=none: version probes need no container networking, and podman's
-    # default pasta networking fails on CI runner pods without /dev/net/tun
-    # (RHIDP-18915). Image pull happens on the host before the netns is set up.
-    # --cgroups=disabled: read-only cgroup fs on runner pods makes crun fail to
-    # enable controllers on every container start (RHIDP-18915).
     "${runner}" run --rm --network=none --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
