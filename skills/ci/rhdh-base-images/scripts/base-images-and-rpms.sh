@@ -598,6 +598,15 @@ update_rpm_lockfile() {
     local -a proto_cmd=()
     containerfile=$(rpm_containerfile_for "${repo_dir}" "${kind}" "${branch}")
 
+    # Guard (RHIDP-18915): a ":tag@" ref with an empty digest makes
+    # rpm-lockfile-prototype die with a cryptic "Unknown format for image
+    # specification" error. Refuse to regenerate the lockfile and say so.
+    if grep -En '@([[:space:]]|$)' "${repo_dir}/${containerfile}" >/dev/null; then
+        status_fail "${kind}" "${branch}" rpm_lock \
+            "invalid image ref ending in '@' in ${containerfile}; fix the FROM line before regenerating rpms.lock.yaml"
+        return 0
+    fi
+
     [[ -f "${repo_dir}/${containerfile}" ]] || die "${repo_dir}: missing ${containerfile}"
     [[ -f "${repo_dir}/rpms.in.yaml" ]] || die "${repo_dir}: missing rpms.in.yaml"
 
@@ -763,7 +772,9 @@ node_version_from_image() {
     err_file=$(mktemp)
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
-    out=$("${runner}" run --rm --network=none --entrypoint node "${image}" --version 2>"${err_file}") || true
+    # --cgroups=disabled: runner pods have a read-only cgroup fs, so crun cannot
+    # enable controllers and every container start fails (RHIDP-18915).
+    out=$("${runner}" run --rm --network=none --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
     if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
         warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
     fi
@@ -803,7 +814,9 @@ nodejs_rpm_version_in_image() {
     local runner out
     runner=$(container_runtime)
     [[ -n "${runner}" && -n "${major}" ]] || return 0
-    out=$("${runner}" run --rm --user 0 --entrypoint bash "${image}" -lc \
+    # --cgroups=disabled: read-only cgroup fs on runner pods makes crun fail
+    # (RHIDP-18915); dnf here still needs network, so no --network=none.
+    out=$("${runner}" run --rm --cgroups=disabled --user 0 --entrypoint bash "${image}" -lc \
         "dnf module enable nodejs:${major} -y >/dev/null && dnf repoquery -q --latest-limit 1 nodejs" \
         2>/dev/null) || return 0
     printf '%s\n' "${out}" | python3 -c '
@@ -1333,7 +1346,9 @@ go_version_from_toolset_image() {
     # --network=none: version probes need no container networking, and podman's
     # default pasta networking fails on CI runner pods without /dev/net/tun
     # (RHIDP-18915). Image pull happens on the host before the netns is set up.
-    "${runner}" run --rm --network=none --entrypoint go "${image}" version 2>/dev/null \
+    # --cgroups=disabled: read-only cgroup fs on runner pods makes crun fail to
+    # enable controllers on every container start (RHIDP-18915).
+    "${runner}" run --rm --network=none --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
 
