@@ -1,0 +1,3 @@
+interface:
+  display_name: "Dependency Risk Rating"
+  short_description: "Rate the risk of an npm dependency update and recommend whether to merge it"

@@ -50,7 +50,8 @@
         "./skills/reference/mutation-gate",
         "./skills/security/rhdh-package-impact",
         "./skills/reference/prose-editing",
-        "./skills/security/cve-pr-review"
+        "./skills/security/cve-pr-review",
+        "./skills/security/dependency-risk-rating"
       ]
     },
     {
