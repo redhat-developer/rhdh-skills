@@ -772,9 +772,11 @@ node_version_from_image() {
     err_file=$(mktemp)
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
-    # --cgroups=disabled: runner pods have a read-only cgroup fs, so crun cannot
-    # enable controllers and every container start fails (RHIDP-18915).
-    out=$("${runner}" run --rm --network=none --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
+    # --network=host --cgroups=disabled: CI runner pods have a read-only
+    # /proc/sys and cgroup fs. Creating any netns (even --network=none) makes
+    # crun write /proc/sys/net/ipv4/ping_group_range and fail; host networking
+    # skips netns creation, and the probe needs no isolation (RHIDP-18915).
+    out=$("${runner}" run --rm --network=host --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
     if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
         warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-2000)"
     fi
@@ -814,9 +816,10 @@ nodejs_rpm_version_in_image() {
     local runner out
     runner=$(container_runtime)
     [[ -n "${runner}" && -n "${major}" ]] || return 0
-    # --cgroups=disabled: read-only cgroup fs on runner pods makes crun fail
-    # (RHIDP-18915); dnf here still needs network, so no --network=none.
-    out=$("${runner}" run --rm --cgroups=disabled --user 0 --entrypoint bash "${image}" -lc \
+    # --network=host --cgroups=disabled: read-only /proc/sys and cgroup fs on
+    # runner pods make crun fail on netns creation and controller setup; dnf
+    # needs network, and host networking avoids the netns entirely (RHIDP-18915).
+    out=$("${runner}" run --rm --network=host --cgroups=disabled --user 0 --entrypoint bash "${image}" -lc \
         "dnf module enable nodejs:${major} -y >/dev/null && dnf repoquery -q --latest-limit 1 nodejs" \
         2>/dev/null) || return 0
     printf '%s\n' "${out}" | python3 -c '
@@ -1354,7 +1357,7 @@ go_version_from_toolset_image() {
     # Fallback: run the toolchain binary where a container runtime works.
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    "${runner}" run --rm --network=none --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
+    "${runner}" run --rm --network=host --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
 
