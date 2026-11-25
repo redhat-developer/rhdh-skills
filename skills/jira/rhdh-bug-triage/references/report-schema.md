@@ -173,7 +173,7 @@ Open `START-HERE.md` for the current PR queue, other outcomes, verification and 
 - `01-triage/audit/` — `METHOD.md`, `RUN.md`, `release.md`, `selection.json`,
   `manifest.json`, `packets.json`, `assessments/KEY.json` and
   `bugs/KEY.md` (proof, validation, fix plan, owner, next step, limits).
-- `02-fixes/` — `README.md`, `INTAKE.md`, `AUDIT.md`, and one case per bug
+- `02-fixes/` — `README.md`, `AUDIT.md`, and one case per bug
   under `pull-requests/` (code and documentation), `new-bugs/`, `resolution/` or `blocked/`.
   Each triage case contains CASE.md and PLAN.md. Each accepted fix request stores PROPOSAL.md, change.patch, VERIFY.md and its receipt under `events/KEY/REVISION-HASH/`, with separate patch and verification files for each proposed backport. The queue links each proposal, including multiple repositories for a single bug.
 

@@ -182,7 +182,7 @@ check and a sentence on what is missing, and stays visibly blocked.
 The run writes a phased root. `01-triage/` contains the decision page
 (`START-HERE.md`), one exact draft per bug under `comments/`, and the
 selection, release record, method, per-bug proof, assessments and machine
-record under `audit/`. `02-fixes/` contains `README.md`, `INTAKE.md`,
+record under `audit/`. `02-fixes/` contains `README.md`,
 `AUDIT.md`, and one case folder per finding under its outcome:
 `pull-requests/` (including documentation), `new-bugs/`, `resolution/` or `blocked/`. Each case starts with a plan. Local fix events add the verified patches and backport decisions.
 `audit/packets.json` carries the machine record plus a `meta` block (which
@@ -207,7 +207,7 @@ Read `START-HERE.md` for the current queue, then
 `01-triage/audit/bugs/KEY.md` for the proof, validation, fix plan, owner,
 next step, and whether the comment may be posted. `review_required` and
 `suppress` are statuses, not missing findings and not permission to post.
-`02-fixes/INTAKE.md` is the handoff; it does not authorize a write.
+The root review index contains the handoff for each issue.
 
 ## 6. Finish the dry run
 

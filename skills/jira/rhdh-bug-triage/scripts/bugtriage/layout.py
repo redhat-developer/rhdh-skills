@@ -369,7 +369,7 @@ def render_start_here(
         "2. `comments/KEY.md` for the draft you care about.",
         "3. `audit/bugs/KEY.md` for why it says that.",
         "4. `audit/RUN.md` for run-wide caveats.",
-        f"5. `../{FIXES}/INTAKE.md` for the fix handoff.",
+        "5. [Review index](../START-HERE.md) for the fix handoff.",
         "",
         "## How the run worked",
         "",
@@ -631,7 +631,7 @@ def render_release(*, current_release: str, release_evidence: str, generated_at:
 def render_fixes_readme() -> str:
     return """# Fix review
 
-[Open the review queue](INTAKE.md) for the current disposition, local proposals and remaining work.
+[Open the review queue](../START-HERE.md) for the current disposition, local proposals and remaining work.
 
 | Folder | Contents |
 |---|---|
@@ -648,7 +648,7 @@ The event worker checks each patch against its recorded branch tip. Replaying th
 def render_fixes_audit() -> str:
     return """# Local fix audit
 
-[Review the queue](INTAKE.md) for current proposals, tests and remaining decisions.
+[Review the queue](../START-HERE.md) for current proposals, tests and remaining decisions.
 Each accepted fix event retains its repository, pinned branch, patch, verification and backport decisions beside its receipt.
 The [triage snapshot](../01-triage/audit/manifest.json) records the inputs and external write count.
 """
@@ -669,7 +669,7 @@ def render_case(packet: Packet, ticket: Ticket) -> str:
             "",
             "## Boundary",
             "",
-            "This case records the triage-time plan. See the [live review queue](../../INTAKE.md) for later patches and verification.",
+            "This case records the triage-time plan. See the [live review queue](../../../START-HERE.md) for later patches and verification.",
             "",
         ]
     )

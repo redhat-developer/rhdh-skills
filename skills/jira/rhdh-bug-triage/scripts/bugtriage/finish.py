@@ -34,6 +34,16 @@ def command_finish(args):
         case = {
             field: required(row, field) for field in ("stage", "finding", "verification", "next")
         }
+        if "resolution" in row:
+            case["resolution"] = required(row, "resolution")
+        if "nextActions" in row:
+            assignments = row["nextActions"]
+            if not isinstance(assignments, list) or not assignments:
+                raise ValueError(f"{key} needs at least one owner and action")
+            case["nextActions"] = [
+                {field: required(assignment, field) for field in ("owner", "action")}
+                for assignment in assignments
+            ]
         stage = case["stage"]
         fix_link = ""
         if stage == "patch":

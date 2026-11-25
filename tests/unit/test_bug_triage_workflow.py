@@ -649,7 +649,9 @@ def test_review_queue_links_doc_plans_patches_and_current_holds(inputs):
         dest.mkdir(parents=True)
         for name in ("PROPOSAL.md", "VERIFY.md", "change.patch", "receipt.json"):
             (dest / name).touch()
-        (dest / "proposal.json").write_text(json.dumps({"repository": repo, "branch": "main"}))
+        (dest / "proposal.json").write_text(
+            json.dumps({"repository": repo, "branch": "main", "kind": "docs"})
+        )
     summary = json.loads((review / "run.json").read_text())
     evidence = "01-triage/audit/test.log"
     (review / evidence).write_text("Test passed.")
@@ -657,18 +659,26 @@ def test_review_queue_links_doc_plans_patches_and_current_holds(inputs):
         key: {"stage": "patch", "next": "Review the documented scope.", "evidence": evidence}
     }
     (review / "run.json").write_text(json.dumps(summary))
+    legacy = review / "02-fixes/INTAKE.md"
+    legacy.write_text("# Bug review\n\nLegacy generated queue.")
+    case_page = plan.with_name("CASE.md")
+    case_page.write_text("[Review queue](../../INTAKE.md)")
     refresh_review(review)
-    for page in (review / "START-HERE.md", review / "02-fixes/INTAKE.md"):
-        content = page.read_text()
-        queue = content.split("## Other outcomes")[0]
-        assert "2 local PR proposals" in queue
-        assert "Review the documented scope." in queue
-        assert "chart main" in queue and "operator main" in queue
-        assert key in queue
-        for target in re.findall(r"\]\(([^)]+)\)", content):
-            assert (page.parent / target).is_file()
-        refresh_review(review)
-        assert page.read_text() == content
+    assert not legacy.exists()
+    assert (case_page.parent / "../../../START-HERE.md").is_file()
+    assert "../../../START-HERE.md" in case_page.read_text()
+    page = review / "START-HERE.md"
+    content = page.read_text()
+    queue = content.split("## Other outcomes")[0]
+    assert "2 local PR proposals" in queue
+    assert "Owner unrecorded — Review the documented scope." in queue
+    assert "Documentation patch prepared locally" in queue
+    assert "chart main" in queue and "operator main" in queue
+    assert key in queue
+    for target in re.findall(r"\]\(([^)]+)\)", content):
+        assert (page.parent / target).is_file()
+    refresh_review(review)
+    assert page.read_text() == content
 
 
 def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp_path):
@@ -686,6 +696,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         next="Replay with the missing identity.",
         evidence=log.name,
         blocker="The reporter's identity fixture is unavailable.",
+        nextActions=[{"owner": "Reporter", "action": "Supply the missing identity fixture."}],
     )
     source = tmp_path / "results.json"
     args = ["finish", "--input", str(source), "--out", str(review)]
@@ -709,6 +720,10 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         assert (review / "run.json").read_bytes() == initial
         assert not (review / "01-triage/audit/followthrough").exists()
     assert finish([row]) == 0
+    assert (
+        "**Reporter** — Supply the missing identity fixture."
+        in (review / "START-HERE.md").read_text()
+    )
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
     assert case["stage"] == "blocked" and case["blocker"] == row["blocker"]

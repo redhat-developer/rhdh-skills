@@ -636,7 +636,7 @@ class TestRun:
         start = (triage / "START-HERE.md").read_text(encoding="utf-8")
         assert "## Decisions" in start
         assert "Fix cases: pull request" in start
-        intake = (out / "02-fixes" / "INTAKE.md").read_text(encoding="utf-8")
+        intake = (out / "START-HERE.md").read_text(encoding="utf-8")
         assert "RHDHBUGS-1006" in intake
         packets = json.loads((triage / "audit" / "packets.json").read_text(encoding="utf-8"))
         assert packets["dryRun"] is True

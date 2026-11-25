@@ -119,4 +119,4 @@ For each bug, follow the strongest remaining lead. For unclear findings, check i
 
 Consume each local proposal with `event`. Complete the batch with `finish` as described in [review events](workflows/review-events.md). Put the finding, a verified fix or evidence link, and the next action in at most four physical Jira lines including the reference. Reserve live PR links for existing verified fixes.
 
-Report the root `START-HERE.md`. It links the single PR queue, evidence, drafts and remaining decisions. Local completion leaves publication and Jira closure for authorized review.
+Report the root `START-HERE.md`. Use it as the single review index. For each bug, state what was solved, distinguish a local code fix, documentation patch or previously shipped fix, and name the person, team or role responsible for each remaining action. Local completion leaves publication and Jira closure for authorized review.
