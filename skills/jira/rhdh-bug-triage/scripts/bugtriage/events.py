@@ -39,7 +39,7 @@ def git(repo, *args, index=None):
     return result.stdout.decode().strip()
 
 
-def proposal(event, dest, inputs):
+def proposal(event, dest, inputs, *, docs_only=False):
     repo = inputs / required(event, "checkout")
     repository = required(event, "repository")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
@@ -65,7 +65,23 @@ def proposal(event, dest, inputs):
     with tempfile.TemporaryDirectory() as tmp:
         index = Path(tmp) / "index"
         git(repo, "read-tree", sha, index=index)
-        git(repo, "apply", "--cached", "--check", str(patch_path.resolve()), index=index)
+        git(repo, "apply", "--cached", str(patch_path.resolve()), index=index)
+        if docs_only:
+            names = git(
+                repo, "diff", "--cached", "--name-only", "--no-renames", "-z", sha, index=index
+            )
+            if not all(
+                Path(name).suffix.lower() in {".md", ".adoc", ".rst"}
+                for name in names.rstrip("\0").split("\0")
+            ):
+                raise ValueError("scoped documentation proposal contains a non-documentation path")
+            modes = git(repo, "diff", "--cached", "--raw", "--no-renames", sha, index=index)
+            if any(
+                mode not in {"000000", "100644"}
+                for row in modes.splitlines()
+                for mode in row.lstrip(":").split()[:2]
+            ):
+                raise ValueError("unexpected file mode in documentation proposal")
     verify = required(event, "verification")
     (dest / "VERIFY.md").write_text(f"Patch applies to {sha}.\n\n{verify}\n")
     return f"{required(event, 'repository')} {branch} at {sha}"
@@ -107,7 +123,16 @@ def dispatch(event, key, dest, inputs):
     run = inputs / required(event, "triageRun")
     packets = json.loads((run / "01-triage/audit/packets.json").read_bytes())
     finding = next((row for row in packets["packets"] if row["key"] == key), {})
-    if (
+    docs_only = event.get("kind") == "docs"
+    scoped_docs = (
+        docs_only
+        and finding.get("verdict") in {"needs_repro", "still_valid", "unclear"}
+        and finding.get("handoff", {}).get("outcome") in {"docs", "documentation"}
+        and not finding.get("verificationErrors")
+        and event.get("repository")
+        in {area.get("repository") for area in finding.get("fixPlan", {}).get("areas", [])}
+    )
+    if not scoped_docs and (
         finding.get("verdict") != "still_valid"
         or finding.get("investigation", {}).get("status") != "completed"
     ):
@@ -117,7 +142,7 @@ def dispatch(event, key, dest, inputs):
         for outcome in ("docs", "pull-requests")
     ):
         raise ValueError("no actionable fix handoff for this issue")
-    base = proposal(event, dest, inputs)
+    base = proposal(event, dest, inputs, docs_only=docs_only)
     lines = [
         f"# {required(event, 'title')}",
         "",
@@ -149,8 +174,18 @@ def dispatch(event, key, dest, inputs):
                     {**decision, "checkout": event["checkout"], "repository": event["repository"]},
                     directory,
                     inputs,
+                    docs_only=docs_only,
                 )
             )
+    write_json(
+        dest / "proposal.json",
+        {
+            **{name: event.get(name) for name in ("repository", "branch", "kind", "title")},
+            "backports": [
+                {"branch": item["branch"], "decision": item["decision"]} for item in decisions
+            ],
+        },
+    )
     (dest / "PROPOSAL.md").write_text("\n".join(lines) + "\n")
     return "review_patch"
 
@@ -173,7 +208,7 @@ def command_event(args):
         "support.updated": "03-support-intake",
         "fix.requested": "02-fixes",
     }[kind]
-    return publish(
+    result = publish(
         args.out,
         group,
         key,
@@ -181,6 +216,11 @@ def command_event(args):
         event,
         lambda dest: dispatch(event, key, dest, source.parent),
     )
+    if kind == "fix.requested":
+        from .layout import refresh_review
+
+        refresh_review(Path(args.out))
+    return result
 
 
 def command_trigger(args):

@@ -316,7 +316,7 @@ def command_run(args: argparse.Namespace) -> int:
         print(f"Comment delivery: {result.manifest['commentPolicy']['counts']}")
         print(f"Fix outcomes: {dict(Counter(fix_outcome(packet) for packet in result.packets))}")
         print(
-            "Open 01-triage/START-HERE.md first. Exact drafts are in 01-triage/comments/, "
+            "Open START-HERE.md first. Exact drafts are in 01-triage/comments/, "
             "proof is in 01-triage/audit/, and the fix handoff is in 02-fixes/. "
             "01-triage/audit/packets.json holds the machine record, inputs and hashes."
         )
@@ -558,6 +558,15 @@ def build_parser() -> argparse.ArgumentParser:
     trigger.add_argument("--input", required=True)
     trigger.add_argument("--out", required=True)
     trigger.set_defaults(func=command_trigger)
+
+    from .finish import command_finish
+
+    finish = subparsers.add_parser(
+        "finish", help="verify and summarize every selected local outcome"
+    )
+    finish.add_argument("--input", required=True)
+    finish.add_argument("--out", required=True)
+    finish.set_defaults(func=command_finish)
 
     event = subparsers.add_parser("event", help="consume one locally prepared, revisioned event")
     event.add_argument("--input", required=True)

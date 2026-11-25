@@ -15,9 +15,11 @@ from .policy import (
     PROOF_FIELDS,
     Assessment,
     Packet,
+    _linked_text,
     input_errors,
     next_step_kind,
     recommendation_comment,
+    ref_link,
     valid_ref,
     verify_packet,
 )
@@ -152,7 +154,7 @@ def plan_comment(
         )
     body = packet.proposed_comment
     expected = recommendation_comment(packet, ticket)
-    if body.split("\n\nTriage reference:", 1)[0] != expected:
+    if body.partition("\nTriage reference:")[0].rstrip() not in {expected, short_draft(packet)}:
         return decision(
             "review_required", "Draft does not match the verified recommendation and proof."
         )
@@ -258,6 +260,33 @@ def plan_comment(
     )
 
 
+def short_draft(packet: Packet) -> str:
+    """Render the finding, one evidence link and the action. Keep the detailed basis in audit."""
+    validation = packet.validation
+    coverage_hold = next_step_kind(packet) == "verify_customer_coverage"
+    trusted = not packet.verification_errors or coverage_hold
+    finding = " ".join(str(validation.get("summary") or "").split()) if trusted else ""
+    if len(finding) > 320:
+        finding = finding.partition(". ")[0].rstrip(".") + "."
+    if not finding or len(finding) > 320:
+        finding = f"Triage result on {packet.current_release}: {packet.verdict.replace('_', ' ')}."
+    cited = {item.ref for item in packet.evidence}
+    ref = next((r for r in validation.get("refs", []) if trusted and r in cited), packet.key)
+    link = "Evidence: " + ref_link(ref)
+    if (
+        (packet.verdict == "already_fixed" or coverage_hold)
+        and packet.fix.get("merged")
+        and packet.fix.get("pr") in cited
+    ):
+        link = "Fix: " + ref_link(packet.fix["pr"])
+    elif packet.verdict == "duplicate":
+        link = "Canonical issue: " + ref_link(packet.target)
+    action = packet.recommended_step
+    if trusted and packet.investigation.get("status") == "blocked":
+        action = _linked_text(packet.investigation.get("blocker") or "") or action
+    return "\n".join([_linked_text(finding), link, action])
+
+
 def attach_comment_plan(
     ticket: Ticket,
     packet: Packet,
@@ -269,5 +298,5 @@ def attach_comment_plan(
     # The reference travels in the exact body a human may approve. A future
     # writer must preserve it through Markdown-to-ADF conversion and readback.
     if packet.proposed_comment:
-        packet.proposed_comment = packet.proposed_comment.split("\n\nTriage reference:", 1)[0]
-        packet.proposed_comment += f"\n\nTriage reference: `{packet.comment_plan['reference']}`."
+        packet.proposed_comment = short_draft(packet)
+        packet.proposed_comment += f"\nTriage reference: `{packet.comment_plan['reference']}`."

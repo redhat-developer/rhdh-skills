@@ -37,14 +37,19 @@ def evaluate(ticket, candidates, assessment):
 
 def comment_text(output, key):
     text = (output / "01-triage" / "comments" / f"{key}.md").read_text(encoding="utf-8")
-    return text.split("---\n", 1)[1].strip()
+    return text.strip()
 
 
 def assert_unclear_draft(packet):
     assert packet.action == "comment_only"
     assert packet.verdict == "unclear"
-    assert "Verdict: unclear" in packet.proposed_comment
-    assert "Recommended next step:" in packet.proposed_comment
+    if packet.comment_plan:
+        assert "unclear" in packet.proposed_comment
+        assert packet.recommended_step in packet.proposed_comment
+        assert 1 <= len(packet.proposed_comment.splitlines()) <= 4
+    else:
+        assert "Verdict: unclear" in packet.proposed_comment
+        assert "Recommended next step:" in packet.proposed_comment
     assert packet.recommended_step
     assert "close " not in packet.recommended_step.lower()
     assert "\nProof:" not in packet.proposed_comment
@@ -481,7 +486,8 @@ def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
     assert result.packets[0].comment_plan["status"] == "suppress"
     assert not (output / "01-triage" / "proposed").exists()
     comment = (output / "01-triage" / "comments" / f"{ticket.key}.md").read_text()
-    assert comment.startswith("Status: suppress")
+    assert comment.strip() == result.packets[0].proposed_comment
+    assert len(comment.splitlines()) <= 4
     assert result.manifest["counts"]["surfacedRecommendations"] == 1
 
 

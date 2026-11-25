@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 from .model import Ticket
 from .policy import Packet
 from .report import write_json, write_text
+from .review_queue import refresh_review
 
 TRIAGE = "01-triage"
 FIXES = "02-fixes"
@@ -175,8 +176,8 @@ def _case_status(packet: Packet) -> str:
     if fix_outcome(packet) == "blocked":
         return "blocked"
     if _post_status(packet) == "suppress":
-        return "closed by prior advice"
-    return "ready for human planning"
+        return "comment suppressed; follow-through remains open"
+    return "awaiting local follow-through"
 
 
 def _case_action(packet: Packet) -> str:
@@ -196,8 +197,8 @@ def _case_action(packet: Packet) -> str:
             f"{packet.current_release} page."
         )
     if outcome == "new-bugs":
-        return "Create the follow-up Jira issue named in the plan, then re-triage the original."
-    return "Implement the fix plan, run the named tests, and open a PR for review."
+        return "Draft the follow-up Jira issue and record what it would unblock."
+    return "Prepare the local patch, run the named tests, and record a PR proposal."
 
 
 def _fix_areas(plan: Dict[str, Any]) -> List[str]:
@@ -316,8 +317,7 @@ def render_start_here(
         f"| Comments ready to propose | {delivery.get('propose', 0)} |",
         f"| Comments on hold for review | {delivery.get('review_required', 0)} |",
         f"| Comments suppressed | {delivery.get('suppress', 0)} |",
-        f"| Fix cases: pull request | {outcomes['pull-requests']} |",
-        f"| Fix cases: documentation | {outcomes['docs']} |",
+        f"| Fix cases: pull request (code and documentation) | {outcomes['pull-requests'] + outcomes['docs']} |",
         f"| Fix cases: new Jira issue | {outcomes['new-bugs']} |",
         f"| Fix cases: resolution only | {outcomes['resolution']} |",
         f"| Fix cases: blocked | {outcomes['blocked']} |",
@@ -361,7 +361,7 @@ def render_start_here(
         "",
         "- `comments/` — one exact draft per bug. Nothing here has been posted.",
         "- `audit/` — proof, verification method, limits, selection, and the machine record.",
-        f"- `../{FIXES}/` — a handoff scaffold for the separately approved write phase. No branch, commit, or PR exists.",
+        f"- `../{FIXES}/` — local case plans, patch proposals and verification receipts.",
         "",
         "## Read in this order",
         "",
@@ -395,13 +395,7 @@ def render_start_here(
 
 
 def render_comment_file(packet: Packet) -> str:
-    status = _post_status(packet)
-    reason = _post_reason(packet)
-    body = (
-        packet.proposed_comment
-        or "No comment draft: this bug is customer-linked, already closed, or the inputs were unsafe."
-    )
-    return f"Status: {status} — {reason}\n---\n{body.rstrip()}\n"
+    return packet.proposed_comment.rstrip() + "\n" if packet.proposed_comment else ""
 
 
 def render_bug_audit(packet: Packet, ticket: Ticket) -> str:
@@ -635,100 +629,29 @@ def render_release(*, current_release: str, release_evidence: str, generated_at:
 
 
 def render_fixes_readme() -> str:
-    return "\n".join(
-        [
-            "# Fix phase handoff",
-            "",
-            "This folder is a scaffold for the separately approved write phase. It contains plans, not changes. No branch, commit, PR, or Jira issue exists.",
-            "",
-            "## Routing",
-            "",
-            "| Folder | Meaning |",
-            "|---|---|",
-            "| `pull-requests/` | A code or configuration change for a product repository. |",
-            "| `docs/` | A documentation-only change. |",
-            "| `new-bugs/` | A follow-up Jira issue; no code yet. |",
-            "| `resolution/` | Close, retarget, or verify-and-close; no code. |",
-            "| `blocked/` | Waiting on a named check or access. |",
-            "",
-            "Each case has one primary outcome. See PLAN.md for the proposed next action.",
-            "",
-            "## Before any write",
-            "",
-            "1. Re-read the Jira issue, its customer fields, and its comments.",
-            "2. Re-read the code at the target branch.",
-            "3. Get approval for the exact target, command, and preview.",
-            "4. For local review, follow the fix.requested workflow and retain its revisioned receipt.",
-            "",
-            "Nothing in this folder is authorization to write.",
-            "",
-        ]
-    )
+    return """# Fix review
+
+[Open the review queue](INTAKE.md) for the current disposition, local proposals and remaining work.
+
+| Folder | Contents |
+|---|---|
+| `pull-requests/KEY/` | The case and plan for code, configuration, tests or documentation. |
+| `events/KEY/REVISION-HASH/` | An immutable local result for one fix request. Open PROPOSAL.md for the target branch, change.patch for the diff, VERIFY.md for checks and backports/ for maintenance changes. receipt.json records the processed revision. |
+| `new-bugs/KEY/` | A proposed follow-up issue. |
+| `resolution/KEY/` | Evidence for closing or retargeting a bug, including holds. |
+| `blocked/KEY/` | The attempted check and the missing evidence or access. |
+
+The event worker checks each patch against its recorded branch tip. Replaying the same request reuses its receipt. Shared repositories and Jira stay read-only.
+"""
 
 
 def render_fixes_audit() -> str:
-    return "\n".join(
-        [
-            "# Fix-phase audit",
-            "",
-            "No write has been performed. This file is the place to record the approved set when the phase starts.",
-            "",
-            "## Approvals",
-            "",
-            "| Case | Target | Command | Approved by | Date |",
-            "|---|---|---|---|---|",
-            "",
-            "## Branches and commits",
-            "",
-            "| Case | Repository | Branch | Commit |",
-            "|---|---|---|---|",
-            "",
-            "## Pull requests and issues",
-            "",
-            "| Case | Artifact | State |",
-            "|---|---|---|",
-            "",
-            "## Verification",
-            "",
-            "| Case | Check | Result | Evidence |",
-            "|---|---|---|---|",
-            "",
-            "## Failed or skipped",
-            "",
-            "- None recorded.",
-            "",
-        ]
-    )
+    return """# Local fix audit
 
-
-def render_intake(packets: List[Packet], tickets: Dict[str, Ticket]) -> str:
-    lines = [
-        "# Intake",
-        "",
-        "Every entered case comes from `01-triage`. The triage record stays complete; this is a handoff, not a move.",
-        "",
-        "| Bug | Verdict | Outcome | Owner | Status | Action |",
-        "|---|---|---|---|---|---|",
-    ]
-    for packet in packets:
-        ticket = tickets[packet.key]
-        lines.append(
-            "| "
-            + f"[{packet.key}](../{TRIAGE}/audit/bugs/{packet.key}.md)"
-            + " | "
-            + _cell(packet.verdict)
-            + " | "
-            + _cell(fix_outcome(packet))
-            + " | "
-            + _cell(_owner(ticket))
-            + " | "
-            + _cell(_case_status(packet))
-            + " | "
-            + _cell(_case_action(packet))
-            + " |"
-        )
-    lines += [""]
-    return "\n".join(lines)
+[Review the queue](INTAKE.md) for current proposals, tests and remaining decisions.
+Each accepted fix event retains its repository, pinned branch, patch, verification and backport decisions beside its receipt.
+The [triage snapshot](../01-triage/audit/manifest.json) records the inputs and external write count.
+"""
 
 
 def render_case(packet: Packet, ticket: Ticket) -> str:
@@ -746,7 +669,7 @@ def render_case(packet: Packet, ticket: Ticket) -> str:
             "",
             "## Boundary",
             "",
-            "This is a plan. No branch, commit, PR, Jira issue, or closure exists. Re-read the issue and the code before writing.",
+            "This case records the triage-time plan. See the [live review queue](../../INTAKE.md) for later patches and verification.",
             "",
         ]
     )
@@ -796,7 +719,7 @@ def render_plan(packet: Packet) -> str:
             f"{packet.current_release} page after the change."
         )
     elif outcome == "new-bugs":
-        lines.append("- Create the follow-up issue, then link it to the original.")
+        lines.append("- Draft the follow-up issue with its link to the original.")
     else:
         lines.append("- Run the named tests and attach the result in `VERIFY.md`.")
     lines += [""]
@@ -909,20 +832,12 @@ def write_phased_output(
         "generatedDiffsAtTriage": 0,
     }
     write_json(output_dir / "run.json", summary)
-    write_text(
-        output_dir / "START-HERE.md",
-        f"# Review queue — {as_of}\n\n{len(packets)} reviewed in this batch. "
-        f"{summary['eligible']} eligible in the supplied inventory. "
-        "Generated diffs at triage: 0.\n\n"
-        "[Decisions, evidence and holds](01-triage/START-HERE.md) · "
-        "[Fix intake](02-fixes/INTAKE.md)\n",
-    )
     write_text(fixes / "README.md", render_fixes_readme())
-    write_text(fixes / "INTAKE.md", render_intake(packets, tickets))
     write_text(fixes / "AUDIT.md", render_fixes_audit())
     for packet in packets:
         outcome = fix_outcome(packet)
-        case = fixes / outcome / packet.key
+        case = fixes / ("pull-requests" if outcome == "docs" else outcome) / packet.key
         case.mkdir(parents=True, exist_ok=True)
         write_text(case / "CASE.md", render_case(packet, tickets[packet.key]))
         write_text(case / "PLAN.md", render_plan(packet))
+    refresh_review(output_dir)

@@ -165,20 +165,21 @@ customer fields block closure advice; the comment stays `review_required`.
 
 ## What a run writes
 
-Two phases under the run root:
+Open `START-HERE.md` for the current PR queue, other outcomes, verification and Jira drafts. The two phases retain the underlying evidence.
 
 - `01-triage/START-HERE.md` — the decision page: metrics, one row per bug,
   the reading order, and the limits.
-- `01-triage/comments/KEY.md` — one exact draft per bug, with its posting
-  status above a separator. On-hold and suppressed drafts included.
+- `01-triage/comments/KEY.md` — the exact pasteable draft in at most four lines including its reference. The queue and machine record carry delivery status, including holds and suppression.
 - `01-triage/audit/` — `METHOD.md`, `RUN.md`, `release.md`, `selection.json`,
   `manifest.json`, `packets.json`, `assessments/KEY.json` and
   `bugs/KEY.md` (proof, validation, fix plan, owner, next step, limits).
 - `02-fixes/` — `README.md`, `INTAKE.md`, `AUDIT.md`, and one case per bug
-  under `pull-requests/`, `docs/`, `new-bugs/`, `resolution/` or `blocked/`.
-  Each triage case contains CASE.md and PLAN.md. A subsequent fix request produces PROPOSAL.md, change.patch, VERIFY.md and a receipt, with separate patch and verification files for each proposed backport.
+  under `pull-requests/` (code and documentation), `new-bugs/`, `resolution/` or `blocked/`.
+  Each triage case contains CASE.md and PLAN.md. Each accepted fix request stores PROPOSAL.md, change.patch, VERIFY.md and its receipt under `events/KEY/REVISION-HASH/`, with separate patch and verification files for each proposed backport. The queue links each proposal, including multiple repositories for a single bug.
 
-`packets.json` carries the findings for the system plus a `meta` block:
+After follow-through, `run.json` records each current case, its exact Jira draft and its delivery status. The comment files and queues reflect those results.
+
+`packets.json` retains the original triage snapshot, including the draft at triage time, plus a `meta` block:
 release and its evidence link, input paths and SHA-256 hashes, module
 hashes, thresholds, counts, delivery policy, collection coverage and
 `writes: []`.

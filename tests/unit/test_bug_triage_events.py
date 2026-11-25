@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parents[2] / "skills/jira/rhdh-bug-triage/scripts"
 sys.path.insert(0, str(SCRIPTS))
 from bugtriage.cli import main  # noqa: E402
@@ -37,7 +39,18 @@ def test_support_replay_conflict_and_recovery(tmp_path):
     assert len(drafts) == 1 and "Visible title" in drafts[0].read_text()
 
 
-def test_patch_and_backport_check_without_changing_checkout(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "kind,filename,executable,accepted",
+    [
+        (None, "title", False, True),
+        ("docs", "guide.md", False, True),
+        ("docs", "title.py", False, False),
+        ("docs", "guide.md", True, False),
+    ],
+)
+def test_patch_and_backport_check_without_changing_checkout(
+    tmp_path, monkeypatch, kind, filename, executable, accepted
+):
     for key in list(os.environ):
         if key.startswith("GIT_"):
             monkeypatch.delenv(key)
@@ -49,13 +62,15 @@ def test_patch_and_backport_check_without_changing_checkout(tmp_path, monkeypatc
 
     git("init", "-q")
     git("remote", "add", "origin", "https://github.com/example/fixture.git")
-    (repo / "title").write_text("old\n")
-    git("add", "title")
+    (repo / filename).write_text("old\n")
+    git("add", filename)
     git("-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "base")
     base = git("rev-parse", "HEAD")
     for branch in ("main", "stable"):
         git("update-ref", f"refs/remotes/origin/{branch}", base)
-    (repo / "title").write_text("new\n")
+    (repo / filename).write_text("new\n")
+    if executable:
+        (repo / filename).chmod(0o755)
     patch = subprocess.check_output(["git", "-C", str(repo), "diff"])
     (tmp_path / "change.patch").write_bytes(patch)
     change = dict(
@@ -68,6 +83,7 @@ def test_patch_and_backport_check_without_changing_checkout(tmp_path, monkeypatc
         **change,
         type="fix.requested",
         key="RHDHBUGS-1",
+        kind=kind,
         revision="1",
         checkout="fixture",
         repository="example/fixture",
@@ -81,7 +97,8 @@ def test_patch_and_backport_check_without_changing_checkout(tmp_path, monkeypatc
     )
     audit = tmp_path / "review/01-triage/audit"
     audit.mkdir(parents=True)
-    case = tmp_path / "review/02-fixes/docs/RHDHBUGS-1"
+    # Keep a legacy docs-folder fixture alongside the new shared PR queue.
+    case = tmp_path / "review/02-fixes" / ("pull-requests" if kind else "docs") / "RHDHBUGS-1"
     case.mkdir(parents=True)
     (case / "PLAN.md").write_text("Restore title")
     (audit / "packets.json").write_text(
@@ -90,8 +107,10 @@ def test_patch_and_backport_check_without_changing_checkout(tmp_path, monkeypatc
                 "packets": [
                     {
                         "key": "RHDHBUGS-1",
-                        "verdict": "still_valid",
-                        "investigation": {"status": "completed"},
+                        "verdict": "needs_repro" if kind else "still_valid",
+                        "investigation": {"status": "blocked" if kind else "completed"},
+                        "handoff": {"outcome": "docs" if kind else "pull_request"},
+                        "fixPlan": {"areas": [{"repository": "example/fixture"}]},
                     }
                 ]
             }
@@ -101,9 +120,9 @@ def test_patch_and_backport_check_without_changing_checkout(tmp_path, monkeypatc
     status = git("status", "--porcelain")
     assert consume(tmp_path, {**event, "patchHash": "wrong"}) == 2
     monkeypatch.setenv("GIT_DIR", str(tmp_path / "foreign.git"))
-    assert consume(tmp_path, event) == 0
+    assert consume(tmp_path, event) == (0 if accepted else 2)
     monkeypatch.delenv("GIT_DIR")
-    assert len(list((tmp_path / "run").rglob("change.patch"))) == 2
+    assert len(list((tmp_path / "run").rglob("change.patch"))) == (2 if accepted else 0)
     assert git("status", "--porcelain") == status
     assert git("diff", "--cached") == ""
 

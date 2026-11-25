@@ -2,7 +2,7 @@
 
 This is an **agent workflow**: the scripts gather and check, but the
 investigators (one fresh agent per bug) do the thinking. Every picked bug
-ends with a verdict and an exact draft comment. Nothing is ever written to
+continues through local verification, a reviewable outcome and an exact draft comment. Nothing is ever written to
 Jira.
 
 Run the commands from the installed skill directory and keep everything in
@@ -184,8 +184,7 @@ The run writes a phased root. `01-triage/` contains the decision page
 selection, release record, method, per-bug proof, assessments and machine
 record under `audit/`. `02-fixes/` contains `README.md`, `INTAKE.md`,
 `AUDIT.md`, and one case folder per finding under its outcome:
-`pull-requests/`, `docs/`, `new-bugs/`, `resolution/` or `blocked/`. Every
-fix case is a plan only; no branch, commit, PR, Jira issue or closure exists.
+`pull-requests/` (including documentation), `new-bugs/`, `resolution/` or `blocked/`. Each case starts with a plan. Local fix events add the verified patches and backport decisions.
 `audit/packets.json` carries the machine record plus a `meta` block (which
 inputs, which hashes, which code, and `writes: []`).
 
@@ -203,7 +202,7 @@ the assessment and rerun into a new directory; never hand-edit a draft into
 something the checks did not verify. An unavailable `/prose-editing` is
 recorded as a gap, not silently skipped.
 
-Read `01-triage/START-HERE.md` for the decision table, then
+Read `START-HERE.md` for the current queue, then
 `01-triage/comments/KEY.md` for the exact draft and
 `01-triage/audit/bugs/KEY.md` for the proof, validation, fix plan, owner,
 next step, and whether the comment may be posted. `review_required` and
@@ -212,13 +211,7 @@ next step, and whether the comment may be posted. `review_required` and
 
 ## 6. Finish the dry run
 
-Report the `01-triage/START-HERE.md` path, the bug/verdict/delivery counts,
-the fix outcomes, and the important limits. Say that nothing was posted, no
-bugs were closed, and no fixes, PRs or backports were created. Zero close
-recommendations is a fine outcome; zero investigated drafts for a non-empty
-sample is not. Never call `/rhdh-jira-update` or any other writer during this
-run, even if the user likes the preview. Posting, closing and the `02-fixes`
-write phase are separate, explicitly approved work under `/mutation-gate`.
+Investigate each remaining uncertainty, exercise the available reproduction and prepare each supported local change. Record attempted checks and external blockers. Follow [the fix event and finish workflow](review-events.md) to validate every selected outcome and rebuild the queue. Report the root `START-HERE.md`, the tested proposals, the delivery holds and the next decision per bug. Jira and remote repositories remain read-only.
 
 ## Scoring against known answers
 

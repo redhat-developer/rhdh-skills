@@ -106,7 +106,7 @@ def test_end_to_end_uncertainty_has_exact_comment_not_an_empty_closure_report(in
     assert packet.proposed_comment
     assert packet.comment_plan["status"] == "propose"
     comment = (result.output_dir / "01-triage" / "comments" / f"{packet.key}.md").read_text()
-    assert comment.split("---\n", 1)[1].strip() == packet.proposed_comment
+    assert comment.strip() == packet.proposed_comment
     saved = json.loads((result.output_dir / "01-triage" / "audit" / "packets.json").read_text())
     assert saved["packets"][0]["proposedComment"] == packet.proposed_comment
     assert result.manifest["counts"]["draftComments"] == 1
@@ -627,3 +627,103 @@ def test_export_retries_one_transient_native_read_without_losing_a_ticket(monkey
     result = jira_adapter.export_from_acli("project = RHDHBUGS")
     assert len(calls) == 2
     assert result["provenance"]["fullReadCount"] == 1
+
+
+def test_review_queue_links_doc_plans_patches_and_current_holds(inputs):
+    import re
+
+    from bugtriage.layout import refresh_review
+
+    key = "RHDHBUGS-101"
+    assessment_file = Path(inputs.assessments_dir) / f"{key}.json"
+    assessment = json.loads(assessment_file.read_text())
+    assessment["handoff"] = {"outcome": "docs", "reason": "Clarify the documented scope."}
+    assessment_file.write_text(json.dumps(assessment))
+    review = run(inputs).output_dir
+    plan = review / "02-fixes/pull-requests" / key / "PLAN.md"
+    assert plan.is_file()
+    assert not (review / "02-fixes/docs").exists()
+    assert "Awaiting follow-through" in (review / "START-HERE.md").read_text()
+    for repo in ("chart", "operator"):
+        dest = review / "02-fixes/events" / key / repo
+        dest.mkdir(parents=True)
+        for name in ("PROPOSAL.md", "VERIFY.md", "change.patch", "receipt.json"):
+            (dest / name).touch()
+        (dest / "proposal.json").write_text(json.dumps({"repository": repo, "branch": "main"}))
+    summary = json.loads((review / "run.json").read_text())
+    evidence = "01-triage/audit/test.log"
+    (review / evidence).write_text("Test passed.")
+    summary["cases"] = {
+        key: {"stage": "patch", "next": "Review the documented scope.", "evidence": evidence}
+    }
+    (review / "run.json").write_text(json.dumps(summary))
+    refresh_review(review)
+    for page in (review / "START-HERE.md", review / "02-fixes/INTAKE.md"):
+        content = page.read_text()
+        queue = content.split("## Other outcomes")[0]
+        assert "2 local PR proposals" in queue
+        assert "Review the documented scope." in queue
+        assert "chart main" in queue and "operator main" in queue
+        assert key in queue
+        for target in re.findall(r"\]\(([^)]+)\)", content):
+            assert (page.parent / target).is_file()
+        refresh_review(review)
+        assert page.read_text() == content
+
+
+def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp_path):
+    review = run(inputs).output_dir
+    packet_file = review / "01-triage/audit/packets.json"
+    audit = json.loads(packet_file.read_text())
+    key = audit["packets"][0]["key"]
+    log = tmp_path / "fixture.log"
+    log.write_text("Attempted UI replay; fixture missing identity data.\n")
+    row = dict(
+        key=key,
+        stage="blocked",
+        finding="Filter behavior is under investigation.",
+        verification="Checked the local reproduction fixture.",
+        next="Replay with the missing identity.",
+        evidence=log.name,
+        blocker="The reporter's identity fixture is unavailable.",
+    )
+    source = tmp_path / "results.json"
+    args = ["finish", "--input", str(source), "--out", str(review)]
+
+    def finish(rows):
+        source.write_text(json.dumps(rows))
+        return cli.main(args)
+
+    initial = (review / "run.json").read_bytes()
+    for invalid in (
+        [],
+        [row, row],
+        [{**row, "key": "RHDHBUGS-999"}],
+        [{**row, "stage": "patch"}],
+        [{**row, "stage": "existing_fix"}],
+        [{**row, "stage": "ready_to_close"}],
+        [{**row, "evidence": "missing.log"}],
+        [{**row, "blocker": ""}],
+    ):
+        assert finish(invalid) == 2
+        assert (review / "run.json").read_bytes() == initial
+        assert not (review / "01-triage/audit/followthrough").exists()
+    assert finish([row]) == 0
+    completed = (review / "run.json").read_bytes()
+    case = json.loads(completed)["cases"][key]
+    assert case["stage"] == "blocked" and case["blocker"] == row["blocker"]
+    assert (review / case["evidence"]).read_bytes() == log.read_bytes()
+    assert finish([row]) == 0 and (review / "run.json").read_bytes() == completed
+
+    # A raw fix object's booleans never establish release inclusion on their own.
+    packet = audit["packets"][0]
+    packet.update(
+        fix={
+            "pr": "https://github.com/example/fixture/pull/1",
+            "merged": True,
+            "containedInReviewRelease": True,
+        },
+        verificationErrors=[],
+    )
+    packet_file.write_text(json.dumps(audit))
+    assert finish([{**row, "stage": "existing_fix"}]) == 2

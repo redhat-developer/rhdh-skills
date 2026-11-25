@@ -14,8 +14,7 @@ description: >-
 
 Read every bug carefully, say what should happen next, and write the exact
 comment that would be posted — but never post it. Every bug we pick gets a
-verdict (our conclusion), a draft comment, and a fix plan that says where a
-fix would go. A team of fresh investigators works in parallel, one bug each.
+verdict (our conclusion), a draft comment and an evidenced local outcome. A team of fresh investigators works in parallel, one bug each.
 The scripts pick the bugs, gather the leads and check the paperwork; the
 thinking is done by the investigators.
 
@@ -61,9 +60,7 @@ the single step-by-step guide, with every command.
   [bug verification](references/bug-verification.md).
 - **Write a fix plan for every bug.** What a fix would change, where it would
   land, how big it is. For duplicate / already-fixed / no-longer-valid
-  verdicts, describe the resolution action instead (complexity `none`). A
-  plan is guidance for the separately approved fix work — it is not a change,
-  not proof a fix exists, and not permission to close the bug.
+  verdicts, describe the resolution action instead (complexity `none`). Advance the plan into a tested proposal in a disposable checkout wherever the evidence supports it.
 - **Show everything.** Every exact comment draft lands in
   `01-triage/comments/` with its verdict, evidence, fix plan and whether it
   may ever be posted — including the ones on hold and the ones we are staying
@@ -106,10 +103,9 @@ Run `python3 scripts/triage.py` from the installed skill directory. The
 - `run` writes a phased run root: `01-triage/` holds the decision page
   (`START-HERE.md`), one exact draft per bug under `comments/`, and the proof,
   selection and machine record under `audit/`; `02-fixes/` holds a handoff
-  scaffold that routes each finding to a pull request, documentation change,
-  new issue, resolution, or blocked check. It writes no Jira mutation and no
-  PR. Pass `--require-investigation --require-fix-plan` so half-done work is
-  refused.
+  for code and documentation PRs, follow-up issues, resolutions and blocked checks.
+  Pass `--require-investigation --require-fix-plan` on a full run. Continue
+  through local verification and `finish` for every selected bug.
 
 By default we review open, non-customer bugs at least 90 days old whose
 affected versions are all older than the release under review (5 of them,
@@ -119,11 +115,8 @@ the export covers the whole tracker.
 
 ## Completion
 
-Every picked bug has been investigated; every draft, fix plan and delivery
-status is in `01-triage/comments/` and `01-triage/audit/`; disagreements,
-exclusions, input hashes and search failures are kept in the audit data;
-`meta.writes` is empty. `02-fixes/INTAKE.md` names the handoff outcome for
-each finding, and no branch, commit or PR exists. Keep local reports and
-private Jira exports out of the PR.
+For each bug, follow the strongest remaining lead. For unclear findings, check identity, historical fixes and release inclusion. For missing reproductions, attempt a bounded release-matched fixture and record what it establishes. For validated defects, prepare the actual local diff, regression checks, relevant documentation and branch-specific backports. A verified partial remedy can proceed while the original incident remains open. Record the exact external evidence or decision still needed.
 
-Report the root START-HERE.md, the inventory and batch counts, delivery holds and blockers. Distinguish triage plans, verified local patch proposals and external publication. Include the receipt path for a trigger, support draft or patch. Report blocked or pending investigations explicitly.
+Consume each local proposal with `event`. Complete the batch with `finish` as described in [review events](workflows/review-events.md). Put the finding, a verified fix or evidence link, and the next action in at most four physical Jira lines including the reference. Reserve live PR links for existing verified fixes.
+
+Report the root `START-HERE.md`. It links the single PR queue, evidence, drafts and remaining decisions. Local completion leaves publication and Jira closure for authorized review.
