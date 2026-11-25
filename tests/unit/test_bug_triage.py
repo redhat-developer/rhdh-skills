@@ -619,7 +619,13 @@ class TestRun:
         assert sum(result.manifest["commentPolicy"]["counts"].values()) == 7
         assert result.manifest["commentPolicy"]["cooldownDays"] == 14
         # Two phases: the triage decision and the fix handoff.
-        assert sorted(path.name for path in out.iterdir()) == ["01-triage", "02-fixes"]
+        assert sorted(path.name for path in out.iterdir()) == [
+            "01-triage",
+            "02-fixes",
+            "START-HERE.md",
+            "run.json",
+        ]
+        assert json.loads((out / "run.json").read_text())["selected"] == len(result.packets)
         triage = out / "01-triage"
         assert (triage / "START-HERE.md").is_file()
         assert (triage / "comments").is_dir()

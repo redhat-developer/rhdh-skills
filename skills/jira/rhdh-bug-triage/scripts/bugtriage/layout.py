@@ -170,6 +170,8 @@ def _investigation_counts(packets: List[Packet]) -> Dict[str, int]:
 
 
 def _case_status(packet: Packet) -> str:
+    if fix_outcome(packet) == "resolution" and packet.verdict == "unclear":
+        return "resolution held"
     if fix_outcome(packet) == "blocked":
         return "blocked"
     if _post_status(packet) == "suppress":
@@ -179,6 +181,8 @@ def _case_status(packet: Packet) -> str:
 
 def _case_action(packet: Packet) -> str:
     outcome = fix_outcome(packet)
+    if outcome == "resolution" and packet.verdict == "unclear":
+        return "Resolve the recorded review hold before considering closure."
     if outcome == "resolution":
         return "Review the resolution: close, retarget, or verify the finding. No code change is proposed."
     if outcome == "blocked":
@@ -305,7 +309,8 @@ def render_start_here(
         f"| Bugs reviewed | {len(packets)} |",
         f"| Still valid on {current_release} | {verdicts.get('still_valid', 0)} |",
         f"| No longer valid on {current_release} | {verdicts.get('no_longer_valid', 0)} |",
-        f"| Unclear or blocked | {verdicts.get('unclear', 0)} |",
+        f"| Needs reproduction | {verdicts.get('needs_repro', 0)} |",
+        f"| Unclear | {verdicts.get('unclear', 0)} |",
         f"| Duplicate | {verdicts.get('duplicate', 0)} |",
         f"| Already fixed | {verdicts.get('already_fixed', 0)} |",
         f"| Comments ready to propose | {delivery.get('propose', 0)} |",
@@ -334,7 +339,14 @@ def render_start_here(
             + " | "
             + _cell(packet.verdict)
             + " | "
-            + _cell(_post_status(packet))
+            + _cell(
+                _post_status(packet)
+                + (
+                    " — " + _post_reason(packet)
+                    if _post_status(packet) == "review_required"
+                    else ""
+                )
+            )
             + " | "
             + _cell(fix_outcome(packet))
             + " | "
@@ -639,14 +651,14 @@ def render_fixes_readme() -> str:
             "| `resolution/` | Close, retarget, or verify-and-close; no code. |",
             "| `blocked/` | Waiting on a named check or access. |",
             "",
-            "One primary outcome per bug. A secondary action is listed in `CASE.md`, not duplicated in a second folder.",
+            "Each case has one primary outcome. See PLAN.md for the proposed next action.",
             "",
             "## Before any write",
             "",
             "1. Re-read the Jira issue, its customer fields, and its comments.",
             "2. Re-read the code at the target branch.",
             "3. Get approval for the exact target, command, and preview.",
-            "4. Record the approval and outcome in `APPROVAL.md` and `ARTIFACT.md`.",
+            "4. For local review, follow the fix.requested workflow and retain its revisioned receipt.",
             "",
             "Nothing in this folder is authorization to write.",
             "",
@@ -745,7 +757,11 @@ def render_plan(packet: Packet) -> str:
     lines = [
         f"# Plan — {packet.key}",
         "",
-        _text(plan.get("approach"), "No fix plan recorded."),
+        (
+            "Resolution held. " + "; ".join(packet.verification_errors or [_post_reason(packet)])
+            if packet.verdict == "unclear" and fix_outcome(packet) == "resolution"
+            else _text(plan.get("approach"), "No fix plan recorded.")
+        ),
         "",
         f"- Size: `{_text(plan.get('complexity'), 'unknown')}`",
         "",
@@ -760,7 +776,9 @@ def render_plan(packet: Packet) -> str:
         "",
     ]
     outcome = fix_outcome(packet)
-    if outcome == "resolution":
+    if outcome == "resolution" and packet.verdict == "unclear":
+        lines.append("- " + packet.recommended_step)
+    elif outcome == "resolution":
         lines.append(
             "- Review the cited resolution and decide whether to close, retarget, or verify."
         )
@@ -783,63 +801,6 @@ def render_plan(packet: Packet) -> str:
         lines.append("- Run the named tests and attach the result in `VERIFY.md`.")
     lines += [""]
     return "\n".join(lines)
-
-
-def render_artifact_template(packet: Packet) -> str:
-    return "\n".join(
-        [
-            f"# Artifact — {packet.key}",
-            "",
-            "No artifact yet.",
-            "",
-            "Record exactly one of the following after approval:",
-            "",
-            "- pull request URL and merge state;",
-            "- new Jira issue key;",
-            "- documentation commit or PR;",
-            "- resolution comment or transition reference.",
-            "",
-            "Do not record a branch or commit that was not pushed.",
-            "",
-        ]
-    )
-
-
-def render_verify_template(packet: Packet) -> str:
-    return "\n".join(
-        [
-            f"# Verification — {packet.key}",
-            "",
-            "No check has been run in this phase.",
-            "",
-            "Record the command, the environment, the result, and the evidence. Reading code is not running it.",
-            "",
-            "| Check | Command or method | Result | Evidence |",
-            "|---|---|---|---|",
-            "",
-        ]
-    )
-
-
-def render_approval_template(packet: Packet) -> str:
-    return "\n".join(
-        [
-            f"# Approval — {packet.key}",
-            "",
-            "No approval has been granted. This file is a placeholder for the mutation gate.",
-            "",
-            "Before a write, record:",
-            "",
-            "- the exact target repository and branch;",
-            "- the exact command or API call;",
-            "- the preview that was shown;",
-            "- who approved it and when;",
-            "- what happens on failure.",
-            "",
-            "A triage recommendation is not authorization.",
-            "",
-        ]
-    )
 
 
 def write_phased_output(
@@ -935,6 +896,27 @@ def write_phased_output(
         },
     )
 
+    summary = {
+        "schemaVersion": 1,
+        "input": coverage["inputIssues"],
+        "eligible": sample.get("eligibleCount"),
+        "selected": len(packets),
+        "excluded": len(sample.get("excluded", [])),
+        "investigations": _investigation_counts(packets),
+        "verdicts": _verdict_counts(packets),
+        "delivery": _delivery_counts(packets),
+        "fixPlans": _outcome_counts(packets),
+        "generatedDiffsAtTriage": 0,
+    }
+    write_json(output_dir / "run.json", summary)
+    write_text(
+        output_dir / "START-HERE.md",
+        f"# Review queue — {as_of}\n\n{len(packets)} reviewed in this batch. "
+        f"{summary['eligible']} eligible in the supplied inventory. "
+        "Generated diffs at triage: 0.\n\n"
+        "[Decisions, evidence and holds](01-triage/START-HERE.md) · "
+        "[Fix intake](02-fixes/INTAKE.md)\n",
+    )
     write_text(fixes / "README.md", render_fixes_readme())
     write_text(fixes / "INTAKE.md", render_intake(packets, tickets))
     write_text(fixes / "AUDIT.md", render_fixes_audit())
@@ -944,6 +926,3 @@ def write_phased_output(
         case.mkdir(parents=True, exist_ok=True)
         write_text(case / "CASE.md", render_case(packet, tickets[packet.key]))
         write_text(case / "PLAN.md", render_plan(packet))
-        write_text(case / "ARTIFACT.md", render_artifact_template(packet))
-        write_text(case / "VERIFY.md", render_verify_template(packet))
-        write_text(case / "APPROVAL.md", render_approval_template(packet))

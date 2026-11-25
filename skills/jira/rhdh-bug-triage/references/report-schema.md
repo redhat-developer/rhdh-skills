@@ -176,8 +176,7 @@ Two phases under the run root:
   `bugs/KEY.md` (proof, validation, fix plan, owner, next step, limits).
 - `02-fixes/` — `README.md`, `INTAKE.md`, `AUDIT.md`, and one case per bug
   under `pull-requests/`, `docs/`, `new-bugs/`, `resolution/` or `blocked/`.
-  Each case has `CASE.md`, `PLAN.md`, `ARTIFACT.md`, `VERIFY.md` and
-  `APPROVAL.md`. Plans only: no branch, commit, PR, Jira issue or closure.
+  Each triage case contains CASE.md and PLAN.md. A subsequent fix request produces PROPOSAL.md, change.patch, VERIFY.md and a receipt, with separate patch and verification files for each proposed backport.
 
 `packets.json` carries the findings for the system plus a `meta` block:
 release and its evidence link, input paths and SHA-256 hashes, module

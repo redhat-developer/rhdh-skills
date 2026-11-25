@@ -60,7 +60,7 @@ python3 scripts/triage.py select --input export.json \
   known and strictly older than the release under review. A bug affecting
   both old and current versions is not eligible. Unknown, equal or newer
   versions are excluded, with a reason written down.
-- Default: 12 bugs, spread across teams — a sample, not 12 closure targets.
+- Default: 5 bugs, spread across teams.
   `--all` takes every eligible bug in the export.
 - `--scope all-open` drops only the age and version checks, never the
   customer or closed checks. It needs a matching wider export for both

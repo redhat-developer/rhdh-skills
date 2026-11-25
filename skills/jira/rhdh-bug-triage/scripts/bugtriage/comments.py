@@ -143,10 +143,9 @@ def plan_comment(
         return decision("suppress", "Customer-linked or completed issue; no comment proposed.")
     # A private validity finding can remain supported while customer context is
     # incomplete. Delivery still requires the full mapped-field read coverage.
-    if input_errors(ticket, require_customer_coverage=True):
-        return decision(
-            "review_required", "Issue status, description or customer-field coverage is incomplete."
-        )
+    missing = input_errors(ticket, require_customer_coverage=True)
+    if missing:
+        return decision("review_required", "; ".join(missing))
     if not ticket.comments_complete:
         return decision(
             "review_required", "Comment history is missing or truncated; fetch it in full."

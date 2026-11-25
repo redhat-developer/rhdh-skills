@@ -7,8 +7,10 @@ write path exists; proposed actions are files under the output directory.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import platform
+import re
 import shutil
 import sys
 from collections import Counter
@@ -19,12 +21,14 @@ from .brief import write_briefs
 from .collect import CollectConfig, collect
 from .comments import DEFAULT_COOLDOWN_DAYS
 from .evaluate import write_evaluation
+from .events import command_event, command_trigger
 from .forge import ForgeAdapterError
 from .jira import (
     JiraAdapterError,
     build_backlog,
     export_from_acli,
     load_tickets_from_acli,
+    search_acli,
     write_acli_probe,
 )
 from .layout import fix_outcome
@@ -71,6 +75,15 @@ def _field_names(path: Optional[str]) -> Optional[dict]:
     if not path:
         return None
     document = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(document, list):
+        if not all(
+            isinstance(row, dict)
+            and isinstance(row.get("id"), str)
+            and isinstance(row.get("name"), str)
+            for row in document
+        ):
+            raise RunError("expected Jira field metadata with id and name")
+        document = {row["id"]: row["name"] for row in document}
     if (
         not isinstance(document, dict)
         or not document
@@ -80,11 +93,89 @@ def _field_names(path: Optional[str]) -> Optional[dict]:
     return document
 
 
+def command_progress(args):
+    inventory = Path(args.inventory).read_bytes()
+    expected = set(json.loads(inventory)["keys"])
+    digest = hashlib.sha256(inventory).hexdigest()
+    states = {}
+    for directory in args.run:
+        audit = Path(directory) / "01-triage" / "audit"
+        result = json.loads((audit / "packets.json").read_text())
+        if result["meta"]["coverage"].get("inventoryHash") != digest:
+            raise RunError("batch comes from a different inventory")
+        sample = json.loads((audit / "selection.json").read_text())
+        rows = [(row["key"], "excluded") for row in sample["excluded"]]
+        rows.extend(
+            (row["key"], row["investigation"].get("status") or "pending")
+            for row in result["packets"]
+        )
+        for key, status in rows:
+            if key not in expected or key in states:
+                raise RunError("overlapping or out-of-inventory batch")
+            states[key] = status if status in {"excluded", "completed", "blocked"} else "pending"
+    print(
+        json.dumps(
+            {
+                state: sorted(key for key in expected if states.get(key, "pending") == state)
+                for state in ("completed", "blocked", "excluded", "pending")
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def command_inventory(args):
+    path = Path(args.out)
+    jql = (
+        default_jql(DEFAULT_AGED_DAYS, "all-open")
+        if args.project == "RHDHBUGS"
+        else "project = RHDHSUPP AND statusCategory != Done ORDER BY updated ASC, key ASC"
+    )
+    rows = search_acli(jql, fields="key,status")
+    keys = [row["key"] for row in rows]
+    if len(set(keys)) != len(keys) or any(
+        not re.fullmatch(args.project + r"-\d+", key) for key in keys
+    ):
+        raise RunError("duplicate or out-of-scope inventory key")
+    with path.open("x", encoding="utf-8") as handle:
+        json.dump(
+            {"project": args.project, "jql": jql, "observedAt": now_iso(), "keys": keys},
+            handle,
+            indent=2,
+        )
+    print(f"{len(keys)} inventory keys in {path}")
+    return 0
+
+
 def command_fetch(args: argparse.Namespace) -> int:
     path = Path(args.out)
     if path.exists():
         raise RunError(f"refusing to overwrite export: {path}")
-    document = export_from_acli(args.jql, field_names=_field_names(args.field_names))
+    jql = args.jql
+    expected = None
+    if args.inventory:
+        inventory_bytes = Path(args.inventory).read_bytes()
+        inventory = json.loads(inventory_bytes)
+        if inventory["project"] != "RHDHBUGS" or args.batch < 1 or args.size < 1:
+            raise RunError("bug inventory and positive batch and size required")
+        start = (args.batch - 1) * args.size
+        expected = inventory["keys"][start : start + args.size]
+        if not expected or not all(
+            isinstance(k, str) and re.fullmatch(r"RHDHBUGS-\d+", k) for k in expected
+        ):
+            raise RunError("batch is empty or contains invalid keys")
+        jql = "key IN (" + ", ".join(expected) + ") ORDER BY key ASC"
+    document = export_from_acli(jql, field_names=_field_names(args.field_names))
+    if expected is not None:
+        if sorted(row["key"] for row in document["issues"]) != sorted(expected):
+            raise RunError("Jira did not return every requested inventory key")
+        document["provenance"].update(
+            inventoryHash=hashlib.sha256(inventory_bytes).hexdigest(),
+            inventoryObservedAt=inventory["observedAt"],
+            inventorySize=len(inventory["keys"]),
+            batch=args.batch,
+        )
     write_json(path, document)
     print(f"Fetched {len(document['issues'])} complete issue record(s) into {path}")
     return 0
@@ -103,7 +194,19 @@ def command_select(args: argparse.Namespace) -> int:
         scope=args.scope,
         all_tickets=args.all,
     )
+    if (
+        args.batch < 1
+        or args.batch > 1
+        and (args.all or args.control or not args.input or args.source != "export")
+    ):
+        raise RunError("numbered continuation requires a fixed export without --all or controls")
+    if args.batch > 1 and not args.as_of:
+        raise RunError("use the first batch's --as-of date for continuation")
+    config.size *= args.batch
     sample = build_sample_manifest(tickets, config, as_of, jql)
+    if args.batch > 1:
+        sample["tickets"] = sample["tickets"][(args.batch - 1) * args.size :]
+    sample.update(batch=args.batch, size=args.size)
     if args.out:
         write_json(Path(args.out), sample)
     if args.json:
@@ -435,8 +538,38 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 3")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    progress = subparsers.add_parser(
+        "progress", help="reconcile completed batch runs against a frozen inventory"
+    )
+    progress.add_argument("--inventory", required=True)
+    progress.add_argument(
+        "--run", action="append", default=[], help="completed batch run directory (repeatable)"
+    )
+    progress.set_defaults(func=command_progress)
+
+    inventory = subparsers.add_parser("inventory", help="freeze a paginated, keys-only inventory")
+    inventory.add_argument("--project", required=True, choices=("RHDHBUGS", "RHDHSUPP"))
+    inventory.add_argument("--out", required=True)
+    inventory.set_defaults(func=command_inventory)
+
+    trigger = subparsers.add_parser(
+        "trigger", help="route one delivered Jira webhook to a private work request"
+    )
+    trigger.add_argument("--input", required=True)
+    trigger.add_argument("--out", required=True)
+    trigger.set_defaults(func=command_trigger)
+
+    event = subparsers.add_parser("event", help="consume one locally prepared, revisioned event")
+    event.add_argument("--input", required=True)
+    event.add_argument("--out", required=True)
+    event.set_defaults(func=command_event)
+
     fetch_parser = subparsers.add_parser("fetch", help="download full Jira records (read-only)")
-    fetch_parser.add_argument("--jql", required=True)
+    source = fetch_parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--jql")
+    source.add_argument("--inventory", help="frozen all-open bug inventory")
+    fetch_parser.add_argument("--batch", type=int, default=1)
+    fetch_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)
     fetch_parser.add_argument("--out", required=True)
     fetch_parser.add_argument(
         "--field-names",
@@ -455,6 +588,9 @@ def build_parser() -> argparse.ArgumentParser:
     select_parser.add_argument("--jql", help="JQL for acli or for the manifest record")
     select_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
     select_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)
+    select_parser.add_argument(
+        "--batch", type=int, default=1, help="one-based page of the same frozen selection"
+    )
     select_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     select_parser.add_argument("--current-release", required=True)
     select_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")

@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 DEFAULT_AGED_DAYS = 90
-DEFAULT_SAMPLE_SIZE = 12
+DEFAULT_SAMPLE_SIZE = 5
 DEFAULT_SEED = 18094
 
 CUSTOMER_LABELS = ("RHDH-Customer",)

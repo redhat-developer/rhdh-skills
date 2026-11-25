@@ -156,3 +156,14 @@ def test_scoped_success_is_not_automatic_closure_or_runtime_verification():
     assert result.action == "comment_only"
     assert investigation_outcome(result) == "requirements_satisfied_in_stated_scope"
     assert result.validation == {}
+
+
+def test_held_resolution_points_at_customer_coverage():
+    from bugtriage.policy import _next_step, next_step_kind
+
+    result = packet(record("satisfied"))
+    result.verification_errors = [
+        "customer-field read coverage is incomplete; retrieve mapped fields, labels and links"
+    ]
+    assert next_step_kind(result) == "verify_customer_coverage"
+    assert "field map" in _next_step(result)

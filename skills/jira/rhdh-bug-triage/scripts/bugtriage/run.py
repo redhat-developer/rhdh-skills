@@ -24,10 +24,12 @@ from .duplicates import (
 )
 from .layout import write_phased_output
 from .model import (
+    DEFAULT_SAMPLE_SIZE,
     JIRA_KEY_RE,
     Ticket,
     age_days,
     load_export,
+    normalize_export,
     normalize_issue,
     parse_datetime,
 )
@@ -59,7 +61,7 @@ class RunConfig:
     assessments_dir: str = ""
     as_of: str = ""
     aged_days: int = 90
-    size: int = 12
+    size: int = DEFAULT_SAMPLE_SIZE
     seed: int = 18094
     controls: List[Control] = field(default_factory=list)
     backlog_path: str = ""
@@ -84,6 +86,8 @@ class RunResult:
 
 
 def default_jql(aged_days: int, scope: str = "aged") -> str:
+    if scope == "all-open":
+        return "project = RHDHBUGS AND issuetype = Bug AND statusCategory != Done ORDER BY created ASC, key ASC"
     return (
         "project = RHDHBUGS AND statusCategory != Done "
         + (f"AND created <= -{aged_days}d " if scope == "aged" else "")
@@ -192,7 +196,11 @@ def run(config: RunConfig) -> RunResult:
     ):
         raise RunError("--release-evidence must link the verified product release record")
     as_of = parse_as_of(config.as_of)
-    tickets = load_export(config.input_path)
+    with open(config.input_path, encoding="utf-8") as source:
+        raw_export = json.load(source)
+    provenance = raw_export.get("provenance", {}) if isinstance(raw_export, dict) else {}
+    tickets = normalize_export(raw_export)
+    del raw_export
     if not tickets:
         raise RunError(f"{config.input_path} contains no issues")
     tickets_by_key = {ticket.key: ticket for ticket in tickets}
@@ -411,6 +419,14 @@ def run(config: RunConfig) -> RunResult:
         "corpusExhaustive": False,
         "collection": collection,
     }
+    if isinstance(provenance, dict) and provenance.get("inventoryHash"):
+        coverage.update(
+            {
+                k: provenance[k]
+                for k in ("inventoryHash", "inventoryObservedAt", "inventorySize", "batch")
+            }
+        )
+        jql = provenance.get("jql", jql)
     # The run root holds two phases: 01-triage (decide, comment, prove) and
     # 02-fixes (a handoff scaffold for separately approved write work).
     # Working inputs stay outside this directory.

@@ -925,6 +925,15 @@ def next_step_kind(packet: Packet) -> str:
     """Stable intent for generated advice; free-form assessment advice is untrusted."""
     if _release_tuple(packet.current_release) is None:
         return "identify_current_release"
+    if (
+        packet.verdict == "unclear"
+        and packet.verification_errors
+        and all(
+            "customer-field read coverage is incomplete" in error
+            for error in packet.verification_errors
+        )
+    ):
+        return "verify_customer_coverage"
     if packet.verdict == "duplicate":
         return "review_duplicate_recommendation"
     if packet.verdict == "already_fixed":
@@ -957,6 +966,8 @@ def next_step_kind(packet: Packet) -> str:
 
 
 def _next_step(packet: Packet) -> str:
+    if next_step_kind(packet) == "verify_customer_coverage":
+        return "Retrieve the tenant field map and verify customer fields, labels and links before reviewing closure."
     if _usable_next_check(packet):
         check = packet.next_check
         return (
@@ -1052,36 +1063,34 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         return ""
     lines = [f"Re: {ref_link(ticket.key)} — {_linked_text(ticket.summary)}", ""]
     investigated = investigation_outcome(packet) not in ("not_recorded", "invalid")
-    plain_outcome = {
-        "requirements_satisfied_in_stated_scope": "every check passed, within the scope we looked at",
-        "requirement_violated": "a check failed",
-        "not_determined": "not settled",
-        "not_recorded": "not recorded",
-        "invalid": "invalid",
-    }
     if investigated:
+        # Keep the full scope, comparison history and per-source reasoning in the audit.
         record = packet.investigation
-        status_word = (
-            "complete" if record["status"] == "completed" else "stopped at a missing check"
+        requirements = record["requirements"]
+        decisive = next(
+            (item for item in requirements if item["result"] == "violated"), requirements[0]
         )
         lines += [
-            f"Investigation: {status_word} — {_linked_text(record['scope'])}",
-            "",
-            f"What the checks settled: {plain_outcome.get(investigation_outcome(packet), investigation_outcome(packet))} "
-            "(this is separate from whether to close the bug or post this comment).",
-            "",
-            f"What goes wrong: {_linked_text(record['mechanism'])}",
-            "",
-            "What we checked:",
+            f"Finding on {packet.current_release}: {_linked_text(decisive['observed'])}",
+            " ".join(ref_link(ref) for ref in decisive["refs"][:2]),
         ]
-        for requirement in record["requirements"]:
+        if record.get("blocker"):
+            lines.append(f"Still missing: {_linked_text(record['blocker'])}")
+        method = packet.validation.get("method")
+        if method:
+            lines.append(f"Validation method: {_linked_text(method)}.")
+        if packet.verdict == "duplicate":
+            lines.append(f"Canonical issue: {ref_link(packet.target)}")
+        elif packet.verdict == "already_fixed":
             lines.append(
-                f"- {requirement['result']}: {_linked_text(requirement['statement'])} — {_linked_text(requirement['observed'])} "
-                + "; ".join(ref_link(ref) for ref in requirement["refs"])
+                f"Fix in {packet.fix['release']}: {ref_link(packet.fix.get('pr') or packet.fix.get('commit', ''))}"
             )
-        if record["status"] == "blocked":
-            lines += ["", f"Still missing: {_linked_text(record['blocker'])}"]
-        lines.append("")
+        if method in {"code", "documentation", "dependency"}:
+            lines.append("This check used release artifacts. Runtime behavior was not exercised.")
+        if packet.verification_errors:
+            lines.append("Review hold: " + _linked_text("; ".join(packet.verification_errors)))
+        lines += ["", f"Verdict: {packet.verdict}", f"Recommended next step: {_next_step(packet)}"]
+        return "\n".join(lines)
     verdicts = {
         "duplicate": f"The reported failure duplicates {ref_link(packet.target)}.",
         "already_fixed": (
@@ -1096,10 +1105,6 @@ def recommendation_comment(packet: Packet, ticket: Ticket) -> str:
         "needs_repro": "Current-release behavior needs validation; the outcome is unknown.",
         "unclear": "The evidence is incomplete or conflicting; no definitive triage conclusion is established.",
     }
-    if investigated and packet.verdict == "unclear":
-        verdicts["unclear"] = (
-            "No close recommendation is confirmed; the findings and anything still missing are stated above."
-        )
     lines += [
         f"Verdict: {packet.verdict} — {verdicts[packet.verdict]}",
         "",
