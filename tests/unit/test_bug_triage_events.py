@@ -106,6 +106,38 @@ def test_patch_and_backport_check_without_changing_checkout(
             )
         ],
     )
+    issue = {
+        "key": event["key"],
+        "fields": {
+            "comment": {"total": 1, "comments": [{"id": "9", "body": "Startup fails on stable."}]}
+        },
+    }
+    (tmp_path / "issue.json").write_text(json.dumps([issue]))
+    event["commentExport"] = "issue.json"
+    event["commentReview"] = [
+        {
+            "id": "9",
+            "excerpt": "Startup fails",
+            "scope": "stable",
+            "observation": "Startup failure reproduced on stable.",
+            "impact": "moderate",
+        }
+    ]
+    if kind == "docs":
+        checks = {}
+        for field in ("behaviorCheck", "docsCheck"):
+            path = tmp_path / f"{field}.log"
+            path.write_text(f"Passed {field}")
+            checks[field] = {
+                "base": base,
+                "file": path.name,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        event["backports"][0]["guidance"] = {
+            "status": "verified_gap",
+            "basis": "Verified the affected behavior and missing guidance on stable.",
+            **checks,
+        }
     audit = tmp_path / "review/01-triage/audit"
     audit.mkdir(parents=True)
     # Keep a legacy docs-folder fixture alongside the new shared PR queue.
@@ -273,3 +305,44 @@ def test_branch_backport_decision(impact, workaround, expected):
     assert backport_decision(record)[0] == expected
     assert backport_decision({**record, "decision": "skip"})[0] == "skip"
     assert backport_decision({**record, "impactEvidence": ""})[0] == "undetermined"
+
+
+def test_comment_review_requires_full_thread_and_grounded_excerpts(tmp_path):
+    from bugtriage.events import evidenced_backport, reviewed_comments
+
+    path = tmp_path / "issue.json"
+    key = "RHDHBUGS-1"
+    thread = {"total": 1, "comments": [{"id": "7", "body": "It blocks startup on stable."}]}
+    path.write_text(json.dumps([{"key": key, "fields": {"comment": thread}}]))
+    row = {
+        "id": "7",
+        "scope": "stable",
+        "excerpt": "blocks startup",
+        "observation": "Blocks startup.",
+        "impact": "high",
+    }
+    event = {"commentExport": "issue.json", "commentReview": [row]}
+    seen = reviewed_comments(event, key, tmp_path)
+    record = {
+        "decision": "assess",
+        "branch": "stable",
+        "reason": "Supported and affected.",
+        "impact": "unknown",
+        "workaround": "costly",
+    }
+    assert evidenced_backport(record, seen, False, tmp_path)[0] == "propose"
+    assert (
+        evidenced_backport(record, [{**row, "scope": "older"}], False, tmp_path)[0]
+        == "human_review"
+    )
+    assert evidenced_backport(record, seen, True, tmp_path)[0] == "human_review"
+    assert (
+        reviewed_comments(
+            {**event, "commentReview": [{**row, "excerpt": "confirmed workaround"}]}, key, tmp_path
+        )
+        is None
+    )
+    thread["total"] = 2
+    path.write_text(json.dumps([{"key": key, "fields": {"comment": thread}}]))
+    assert reviewed_comments(event, key, tmp_path) is None
+    assert evidenced_backport(record, None, False, tmp_path)[0] == "human_review"

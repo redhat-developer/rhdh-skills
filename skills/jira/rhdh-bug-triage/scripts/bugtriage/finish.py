@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import quote
 
+from .comments import comment_footer
 from .events import required
 from .layout import refresh_review
 from .policy import CLOSE_ACTIONS, _linked_text, ref_link
@@ -173,6 +174,8 @@ def command_finish(args):
                             {"label": label, "path": target.relative_to(run.resolve()).as_posix()}
                         )
                 case["nextActions"].append(action)
+        if fix_link:
+            case["fixedNextStep"] = f"{ref_link(fix_link)} — {_linked_text(case['next'])}"
         original = packet.get("proposedComment")
         if original:
             outcome_field = "resolution" if "resolution" in case else "finding"
@@ -236,7 +239,7 @@ def command_finish(args):
             if not case.get("nextActions"):
                 bullets.append("- " + _linked_text(case["next"]))
             bullets.extend(f"- Review pull request: {ref_link(url)}" for url in pending_prs)
-            if fix_link or packet.get("verdict") == "duplicate":
+            if packet.get("verdict") == "duplicate":
                 bullets.append("- " + citation)
             tldr = _linked_text(case[outcome_field]) + " " + release_summary(packet, stage, run)
             if "featureRequest" in row:
@@ -258,14 +261,27 @@ def command_finish(args):
                     "### TL;DR",
                     tldr,
                     "### Next steps",
-                    "\n".join(bullets) or _linked_text(case["next"]),
-                    f"Triage reference: `{packet['commentPlan']['reference']}`.",
-                    "*rhdh-agentic-bug-triager · AI-generated. Check for accuracy.*",
+                    case.get("fixedNextStep") or "\n".join(bullets) or _linked_text(case["next"]),
+                    comment_footer(packet["commentPlan"]["reference"]),
                 )
             )
             case["delivery"] = (
                 "suppress" if packet["commentPlan"]["status"] == "suppress" else "review_required"
             )
+        observed = packet.get("status") or "Unknown"
+        transition = {"observed": observed, "applied": False}
+        if observed.casefold() == "in review":
+            transition["state"] = "already_in_review"
+        elif (
+            case.get("proposedComment")
+            and case["delivery"] != "suppress"
+            and stage != "blocked"
+            and observed != "Unknown"
+        ):
+            transition.update(state="proposed_after_comment", target="In Review")
+        else:
+            transition["state"] = "no_action"
+        case["jiraTransition"] = transition
         proofs[path] = data
         cases[key] = case
     if cases.keys() != findings.keys():

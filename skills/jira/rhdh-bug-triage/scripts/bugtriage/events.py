@@ -87,6 +87,80 @@ def proposal(event, dest, inputs, *, docs_only=False):
     return f"{required(event, 'repository')} {branch} at {sha}"
 
 
+def reviewed_comments(event, key, inputs):
+    """Verify the investigator read the complete thread and anchored each interpretation."""
+    if not event.get("commentExport") or not isinstance(event.get("commentReview"), list):
+        return None
+    source = inputs / event["commentExport"]
+    if not source.is_file():
+        return None
+    issues = [t for t in load_export(str(source)) if t.key == key]
+    if len(issues) != 1 or not issues[0].comments_complete:
+        return None
+    rows = event["commentReview"]
+    comments = {c.id: " ".join(c.body.split()) for c in issues[0].comments}
+    if len(comments) != len(issues[0].comments) or "" in comments:
+        return None
+    if len(rows) != len(comments) or {required(r, "id") for r in rows} != comments.keys():
+        return None
+    for row in rows:
+        if " ".join(required(row, "excerpt").split()) not in comments[row["id"]]:
+            return None
+        required(row, "scope")
+        required(row, "observation")
+    return rows
+
+
+def evidenced_backport(record, comments, docs, inputs):
+    gate = required(record, "decision")
+    if gate in {"skip", "undetermined"}:
+        action, reason = backport_decision(record)
+        return ("human_review" if action == "undetermined" else action), reason
+    if gate not in {"assess", "propose"}:
+        raise ValueError("invalid backport decision")
+    if comments is None:
+        return "human_review", "Complete verified Jira comment review unavailable."
+    branch = required(record, "branch")
+    matched = [row for row in comments if row["scope"] == branch]
+    if docs:
+        guidance = record.get("guidance", {})
+        if any(row.get("contradictsGuidance") for row in matched):
+            return "human_review", "Target-branch comment evidence conflicts with the guidance."
+        status = guidance.get("status")
+        reason = guidance.get("basis")
+        if status in {"already_covered", "not_applicable"} and reason:
+            return "skip", reason
+        if status != "verified_gap" or not reason or not record.get("base"):
+            return (
+                "human_review",
+                "Applicability or a documentation gap on this release is unverified.",
+            )
+        for field in ("behaviorCheck", "docsCheck"):
+            check = guidance.get(field) or {}
+            if check.get("base") != record["base"]:
+                return "human_review", "Check is missing or targets a different revision."
+            path = inputs / required(check, "file")
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != check.get(
+                "sha256"
+            ):
+                return "human_review", "The recorded release check is unavailable or has changed."
+        return "propose", reason
+    merged = dict(record)
+    for field in ("impact", "workaround"):
+        observed = {row[field] for row in matched if row.get(field) not in (None, "unknown")}
+        if not observed:
+            continue
+        if len(observed) > 1 or record.get(field) not in (None, "unknown", *observed):
+            return "human_review", f"Conflicting target-branch {field} evidence."
+        merged[field] = observed.pop()
+    if matched:
+        merged["impactEvidence"] = " ".join(
+            filter(None, [merged.get("impactEvidence"), *(r["observation"] for r in matched)])
+        )
+    action, reason = backport_decision(merged)
+    return ("human_review" if action == "undetermined" else action), reason
+
+
 def backport_decision(record):
     """Apply the branch eligibility gate before weighing impact and mitigation."""
     gate = required(record, "decision")
@@ -201,11 +275,21 @@ def dispatch(event, key, dest, inputs):
     decisions = event.get("backports")
     if not isinstance(decisions, list):
         raise ValueError("expected per-branch backport decisions")
+    comments = reviewed_comments(event, key, inputs) if decisions else []
+    comment_lines = []
+    if comments:
+        comment_lines.extend(["", "### Jira evidence", ""])
+        for comment in comments:
+            url = f"https://redhat.atlassian.net/browse/{key}?focusedCommentId={comment['id']}"
+            comment_lines.append(
+                f"- [Comment {comment['id']}]({url}) ({comment['scope']}): {comment['observation']}"
+            )
+    lines.extend(comment_lines)
     evaluated = []
     seen = {event["branch"]}
     for number, decision in enumerate(decisions):
         branch = required(decision, "branch")
-        action, reason = backport_decision(decision)
+        action, reason = evidenced_backport(decision, comments, docs_only, inputs)
         evaluated.append({"branch": branch, "decision": action, "reason": reason})
         if branch in seen:
             raise ValueError("invalid or duplicate backport decision")
@@ -224,7 +308,9 @@ def dispatch(event, key, dest, inputs):
             )
             (directory / "PROPOSAL.md").write_text(
                 f"# {event['title']} ({branch})\n\n{event['body']}\n\n"
-                f"Target: {branch} at {decision['base']}.\n{test_section(decision)}\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
+                f"Target: {branch} at {decision['base']}.\n\n{reason}\n"
+                + "\n".join(comment_lines)
+                + f"\n{test_section(decision)}\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
             )
     lines.extend(
         [test_section(event), "", "[Patch](change.patch) · [Verification record](VERIFY.md)"]
@@ -233,6 +319,7 @@ def dispatch(event, key, dest, inputs):
         dest / "proposal.json",
         {
             **{name: event.get(name) for name in ("repository", "branch", "kind", "title")},
+            "reviewedCommentIds": [row["id"] for row in comments or []],
             "backports": evaluated,
         },
     )

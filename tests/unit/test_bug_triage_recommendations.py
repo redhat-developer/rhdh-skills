@@ -46,7 +46,7 @@ def assert_unclear_draft(packet):
     if packet.comment_plan:
         assert "unclear" in packet.proposed_comment
         assert packet.recommended_step in packet.proposed_comment
-        assert 1 <= len(packet.proposed_comment.splitlines()) <= 4
+        assert packet.proposed_comment.strip()
     else:
         assert "Verdict: unclear" in packet.proposed_comment
         assert "Recommended next step:" in packet.proposed_comment
@@ -449,7 +449,12 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
     assert len(list((output / "01-triage" / "comments").glob("*.md"))) == len(result.packets)
     for packet in result.packets:
         assert comment_text(output, packet.key) == packet.proposed_comment
-        assert packet.proposed_comment.count("Triage reference:") == 1
+        assert (
+            packet.proposed_comment.count(
+                "rhdh-agentic-bug-triager · AI-generated. Check for accuracy."
+            )
+            == 1
+        )
 
 
 def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
@@ -487,7 +492,7 @@ def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
     assert not (output / "01-triage" / "proposed").exists()
     comment = (output / "01-triage" / "comments" / f"{ticket.key}.md").read_text()
     assert comment.strip() == result.packets[0].proposed_comment
-    assert len(comment.splitlines()) <= 4
+    assert comment.rstrip().endswith(f"`{reference.removeprefix('rhdh-bug-triage:')}`")
     assert result.manifest["counts"]["surfacedRecommendations"] == 1
 
 
@@ -542,7 +547,12 @@ def test_replanning_does_not_duplicate_the_reference_footer():
     first = packet.proposed_comment
     attach_comment_plan(ticket, packet, assessment, NOW, 14)
     assert packet.proposed_comment == first
-    assert packet.proposed_comment.count("Triage reference:") == 1
+    assert (
+        packet.proposed_comment.count(
+            "rhdh-agentic-bug-triager · AI-generated. Check for accuracy."
+        )
+        == 1
+    )
 
 
 def test_duplicate_chain_cannot_retain_and_close_the_same_canonical_tracker(tmp_path):

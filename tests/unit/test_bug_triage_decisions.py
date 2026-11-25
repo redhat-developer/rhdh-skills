@@ -635,7 +635,7 @@ def test_draft_visibility_is_independent_of_history_eligibility_and_footer_is_on
     attach_comment_plan(issue, packet, finding, NOW, 14)
     assert packet.proposed_comment == first
     assert packet.to_dict()["proposedComment"]
-    assert first.count("Triage reference:") == 1
+    assert first.count("rhdh-agentic-bug-triager · AI-generated. Check for accuracy.") == 1
 
 
 def test_changed_advice_requires_cooldown_and_cited_completion_even_with_history_review():

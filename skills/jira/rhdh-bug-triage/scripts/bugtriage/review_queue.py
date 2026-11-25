@@ -91,13 +91,25 @@ def refresh_review(output_dir: Path):
                     f"**{state}.** {finding}".rstrip(),
                 ]
             )
+            transition = current.get("jiraTransition", {})
+            if transition:
+                status = transition["observed"]
+                if transition["state"] == "proposed_after_comment":
+                    handoff = f"Observed **{status}**. Proposed move to **In Review** after the reviewed comment is posted and confirmed. Read-only preview."
+                elif transition["state"] == "already_in_review":
+                    handoff = f"Observed **{status}**. No transition needed."
+                else:
+                    handoff = f"Observed **{status}**. No transition proposed."
+                lines.extend(["", f"**Jira handoff.** {handoff}"])
             if current.get("verification"):
                 lines.extend(["", f"**Checks.** {current['verification']}"])
             if current.get("blocker"):
                 lines.extend(["", f"**Blocked on.** {current['blocker']}"])
             lines.extend(["", "**Who does what next**", ""])
             linked = set()
-            if current.get("nextActions"):
+            if current.get("fixedNextStep"):
+                lines.append(current["fixedNextStep"])
+            elif current.get("nextActions"):
                 for assignment in current["nextActions"]:
                     refs = []
                     for item in assignment.get("links", []):
@@ -144,7 +156,7 @@ def refresh_review(output_dir: Path):
                         f"01-triage/comments/{key}.md",
                     )
                 )
-            if stage == "existing_fix":
+            if stage == "existing_fix" and not current.get("fixedNextStep"):
                 fix = packet.get("fix") or {}
                 if fix.get("pr"):
                     actions.append(f"[Merged PR]({fix['pr']})")

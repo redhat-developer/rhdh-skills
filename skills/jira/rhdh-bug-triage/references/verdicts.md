@@ -94,7 +94,8 @@ Evidence: [short causal comparison with links]
 Validation: [exact release; method; what was observed — or what is unknown]
 Owner: [assignee/team if known; never invented]
 Recommended next step: [one evidence-backed step]
-Triage reference: [stable generated reference]
+rhdh-agentic-bug-triager · AI-generated. Check for accuracy.
+`v1:<stable fingerprint>`
 ```
 
 Duplicate and fixed drafts keep their named proof and the evidence score

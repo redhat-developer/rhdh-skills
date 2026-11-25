@@ -95,10 +95,23 @@ def test_first_comment_is_only_a_local_proposal(case):
     ticket, packet, assessment = case
     attach_comment_plan(ticket, packet, assessment, NOW, 14)
     assert packet.comment_plan["status"] == "propose"
-    assert MARKER_PREFIX in packet.proposed_comment
+    assert packet.proposed_comment.endswith(
+        f"`v1:{packet.comment_plan['reference'].split(':')[-1]}`"
+    )
     # Running a dry run does not become posting history.
     assert ticket.comments == []
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "propose"
+
+
+@pytest.mark.parametrize("attributed", [False, True])
+def test_short_reference_requires_triager_attribution(case, attributed):
+    ticket, packet, assessment = case
+    attach_comment_plan(ticket, packet, assessment, NOW, 14)
+    draft = packet.proposed_comment
+    body = draft if attributed else draft.splitlines()[-1]
+    ticket.comments.append(Comment(id="12", body=body, created=NOW.isoformat()))
+    plan = plan_comment(ticket, packet, assessment, NOW)
+    assert (plan["reason"] == "The same recommendation is already on Jira.") is attributed
 
 
 def test_identical_recommendation_stays_suppressed_even_after_completion(case):

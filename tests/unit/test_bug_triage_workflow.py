@@ -756,7 +756,11 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         "### Next steps\n\n- **Reporter** — Supply the missing identity fixture: [Fixture log](../../01-triage/audit/followthrough/"
         in draft
     )
-    assert draft.rstrip().endswith("*rhdh-agentic-bug-triager · AI-generated. Check for accuracy.*")
+    assert (
+        draft.splitlines()[-2].rstrip()
+        == "rhdh-agentic-bug-triager · AI-generated. Check for accuracy."
+    )
+    assert draft.splitlines()[-1].startswith("`v1:")
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
     assert "@Fixture Reporter, please open a feature request for a new filter option" in draft
@@ -764,6 +768,8 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         "id": "fixture-account",
         "text": "@Fixture Reporter",
     }
+    assert case["jiraTransition"]["state"] == "no_action" and not case["jiraTransition"]["applied"]
+    assert "**Jira handoff.**" in (review / "START-HERE.md").read_text()
     assert case["stage"] == "blocked" and case["blocker"] == row["blocker"]
     assert (review / case["evidence"]).read_bytes() == log.read_bytes()
     assert finish([row]) == 0 and (review / "run.json").read_bytes() == completed
@@ -780,3 +786,25 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     )
     packet_file.write_text(json.dumps(audit))
     assert finish([{**row, "stage": "existing_fix"}]) == 2
+    packet["fix"]["released"] = True
+    packet.update(
+        verdict="already_fixed",
+        validation={"result": "resolved"},
+        evidence=[
+            {"type": "pr", "ref": packet["fix"]["pr"], "strength": "direct"},
+            {"type": "release_note", "ref": "https://example.test/release", "strength": "direct"},
+        ],
+        proof={"releaseContains": {"refs": ["https://example.test/release"]}},
+    )
+    packet_file.write_text(json.dumps(audit))
+    assert (
+        finish([{**row, "stage": "existing_fix", "next": "Check customer fields before closure."}])
+        == 0
+    )
+    draft = (review / f"01-triage/comments/{key}.md").read_text()
+    line = draft.split("### Next steps\n\n")[1].split("\n\n")[0]
+    assert (
+        line
+        == "[PR #1](https://github.com/example/fixture/pull/1) — Check customer fields before closure."
+    )
+    assert line in (review / "START-HERE.md").read_text()

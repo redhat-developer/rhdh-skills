@@ -26,7 +26,14 @@ from .policy import (
 
 DEFAULT_COOLDOWN_DAYS = 14
 MARKER_PREFIX = "rhdh-bug-triage:v1:"
-MARKER_RE = re.compile(re.escape(MARKER_PREFIX) + r"([a-f0-9]{64})\b")
+ATTRIBUTION = "rhdh-agentic-bug-triager · AI-generated. Check for accuracy."
+MARKER_RE = re.compile(
+    rf"(?:{re.escape(MARKER_PREFIX)}|{re.escape(ATTRIBUTION)}\s+`?v1:)([a-f0-9]{{64}})\b"
+)
+
+
+def comment_footer(reference: str) -> str:
+    return f"{ATTRIBUTION}  \n`{reference.removeprefix('rhdh-bug-triage:')}`"
 
 
 def _history_review(ticket: Ticket, assessment: Assessment | None) -> dict | None:
@@ -154,7 +161,10 @@ def plan_comment(
         )
     body = packet.proposed_comment
     expected = recommendation_comment(packet, ticket)
-    if body.partition("\nTriage reference:")[0].rstrip() not in {expected, short_draft(packet)}:
+    unsigned = body.removesuffix(comment_footer(marker)).removesuffix(
+        f"Triage reference: `{marker}`."
+    )
+    if unsigned.rstrip() not in {expected, short_draft(packet)}:
         return decision(
             "review_required", "Draft does not match the verified recommendation and proof."
         )
@@ -299,4 +309,4 @@ def attach_comment_plan(
     # writer must preserve it through Markdown-to-ADF conversion and readback.
     if packet.proposed_comment:
         packet.proposed_comment = short_draft(packet)
-        packet.proposed_comment += f"\nTriage reference: `{packet.comment_plan['reference']}`."
+        packet.proposed_comment += "\n\n" + comment_footer(packet.comment_plan["reference"])
