@@ -1341,17 +1341,12 @@ write_go_mod_versions() {
 
 go_version_from_toolset_image() {
     local image="$1" env_version
-    # Prefer image config Env: go-toolset images carry GO_MAJOR/MINOR/PATCH_VERSION
-    # (and VERSION), readable with skopeo — no container runtime needed, so this
-    # works on CI runner pods where podman cannot start containers (RHIDP-18915).
-    env_version=$(skopeo inspect --no-tags "docker://${image}" 2>/dev/null | jq -r '
-        (.Env // []) as $e
-        | ([$e[] | select(startswith("GO_MAJOR_VERSION="))] | .[0] // "" | sub("^GO_MAJOR_VERSION=";"")) as $maj
-        | ([$e[] | select(startswith("GO_MINOR_VERSION="))] | .[0] // "" | sub("^GO_MINOR_VERSION=";"")) as $min
-        | ([$e[] | select(startswith("GO_PATCH_VERSION="))] | .[0] // "" | sub("^GO_PATCH_VERSION=";"")) as $pat
-        | if ($maj != "" and $min != "" and $pat != "") then "\($maj).\($min).\($pat)"
-          else ([$e[] | select(startswith("VERSION="))] | .[0] // "" | sub("^VERSION=";""))
-          end')
+    # Prefer image config Env: go-toolset images carry VERSION=<go X.Y.Z>,
+    # readable with skopeo — no container runtime needed, so this works on CI
+    # runner pods where podman cannot start containers (RHIDP-18915).
+    env_version=$(skopeo inspect --no-tags "docker://${image}" 2>/dev/null \
+        | jq -r '.Env[]? | select(startswith("VERSION="))' \
+        | sed -r -e "s/VERSION=//")
     if [[ "${env_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         printf '%s\n' "${env_version}"
         return 0
