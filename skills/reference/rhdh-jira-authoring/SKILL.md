@@ -16,8 +16,9 @@ compatibility: "No tools required. The external grilling skill is a prerequisite
 # RHDH Jira authoring
 
 The material that decides whether an issue is worth reading six months later.
-Two skills use it — `/rhdh-jira-create` while drafting and `/rhdh-jira-refine`
-while auditing — so it lives here rather than in either of them.
+Three skills use it — `/rhdh-jira-create` while drafting,
+`/rhdh-jira-refine` while auditing, and `/rhdh-jira-lint` while remediating
+bounded hygiene findings — so it lives here rather than in any one of them.
 
 This skill produces text and judgements. It never runs a Jira command and never
 performs a write.
