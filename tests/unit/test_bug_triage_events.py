@@ -78,6 +78,7 @@ def test_patch_and_backport_check_without_changing_checkout(
         patch="change.patch",
         patchHash=hashlib.sha256(patch).hexdigest(),
         verification="Title fixture checked",
+        testCommands=["git diff --check"],
     )
     event = dict(
         **change,
@@ -93,7 +94,17 @@ def test_patch_and_backport_check_without_changing_checkout(
         body="Restore title rendering",
         docsImpact="No public interface change",
         maintenanceEvidence="stable supported",
-        backports=[dict(**change, branch="stable", decision="propose", reason="Same component")],
+        backports=[
+            dict(
+                **change,
+                branch="stable",
+                decision="assess",
+                reason="Same component",
+                impact="moderate",
+                workaround="costly",
+                impactEvidence="Rebuilding the affected component interrupts service.",
+            )
+        ],
     )
     audit = tmp_path / "review/01-triage/audit"
     audit.mkdir(parents=True)
@@ -123,6 +134,13 @@ def test_patch_and_backport_check_without_changing_checkout(
     assert consume(tmp_path, event) == (0 if accepted else 2)
     monkeypatch.delenv("GIT_DIR")
     assert len(list((tmp_path / "run").rglob("change.patch"))) == (2 if accepted else 0)
+    if accepted:
+        drafts = list((tmp_path / "run").rglob("PROPOSAL.md"))
+        assert len(drafts) == 2
+        assert all(
+            "### How this was tested\n\n```bash\ngit diff --check\n```" in draft.read_text()
+            for draft in drafts
+        )
     assert git("status", "--porcelain") == status
     assert git("diff", "--cached") == ""
 
@@ -229,3 +247,29 @@ def test_webhook_replay_retains_only_routing_fields(tmp_path):
         "key": "RHDHSUPP-2",
         "revision": "revision-1",
     }
+
+
+@pytest.mark.parametrize(
+    ("impact", "workaround", "expected"),
+    [
+        ("low", "easy_verified", "skip"),
+        ("moderate", "easy_verified", "skip"),
+        ("moderate", "costly", "propose"),
+        ("high", "none_verified", "propose"),
+        ("high", "easy_verified", "undetermined"),
+        ("unknown", "unknown", "undetermined"),
+    ],
+)
+def test_branch_backport_decision(impact, workaround, expected):
+    from bugtriage.events import backport_decision
+
+    record = dict(
+        decision="assess",
+        reason="Maintained affected branch",
+        impact=impact,
+        workaround=workaround,
+        impactEvidence="Recorded scope and mitigation check",
+    )
+    assert backport_decision(record)[0] == expected
+    assert backport_decision({**record, "decision": "skip"})[0] == "skip"
+    assert backport_decision({**record, "impactEvidence": ""})[0] == "undetermined"

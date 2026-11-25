@@ -686,6 +686,11 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     packet_file = review / "01-triage/audit/packets.json"
     audit = json.loads(packet_file.read_text())
     key = audit["packets"][0]["key"]
+    audit["packets"][0]["reporter"] = {
+        "displayName": "Fixture Reporter",
+        "accountId": "fixture-account",
+    }
+    packet_file.write_text(json.dumps(audit))
     log = tmp_path / "fixture.log"
     log.write_text("Attempted UI replay; fixture missing identity data.\n")
     row = dict(
@@ -693,6 +698,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         stage="blocked",
         finding="Filter behavior is under investigation.",
         resolution="The local replay is blocked on the missing identity fixture.",
+        featureRequest="a new filter option",
         verification="Checked the local reproduction fixture.",
         next="Replay with the missing identity.",
         evidence=log.name,
@@ -744,15 +750,20 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     )
     assert row["resolution"] in (review / "START-HERE.md").read_text()
     draft = (review / f"01-triage/comments/{key}.md").read_text()
-    assert f"### Outcome\n\n{row['resolution']}\n\n### Checks\n\n{row['verification']}" in draft
+    assert f"### TL;DR\n\n{row['resolution']} Exact fix version unconfirmed." in draft
+    assert "### How this was tested" not in draft
     assert (
-        "\n\n### Who does what next\n\n- **Reporter** — Supply the missing identity fixture."
+        "### Next steps\n\n- **Reporter** — Supply the missing identity fixture: [Fixture log](../../01-triage/audit/followthrough/"
         in draft
     )
-    assert "Local files: [Fixture log](../../01-triage/audit/followthrough/" in draft
     assert draft.rstrip().endswith("*rhdh-agentic-bug-triager · AI-generated. Check for accuracy.*")
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
+    assert "@Fixture Reporter, please open a feature request for a new filter option" in draft
+    assert case["featureRequesterMention"]["attrs"] == {
+        "id": "fixture-account",
+        "text": "@Fixture Reporter",
+    }
     assert case["stage"] == "blocked" and case["blocker"] == row["blocker"]
     assert (review / case["evidence"]).read_bytes() == log.read_bytes()
     assert finish([row]) == 0 and (review / "run.json").read_bytes() == completed

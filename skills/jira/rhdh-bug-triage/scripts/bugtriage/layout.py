@@ -815,7 +815,17 @@ def write_phased_output(
             "generatedAt": generated_at,
             "currentRelease": current_release,
             "meta": meta,
-            "packets": [packet.to_dict() for packet in packets],
+            "packets": [
+                {
+                    **packet.to_dict(),
+                    "fixVersions": tickets[packet.key].fix_versions,
+                    "reporter": {
+                        "displayName": tickets[packet.key].reporter,
+                        "accountId": tickets[packet.key].reporter_account_id,
+                    },
+                }
+                for packet in packets
+            ],
         },
     )
 

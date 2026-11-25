@@ -18,6 +18,46 @@ def atomic_write(path, data):
     Path(target.name).replace(path)
 
 
+def release_summary(packet, stage, run):
+    if stage == "existing_fix":
+        return f"Verified in RHDH {packet['currentRelease']}."
+    versions = packet.get("fixVersions", [])
+    release = (
+        "Jira fix version: " + ", ".join(versions) + "."
+        if versions
+        else "Exact fix version unconfirmed."
+    )
+    if stage != "patch":
+        return release
+    bases, ports, skipped, pending = set(), set(), set(), set()
+    for receipt in (run / "02-fixes/events" / packet["key"]).glob("*/proposal.json"):
+        proposal = json.loads(receipt.read_bytes())
+        if proposal.get("branch"):
+            bases.add(proposal["branch"])
+        skipped.update(
+            item["branch"] for item in proposal.get("backports", []) if item["decision"] == "skip"
+        )
+        pending.update(
+            item["branch"]
+            for item in proposal.get("backports", [])
+            if item["decision"] == "undetermined"
+        )
+        ports.update(
+            item["branch"]
+            for item in proposal.get("backports", [])
+            if item["decision"] == "propose"
+        )
+    for label, branches in (
+        ("Proposed target", bases),
+        ("Proposed backport", ports),
+        ("Backport pending assessment", pending - ports),
+        ("Backport skipped", skipped - ports - pending),
+    ):
+        if branches:
+            release += f" {label}: " + ", ".join(sorted(branches)) + "."
+    return release
+
+
 def command_finish(args):
     run = Path(args.out)
     source = Path(args.input)
@@ -108,6 +148,8 @@ def command_finish(args):
             case["nextActions"] = []
             for assignment in assignments:
                 action = {field: required(assignment, field) for field in ("owner", "action")}
+                if "pr" in assignment:
+                    action["pr"] = required(assignment, "pr")
                 if "links" in assignment:
                     links = assignment["links"]
                     if not isinstance(links, list):
@@ -169,33 +211,53 @@ def command_finish(args):
                 for url in public_prs
             ):
                 raise ValueError(f"{key} reviewPRs must be directly evidenced GitHub pull requests")
-            if public_prs:
-                citation = " · ".join(ref_link(url) for url in dict.fromkeys(public_prs))
-                if fix_link and fix_link not in public_prs:
-                    citation += " · Fix: " + ref_link(fix_link)
-            elif stage == "patch":
-                citation = "Local proposal only. " + citation
             bullets = []
+            pending_prs = dict.fromkeys(public_prs)
             for assignment in case.get("nextActions", []):
-                bullet = f"- **{_linked_text(assignment['owner'])}** — {_linked_text(assignment['action'])}"
-                links = [
-                    f"[{_linked_text(item['label'])}](../../{quote(item['path'])})"
-                    for item in assignment.get("links", [])
-                    if item["path"] != f"01-triage/comments/{key}.md"
-                ]
-                if links:
-                    bullet += " Local files: " + " · ".join(links)
-                bullets.append(bullet)
+                text = _linked_text(assignment["action"]).rstrip(".")
+                owner = _linked_text(assignment["owner"])
+                pr = assignment.get("pr")
+                if pr:
+                    if pr not in public_prs:
+                        raise ValueError(f"{key} action PR must be a verified reviewPR")
+                    pending_prs.pop(pr, None)
+                    target = ref_link(pr)
+                else:
+                    links = [
+                        item
+                        for item in assignment.get("links", [])
+                        if item["path"] != f"01-triage/comments/{key}.md"
+                    ]
+                    target = ""
+                    if links:
+                        item = links[0]
+                        target = f"[{_linked_text(item['label'])}](../../{quote(item['path'])})"
+                bullets.append(f"- **{owner}** — {text}" + (f": {target}" if target else "."))
+            if not case.get("nextActions"):
+                bullets.append("- " + _linked_text(case["next"]))
+            bullets.extend(f"- Review pull request: {ref_link(url)}" for url in pending_prs)
+            if fix_link or packet.get("verdict") == "duplicate":
+                bullets.append("- " + citation)
+            tldr = _linked_text(case[outcome_field]) + " " + release_summary(packet, stage, run)
+            if "featureRequest" in row:
+                capability = required(row, "featureRequest")
+                reporter = packet.get("reporter") or {}
+                account = reporter.get("accountId")
+                name = reporter.get("displayName")
+                recipient = "Reporter"
+                if account and name:
+                    recipient = "@" + _linked_text(name)
+                    case["featureRequesterMention"] = {
+                        "type": "mention",
+                        "attrs": {"id": account, "text": "@" + name},
+                    }
+                tldr += f" {recipient}, please open a feature request for {_linked_text(capability)} if you still need it."
             case["proposedComment"] = "\n\n".join(
                 (
                     f"**Re: {ref_link(key)}** · {_linked_text(packet['summary'])}",
-                    "### Outcome",
-                    _linked_text(case[outcome_field]),
-                    "### Checks",
-                    _linked_text(case["verification"]),
-                    "### Review",
-                    citation,
-                    "### Who does what next",
+                    "### TL;DR",
+                    tldr,
+                    "### Next steps",
                     "\n".join(bullets) or _linked_text(case["next"]),
                     f"Triage reference: `{packet['commentPlan']['reference']}`.",
                     "*rhdh-agentic-bug-triager · AI-generated. Check for accuracy.*",

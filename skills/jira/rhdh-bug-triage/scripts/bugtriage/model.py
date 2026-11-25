@@ -358,6 +358,7 @@ class Ticket:
     affects_versions: List[str] = field(default_factory=list)
     assignee: str = ""
     reporter: str = ""
+    reporter_account_id: str = ""
     comments: List[Comment] = field(default_factory=list)
     links: List[Link] = field(default_factory=list)
     pr_urls: List[str] = field(default_factory=list)
@@ -471,6 +472,9 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
         affects_versions_ambiguous=versions_ambiguous,
         assignee=as_name(_first(payload, "assignee")),
         reporter=as_name(_first(payload, "reporter")),
+        reporter_account_id=as_text(payload["reporter"].get("accountId"))
+        if isinstance(payload.get("reporter"), dict)
+        else "",
         comments=comments,
         comments_complete=comments_complete,
         comments_fetched=comments_fetched,

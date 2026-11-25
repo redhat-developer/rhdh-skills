@@ -87,6 +87,49 @@ def proposal(event, dest, inputs, *, docs_only=False):
     return f"{required(event, 'repository')} {branch} at {sha}"
 
 
+def backport_decision(record):
+    """Apply the branch eligibility gate before weighing impact and mitigation."""
+    gate = required(record, "decision")
+    reason = required(record, "reason")
+    if gate in {"skip", "undetermined"}:
+        return gate, reason
+    if gate not in {"assess", "propose"}:
+        raise ValueError("invalid backport decision")
+    impact = record.get("impact", "unknown")
+    workaround = record.get("workaround", "unknown")
+    if impact not in {"low", "moderate", "high", "unknown"} or workaround not in {
+        "easy_verified",
+        "costly",
+        "none_verified",
+        "unknown",
+    }:
+        raise ValueError("invalid branch impact or workaround")
+    basis = record.get("impactEvidence")
+    if not isinstance(basis, str) or not basis.strip():
+        return "undetermined", f"{reason} Branch impact and workaround evidence needed."
+    if impact == "low" or (impact == "moderate" and workaround == "easy_verified"):
+        action = "skip"
+    elif impact in {"moderate", "high"} and workaround in {"costly", "none_verified"}:
+        action = "propose"
+    else:
+        action = "undetermined"
+    return action, f"{reason} Impact: {impact}. Workaround: {workaround}. {basis}"
+
+
+def test_section(record):
+    """Render the investigator's recorded commands as text; never execute them."""
+    lines = ["", "### How this was tested", ""]
+    commands = record.get("testCommands", [])
+    if not isinstance(commands, list) or not all(
+        isinstance(c, str) and c.strip() for c in commands
+    ):
+        raise ValueError("testCommands must be a list of recorded commands")
+    if commands:
+        lines.extend(["```bash", *commands, "```", ""])
+    lines.append(required(record, "verification"))
+    return "\n".join(lines)
+
+
 def dispatch(event, key, dest, inputs):
     kind = event["type"]
     if kind == "bug.updated":
@@ -158,14 +201,16 @@ def dispatch(event, key, dest, inputs):
     decisions = event.get("backports")
     if not isinstance(decisions, list):
         raise ValueError("expected per-branch backport decisions")
+    evaluated = []
     seen = {event["branch"]}
     for number, decision in enumerate(decisions):
         branch = required(decision, "branch")
-        action = required(decision, "decision")
-        if branch in seen or action not in {"propose", "skip", "undetermined"}:
+        action, reason = backport_decision(decision)
+        evaluated.append({"branch": branch, "decision": action, "reason": reason})
+        if branch in seen:
             raise ValueError("invalid or duplicate backport decision")
         seen.add(branch)
-        lines.append(f"- {branch}: {action}. {required(decision, 'reason')}")
+        lines.append(f"- {branch}: {action}. {reason}")
         if action == "propose":
             directory = dest / "backports" / str(number + 1)
             directory.mkdir(parents=True)
@@ -177,13 +222,18 @@ def dispatch(event, key, dest, inputs):
                     docs_only=docs_only,
                 )
             )
+            (directory / "PROPOSAL.md").write_text(
+                f"# {event['title']} ({branch})\n\n{event['body']}\n\n"
+                f"Target: {branch} at {decision['base']}.\n{test_section(decision)}\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
+            )
+    lines.extend(
+        [test_section(event), "", "[Patch](change.patch) · [Verification record](VERIFY.md)"]
+    )
     write_json(
         dest / "proposal.json",
         {
             **{name: event.get(name) for name in ("repository", "branch", "kind", "title")},
-            "backports": [
-                {"branch": item["branch"], "decision": item["decision"]} for item in decisions
-            ],
+            "backports": evaluated,
         },
     )
     (dest / "PROPOSAL.md").write_text("\n".join(lines) + "\n")
