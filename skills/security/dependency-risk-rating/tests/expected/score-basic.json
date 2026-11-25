@@ -1,0 +1,125 @@
+{
+  "overall": {
+    "band": "HIGH",
+    "score": 10,
+    "score100": 100,
+    "confidence": "high",
+    "testConfidence": "unknown",
+    "recommendation": "Hold - do not merge without investigation: tiny-evil-lib: major version bump; published 0.2 days ago (< 3d); only 412 downloads/week. Test coverage is unknown; consider a manual smoke test.",
+    "escalations": [],
+    "drivers": [
+      "tiny-evil-lib: major version bump; published 0.2 days ago (< 3d); only 412 downloads/week"
+    ]
+  },
+  "counts": {
+    "total": 3,
+    "direct": 3,
+    "added": 0,
+    "removed": 0,
+    "major": 2,
+    "minor": 0,
+    "patch": 1,
+    "other": 0
+  },
+  "skipped": {
+    "removedPackages": 0,
+    "lightAnalysis": 0,
+    "notAnalyzed": 0
+  },
+  "packages": [
+    {
+      "name": "lodash",
+      "from": "4.17.20",
+      "to": "4.17.21",
+      "direct": true,
+      "analyzed": "detailed",
+      "score": 0,
+      "score100": 0,
+      "band": "LOW",
+      "reasons": [
+        {
+          "label": "fixes known vulnerabilities: GHSA-35jh-r3h4-6jhm",
+          "points": -2
+        },
+        {
+          "label": "changelog: bugfixes only",
+          "points": -1
+        }
+      ],
+      "flags": [],
+      "dataGaps": []
+    },
+    {
+      "name": "tiny-evil-lib",
+      "from": "1.4.2",
+      "to": "2.0.0",
+      "direct": true,
+      "analyzed": "detailed",
+      "score": 10,
+      "score100": 100,
+      "band": "HIGH",
+      "reasons": [
+        {
+          "label": "major version bump",
+          "points": 3
+        },
+        {
+          "label": "published 0.2 days ago (< 3d)",
+          "points": 3
+        },
+        {
+          "label": "only 412 downloads/week",
+          "points": 2
+        },
+        {
+          "label": "adds an install script (pre/post/install)",
+          "points": 4
+        },
+        {
+          "label": "published by a different npm user than the previous version",
+          "points": 2
+        },
+        {
+          "label": "changelog: significant changes",
+          "points": 2
+        }
+      ],
+      "flags": [],
+      "dataGaps": []
+    },
+    {
+      "name": "@red-hat-developer-hub/plugin-utils",
+      "from": "1.2.0",
+      "to": "2.0.0",
+      "direct": true,
+      "analyzed": "detailed",
+      "score": 2,
+      "score100": 20,
+      "band": "LOW",
+      "reasons": [
+        {
+          "label": "major bump, but only drops EOL Node.js support",
+          "points": 1
+        },
+        {
+          "label": "published 0.7 days ago (< 3d)",
+          "points": 3
+        },
+        {
+          "label": "3,500 downloads/week",
+          "points": 1
+        },
+        {
+          "label": "has npm provenance attestation",
+          "points": -1
+        }
+      ],
+      "flags": [
+        "trusted-cap"
+      ],
+      "dataGaps": []
+    }
+  ],
+  "errors": [],
+  "backstageRelease": null
+}

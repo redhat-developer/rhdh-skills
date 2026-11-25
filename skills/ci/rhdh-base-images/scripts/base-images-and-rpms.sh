@@ -20,6 +20,9 @@ ANALYZE=0
 ALLOW_DIRTY=0
 CATALOG_BRANCH_FOR=""
 BASE_IMAGE_ARGS=(--pr --no-push)
+STATUS_FILE=""
+FAILURES=0
+CURRENT_KIND=""
 
 GITLAB_SCRIPTS_BASE="https://gitlab.cee.redhat.com/rhidp/rhdh/-/raw"
 CACHE_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/base-images-and-rpms"
@@ -39,6 +42,8 @@ Required (update mode):
 Optional paths (fetch/install when omitted):
   --update-base-images-script PATH   Path to updateBaseImages.sh (needs createPR.sh alongside)
   --rpm-lockfile-prototype PATH      Path to rpm-lockfile-prototype binary
+  --status-file PATH        Append `kind|branch|component|fail|detail` lines for
+                            component failures (exit code is 1 when any fail)
 
 Repo selection (default: all three under --parent-dir, or current directory if it matches one repo):
   --parent-dir PATH         Directory containing local clones (e.g. ~/RHDH/)
@@ -76,6 +81,18 @@ log() {
 
 warn() {
     echo "[WARN] $*" >&2
+}
+
+# Record a component failure (RHIDP-18915): count it for the final exit code and,
+# when the caller passed --status-file, append a pipe-delimited line
+# `kind|branch|component|fail|detail` the caller can use to autoclose
+# incomplete PRs (base-image bump without matching RPM lock / node headers).
+status_fail() {
+    # status_fail <repo_kind> <branch> <component> <detail>
+    FAILURES=$((FAILURES + 1))
+    warn "$4 ($3 failed for $1 @ $2)"
+    [[ -n "${STATUS_FILE}" ]] || return 0
+    printf '%s|%s|%s|fail|%s\n' "$1" "$2" "$3" "$4" >> "${STATUS_FILE}"
 }
 
 SKILL_MD_URL="https://github.com/redhat-developer/rhdh-skills/blob/main/skills/ci/rhdh-base-images/SKILL.md"
@@ -319,8 +336,11 @@ resolve_rpm_lockfile_prototype() {
     fi
     log "Installing rpm-lockfile-prototype to ${HOME}/.local/bin"
     mkdir -p "${HOME}/.local/bin"
+    # Suppress pip's stdout as well: callers capture this function's stdout
+    # into RPM_TOOL, and pip's "Collecting …" progress would corrupt the
+    # variable into an unexecutable multi-line command name (RHIDP-18915).
     python3 -m pip install --user \
-        https://github.com/konflux-ci/rpm-lockfile-prototype/archive/refs/heads/main.zip 2>/dev/null
+        https://github.com/konflux-ci/rpm-lockfile-prototype/archive/refs/heads/main.zip >/dev/null 2>&1
     [[ -x "${HOME}/.local/bin/rpm-lockfile-prototype" ]] \
         || die "rpm-lockfile-prototype install failed; pass --rpm-lockfile-prototype PATH"
     echo "${HOME}/.local/bin/rpm-lockfile-prototype"
@@ -409,6 +429,13 @@ open_automation_pr_in_browser() {
 # lockfile is still valid; never surface those lines to the agent.
 filter_rpm_lockfile_source_warnings() {
     grep -viE -- 'no sources found for |no matching sources' || true
+}
+
+# Last non-empty line of filtered rpm-lockfile-prototype stderr, flattened to
+# one line and safe for the pipe-delimited status file. This is the actual
+# error (e.g. a skopeo CalledProcessError), not just "it failed" (RHIDP-18915).
+rpm_lockfile_failure_reason() {
+    grep -v '^[[:space:]]*$' | tail -n 1 | tr '\n' ' ' | tr -d '|' | cut -c1-200 || true
 }
 
 # Product life cycle behind
@@ -571,6 +598,15 @@ update_rpm_lockfile() {
     local -a proto_cmd=()
     containerfile=$(rpm_containerfile_for "${repo_dir}" "${kind}" "${branch}")
 
+    # Guard (RHIDP-18915): a ":tag@" ref with an empty digest makes
+    # rpm-lockfile-prototype die with a cryptic "Unknown format for image
+    # specification" error. Refuse to regenerate the lockfile and say so.
+    if grep -En '@([[:space:]]|$)' "${repo_dir}/${containerfile}" >/dev/null; then
+        status_fail "${kind}" "${branch}" rpm_lock \
+            "invalid image ref ending in '@' in ${containerfile}; fix the FROM line before regenerating rpms.lock.yaml"
+        return 0
+    fi
+
     [[ -f "${repo_dir}/${containerfile}" ]] || die "${repo_dir}: missing ${containerfile}"
     [[ -f "${repo_dir}/rpms.in.yaml" ]] || die "${repo_dir}: missing rpms.in.yaml"
 
@@ -590,15 +626,25 @@ update_rpm_lockfile() {
     rpm_err=$(mktemp)
     rpm_rc=0
     read -r -a proto_cmd <<< "${proto_args}"
-    "${rpm_tool}" "${proto_cmd[@]}" 2>"${rpm_err}" || rpm_rc=$?
+    local attempt reason
+    # Transient registry/skopeo failures (e.g. arm64 blob copy) are common
+    # enough to retry once before recording a component failure (RHIDP-18915).
+    for attempt in 1 2; do
+        rpm_rc=0
+        "${rpm_tool}" "${proto_cmd[@]}" 2>"${rpm_err}" || rpm_rc=$?
+        [[ ${rpm_rc} -eq 0 ]] && break
+        [[ ${attempt} -eq 1 ]] && warn "rpm-lockfile-prototype failed (attempt 1 of 2); retrying"
+    done
     filter_rpm_lockfile_source_warnings <"${rpm_err}" >&2
-    rm -f "${rpm_err}"
     if [[ ${rpm_rc} -ne 0 ]]; then
-        warn "rpm-lockfile-prototype failed for ${repo_dir}; keeping existing rpms.lock.yaml"
+        reason=$(rpm_lockfile_failure_reason <"${rpm_err}")
+        status_fail "${kind}" "${branch}" rpm_lock "rpm-lockfile-prototype failed (${reason:-exit ${rpm_rc}}); keeping existing rpms.lock.yaml"
         git checkout -- rpms.lock.yaml rpms.in.yaml 2>/dev/null || true
+        rm -f "${rpm_err}"
         popd >/dev/null
         return 0
     fi
+    rm -f "${rpm_err}"
     commit_push_rpm_lockfile "${branch}"
     popd >/dev/null
 }
@@ -679,8 +725,24 @@ commit_push_paths() {
 
     git commit -s -m "${message}"
     if ! git push -u origin "${push_branch}"; then
-        warn "git push failed for origin/${push_branch}; commit remains local"
-        return 0
+        # A previous run can have pushed to this bot branch against an older main,
+        # so the push is rejected as non-fast-forward. Rebasing is wrong here:
+        # both sides edit the same generated lines (builder pins, release bumps,
+        # PipelineRun params), a conflicted rebase leaves the checkout unusable
+        # for the rest of the run, and a fresh MR would be opened against a
+        # branch that still carries stale commits. This branch is bot-owned and
+        # disposable, and this run just recomputed every change against current
+        # ${branch}: replace the tip. The lease keeps this from touching anything
+        # that is not the ref we just fetched.
+        if [[ "${push_branch}" == chore/automated-* ]] \
+            && git fetch -q origin "${push_branch}" \
+            && git push --force-with-lease=refs/heads/"${push_branch}":"$(git rev-parse "refs/remotes/origin/${push_branch}")" \
+                -u origin "${push_branch}"; then
+            log "Pushed ${message} to origin/${push_branch} (replaced a previous run's commits)"
+        else
+            status_fail "${CURRENT_KIND:-unknown}" "${branch}" push "git push failed for origin/${push_branch}; commit remains local"
+            return 0
+        fi
     fi
     log "Pushed ${message} to origin/${push_branch}"
 
@@ -704,10 +766,20 @@ rhdh_nodejs_builder_image() {
 }
 
 node_version_from_image() {
-    local image="$1"
+    local image="$1" out err_file
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    "${runner}" run --rm --entrypoint node "${image}" --version 2>/dev/null | tr -d '\n\r'
+    err_file=$(mktemp)
+    # Keep the runtime's stderr: an empty result must be diagnosable, not a
+    # silent "could not read node version" (RHIDP-18915).
+    # --cgroups=disabled: runner pods have a read-only cgroup fs, so crun cannot
+    # enable controllers and every container start fails (RHIDP-18915).
+    out=$("${runner}" run --rm --network=none --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
+    if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
+        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
+    fi
+    rm -f "${err_file}"
+    tr -d '\n\r' <<< "${out}"
 }
 
 container_runtime() {
@@ -742,7 +814,9 @@ nodejs_rpm_version_in_image() {
     local runner out
     runner=$(container_runtime)
     [[ -n "${runner}" && -n "${major}" ]] || return 0
-    out=$("${runner}" run --rm --user 0 --entrypoint bash "${image}" -lc \
+    # --cgroups=disabled: read-only cgroup fs on runner pods makes crun fail
+    # (RHIDP-18915); dnf here still needs network, so no --network=none.
+    out=$("${runner}" run --rm --cgroups=disabled --user 0 --entrypoint bash "${image}" -lc \
         "dnf module enable nodejs:${major} -y >/dev/null && dnf repoquery -q --latest-limit 1 nodejs" \
         2>/dev/null) || return 0
     printf '%s\n' "${out}" | python3 -c '
@@ -863,7 +937,7 @@ update_rhdh_node_headers() {
     fi
 
     if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-        warn "Node headers: podman or docker required; skipping"
+        status_fail "rhdh" "${branch}" node_headers "Node headers: podman or docker required; skipping"
         return 0
     fi
 
@@ -872,7 +946,11 @@ update_rhdh_node_headers() {
     local node_version node_version_plain headers_file readme_file current_nvmrc old
     node_version=$(node_version_from_image "${image}") || true
     if [[ -z "${node_version}" ]]; then
-        warn "Node headers: could not read node version from ${image}"
+        # Cannot determine is not stale: a CI container-runtime outage must not
+        # autoclose otherwise-complete PRs. node_version_from_image already
+        # warned with the runtime's stderr; downstream CI still checks headers
+        # against the base image, so skipping here is safe (RHIDP-18915).
+        warn "Node headers: cannot determine node version in ${image}; skipping check"
         popd >/dev/null
         return 0
     fi
@@ -1128,7 +1206,7 @@ update_plugin_catalog_node() {
         "${catalog_cf}"
 
     if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-        warn "plugin-catalog: podman or docker required to resolve node headers; skipping"
+        status_fail "rhdh-plugin-catalog" "${git_branch}" catalog_node "plugin-catalog: podman or docker required to resolve node headers"
         popd >/dev/null
         return 0
     fi
@@ -1148,7 +1226,7 @@ update_plugin_catalog_node() {
 
     node_plain=$(catalog_headers_plain_version "${catalog_cf}" "${catalog_image}")
     if [[ -z "${node_plain}" ]]; then
-        warn "plugin-catalog: could not resolve a Node headers version from ${catalog_image}"
+        status_fail "rhdh-plugin-catalog" "${git_branch}" catalog_node "plugin-catalog: could not resolve a Node headers version from ${catalog_image}"
         # Header resolution can fail after pin_catalog_builder_from already rewrote
         # builder.Containerfile. Commit that rewrite so weekly can open a GitLab MR
         # and the next branch checkout is not blocked by a dirty tree.
@@ -1186,7 +1264,7 @@ update_overlays_node_version() {
 
     [[ -f "${versions}" ]] || return 0
     if [[ -z "${node_plain}" ]]; then
-        warn "overlays: no Node version from rhdh/.nvmrc; skipping versions.json"
+        status_fail "rhdh-plugin-export-overlays" "${git_branch}" overlays "overlays: no Node version from rhdh/.nvmrc; skipping versions.json"
         return 0
     fi
 
@@ -1265,7 +1343,12 @@ go_version_from_toolset_image() {
     local image="$1"
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    "${runner}" run --rm --entrypoint go "${image}" version 2>/dev/null \
+    # --network=none: version probes need no container networking, and podman's
+    # default pasta networking fails on CI runner pods without /dev/net/tun
+    # (RHIDP-18915). Image pull happens on the host before the netns is set up.
+    # --cgroups=disabled: read-only cgroup fs on runner pods makes crun fail to
+    # enable controllers on every container start (RHIDP-18915).
+    "${runner}" run --rm --network=none --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
 
@@ -1315,7 +1398,7 @@ update_operator_go_mod() {
     fi
 
     if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-        warn "Go toolchain: podman or docker required; skipping go.mod update"
+        status_fail "${kind}" "${branch}" go "Go toolchain: podman or docker required; skipping go.mod update"
         return 0
     fi
 
@@ -1324,7 +1407,7 @@ update_operator_go_mod() {
     local go_full go_lang current_toolchain
     go_full=$(go_version_from_toolset_image "${image}") || true
     if [[ -z "${go_full}" ]]; then
-        warn "Go toolchain: could not read go version from ${image}"
+        status_fail "${kind}" "${branch}" go "Go toolchain: could not read go version from ${image}"
         popd >/dev/null
         return 0
     fi
@@ -1413,6 +1496,7 @@ while [[ $# -gt 0 ]]; do
         -b|--branch) BRANCH="$2"; shift 2 ;;
         --update-base-images-script) UPDATE_BASE_IMAGES_SCRIPT="$2"; shift 2 ;;
         --rpm-lockfile-prototype) RPM_LOCKFILE_PROTOTYPE="$2"; shift 2 ;;
+        --status-file) STATUS_FILE="$2"; shift 2 ;;
         --parent-dir)
             discover_repos_in_parent "$2"
             shift 2
@@ -1519,6 +1603,7 @@ declare -A SEEN_KIND=()
 for repo_dir in "${REPO_DIRS[@]}"; do
     repo_dir=$(cd "${repo_dir}" && pwd)
     kind=$(detect_repo_kind "${repo_dir}")
+    CURRENT_KIND="${kind}"
     [[ "${kind}" != "unknown" ]] || die "${repo_dir}: cannot detect repo type (rhdh, rhdh-operator, rhdh-must-gather, rhdh-plugin-catalog, or rhdh-plugin-export-overlays)"
     if [[ -n "${SEEN_KIND[${kind}]:-}" ]]; then
         warn "Skipping duplicate ${kind} repo: ${repo_dir}"
@@ -1569,3 +1654,11 @@ for repo_dir in "${REPO_DIRS[@]}"; do
 done
 
 log "Done. Review open PRs for base image, RPM lockfile, node header, catalog builder, overlays, and go.mod updates."
+
+# RHIDP-18915: a failed RPM lock / node header / go resolution used to leave the
+# base-image bump in place, so the caller opened an incomplete PR. Exit non-zero
+# so callers stop trusting the branch, and keep the reason in --status-file.
+if [[ ${FAILURES} -gt 0 ]]; then
+    echo "[ERROR] ${FAILURES} component update(s) failed; see warnings above (RHIDP-18915)" >&2
+    exit 1
+fi

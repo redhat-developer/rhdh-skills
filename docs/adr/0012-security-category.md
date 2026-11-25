@@ -26,9 +26,9 @@ Members today:
 
 - `rhdh-package-impact` — Dependabot / yarn.lock impact classify, patch-status,
   workspace bump, and policy-gated dismiss (`/rhdh-package-impact`)
-- `rhdh-cve-pr-jira-link` — daily Chai sync: link CVE bump PRs to New ProdSec
-  tickets, Review / Release Pending, Fix Version from next unreleased z-stream
-  label (`/rhdh-cve-pr-jira-link`)
+- `rhdh-cve-pr-jira-link` — daily persona playbook: link CVE bump PRs to New
+  ProdSec tickets, Review / Release Pending, Fix Version from next unreleased
+  z-stream label (`/rhdh-cve-pr-jira-link`)
 
 Folder membership does not change invocation: callers use the skill names above.
 

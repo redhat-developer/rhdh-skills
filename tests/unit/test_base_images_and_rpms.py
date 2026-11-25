@@ -284,6 +284,95 @@ class TestBaseImagesAndRpmsScript:
         script = MAIN_SCRIPT.read_text(encoding="utf-8")
         assert 'filter_rpm_lockfile_source_warnings <"${rpm_err}"' in script
 
+    def test_pip_install_suppresses_stdout(self) -> None:
+        """pip stdout must not leak into the captured RPM_TOOL variable (RHIDP-18915)."""
+        script = MAIN_SCRIPT.read_text(encoding="utf-8")
+        assert "rpm-lockfile-prototype/archive/refs/heads/main.zip >/dev/null 2>&1" in script
+
+    def test_rpm_lockfile_failure_reason_keeps_last_error_line(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "rpm_lockfile_failure_reason")
+        traceback = (
+            '  File "/rpm_lockfile/containers.py", line 49, in _copy_image\n'
+            "    utils.logged_run(cmd, check=True)\n"
+            "subprocess.CalledProcessError: Command '['skopeo', '--override-arch=arm64', 'copy', "
+            "'docker://registry.access.redhat.com/ubi10/nodejs-24-minimal@sha256:af0b']' "
+            "returned non-zero exit status 1.\n"
+        )
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\nrpm_lockfile_failure_reason"],
+            input=traceback,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.startswith("subprocess.CalledProcessError: Command")
+        assert "exit status 1" in result.stdout
+        assert "\n" not in result.stdout.rstrip("\n")
+
+    def test_rpm_lockfile_failure_reason_empty_on_blank_stderr(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "rpm_lockfile_failure_reason")
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\nrpm_lockfile_failure_reason"],
+            input="\n  \n",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+
+    def test_node_version_from_image_surfaces_runtime_stderr(self, tmp_path: Path) -> None:
+        """A failing container runtime must say why, not fail silently (RHIDP-18915)."""
+        function = _extract_bash_function(MAIN_SCRIPT, "node_version_from_image")
+        stub = tmp_path / "podman"
+        stub.write_text(
+            "#!/usr/bin/env bash\necho 'pasta layer failed: no /dev/net/tun' >&2\nexit 1\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'warn() {{ echo "[WARN] $*" >&2; }}\n{function}\n'
+                "node_version_from_image registry.example.com/ubi10/nodejs-24:10.3",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**_clean_rhdh_env(), "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+        assert "[WARN]" in result.stderr
+        assert "pasta layer failed" in result.stderr
+        assert "nodejs-24:10.3" in result.stderr
+
+    def test_node_version_from_image_returns_version(self, tmp_path: Path) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "node_version_from_image")
+        stub = tmp_path / "podman"
+        stub.write_text(
+            "#!/usr/bin/env bash\necho 'v24.22.1'\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'warn() {{ echo "[WARN] $*" >&2; }}\n{function}\n'
+                "node_version_from_image registry.example.com/ubi10/nodejs-24:10.3",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**_clean_rhdh_env(), "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "v24.22.1"
+        assert result.stderr == ""
+
     def test_filter_rpm_lockfile_source_warnings_drops_noise(self) -> None:
         function = _extract_bash_function(MAIN_SCRIPT, "filter_rpm_lockfile_source_warnings")
         noise = (
@@ -627,7 +716,7 @@ class TestBaseImagesAndRpmsScript:
         assert "keeping existing rpms.lock.yaml" in script
         assert "rpm-lockfile-prototype --bare" in skill
         unresolved = script.split(
-            'warn "plugin-catalog: could not resolve a Node headers version', 1
+            'catalog_node "plugin-catalog: could not resolve a Node headers version', 1
         )[1][:500]
         assert (
             'commit_catalog_builder_paths "${git_branch}" "chore: pin catalog builder"'
