@@ -172,7 +172,12 @@ git checkout -B "${HEAD}" >/dev/null
 # Rebase to the tip of the remote topic branch (when it exists) and the target
 # branch before pushing, so the PR/MR never opens behind the base.
 rebased=0
-if git fetch -q origin "${HEAD}" 2>/dev/null && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
+# Explicit refspec: single-branch clones (yarn-bump uses them) have a fetch
+# refspec that covers only one branch, so a bare "git fetch origin HEAD"
+# updates FETCH_HEAD without creating the tracking ref the rebase below
+# relies on (RHIDP-18915).
+if git fetch -q origin "+refs/heads/${HEAD}:refs/remotes/origin/${HEAD}" 2>/dev/null \
+  && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
   if ! git rebase "origin/${HEAD}" >/dev/null 2>&1; then
     git rebase --abort 2>/dev/null || true
     echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
@@ -182,7 +187,8 @@ if git fetch -q origin "${HEAD}" 2>/dev/null && git rev-parse -q --verify "origi
 fi
 base_tip=""
 for remote in origin upstream; do
-  if git fetch -q "${remote}" "${BASE}" 2>/dev/null && git rev-parse -q --verify "${remote}/${BASE}" >/dev/null 2>&1; then
+  if git fetch -q "${remote}" "+refs/heads/${BASE}:refs/remotes/${remote}/${BASE}" 2>/dev/null \
+    && git rev-parse -q --verify "${remote}/${BASE}" >/dev/null 2>&1; then
     base_tip="${remote}/${BASE}"
     break
   fi
@@ -197,15 +203,23 @@ if [[ -n "${base_tip}" ]] && ! git merge-base --is-ancestor "${base_tip}" HEAD; 
   echo "[ERROR] HEAD is not ahead of ${base_tip}; refusing to push" >&2
   exit 1
 fi
+# Keep push stderr out of the log only until it is needed: on failure print
+# it with any embedded credentials redacted, so "push failed" stays
+# diagnosable (RHIDP-18915).
+push_err=$(mktemp)
+push_rc=0
 if [[ "${rebased}" -eq 1 ]]; then
-  if ! git push -u origin --force-with-lease "HEAD:${HEAD}" 2>/dev/null; then
-    echo "[ERROR] push failed for ${repo_slug}:${HEAD}" >&2
-    exit 1
-  fi
-elif ! git push -u origin "HEAD:${HEAD}" 2>/dev/null; then
+  git push -u origin --force-with-lease "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
+else
+  git push -u origin "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
+fi
+if [[ "${push_rc}" -ne 0 ]]; then
+  sed -E 's#(https?://)[^@/]+@#\1***@#g' "${push_err}" >&2
   echo "[ERROR] push failed for ${repo_slug}:${HEAD}" >&2
+  rm -f "${push_err}"
   exit 1
 fi
+rm -f "${push_err}"
 
 url=""
 if [[ "${host}" == "github" ]]; then
