@@ -63,6 +63,11 @@ def test_patch_and_backport_check_without_changing_checkout(
     git("init", "-q")
     git("remote", "add", "origin", "https://github.com/example/fixture.git")
     (repo / filename).write_text("old\n")
+    if kind == "docs":
+        template = repo / ".github/pull_request_template.md"
+        template.parent.mkdir()
+        template.write_text("## Description\n\n## Verification\n\n- [ ] Docs reviewed\n")
+        git("add", ".github")
     git("add", filename)
     git("-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "base")
     base = git("rev-parse", "HEAD")
@@ -124,6 +129,12 @@ def test_patch_and_backport_check_without_changing_checkout(
         }
     ]
     if kind == "docs":
+        event["body"] = (
+            "## Description\n\nExplain the new title.\n\n## Verification\n\n"
+            "<!-- triage-verification -->\n\n- [ ] Docs reviewed"
+        )
+        event["verificationLog"] = "main output: </details>"
+        event["backports"][0]["verificationLog"] = "stable output"
         checks = {}
         for field in ("behaviorCheck", "docsCheck"):
             path = tmp_path / f"{field}.log"
@@ -169,10 +180,23 @@ def test_patch_and_backport_check_without_changing_checkout(
     if accepted:
         drafts = list((tmp_path / "run").rglob("PROPOSAL.md"))
         assert len(drafts) == 2
-        assert all(
-            "### How this was tested\n\n```bash\ngit diff --check\n```" in draft.read_text()
-            for draft in drafts
-        )
+        for draft in drafts:
+            body = draft.read_text()
+            if kind == "docs":
+                assert body.index("## Description") < body.index("## Verification")
+                assert body.index("Title fixture checked") < body.index("<details>")
+                assert body.index("</details>") < body.index("- [ ] Docs reviewed")
+                assert "### How this was tested" not in body
+                assert "<!-- triage-verification -->" not in body
+                log = (
+                    "stable output"
+                    if "backports" in draft.parts
+                    else "main output: &lt;/details&gt;"
+                )
+                assert f"<pre>{log}</pre>" in body
+            else:
+                assert "### How this was tested\n\n```bash\ngit diff --check\n```" in body
+                assert "<details>" not in body
     assert git("status", "--porcelain") == status
     assert git("diff", "--cached") == ""
 

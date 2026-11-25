@@ -1,6 +1,7 @@
 """Consume one locally prepared event; atomically retain one receipt per issue revision."""
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -190,9 +191,52 @@ def backport_decision(record):
     return action, f"{reason} Impact: {impact}. Workaround: {workaround}. {basis}"
 
 
-def test_section(record):
+def proposal_body(repo, record, fallback):
+    """Check the investigator's filled template against the verified target commit."""
+    paths = git(repo, "ls-tree", "-r", "--name-only", "-z", record["base"]).split("\0")
+    roots = ("", ".github/", "docs/")
+    defaults = [
+        path
+        for root in roots
+        for path in paths
+        if path.casefold() == root + "pull_request_template.md"
+    ]
+    named = [
+        path
+        for path in paths
+        if any(path.casefold().startswith(root + "pull_request_template/") for root in roots)
+        and path.lower().endswith(".md")
+    ]
+    selected = record.get("templatePath")
+    if selected is None:
+        candidates = defaults or named
+        if len(candidates) > 1:
+            raise ValueError("select the applicable PR template with templatePath")
+        selected = next(iter(candidates), None)
+    elif selected not in defaults + named:
+        raise ValueError("templatePath is not a PR template at the target base")
+    body = record.get("body", fallback)
+    if selected:
+        template = git(repo, "show", f"{record['base']}:{selected}")
+        headings = re.findall(r"^#{1,6} +.+$", template, re.M)
+        remaining = body.splitlines()
+        for heading in headings:
+            if heading not in remaining:
+                raise ValueError(f"fill the target PR template {selected}, preserving {heading}")
+            remaining = remaining[remaining.index(heading) + 1 :]
+        if body.strip() == template.strip():
+            raise ValueError("fill the PR template before proposing the change")
+    placeholder = "<!-- triage-verification -->"
+    if body.count(placeholder) > 1:
+        raise ValueError("use one verification placeholder per proposal")
+    if placeholder in body:
+        return body.replace(placeholder, test_section(record, heading=False))
+    return body + "\n" + test_section(record)
+
+
+def test_section(record, *, heading=True):
     """Render the investigator's recorded commands as text; never execute them."""
-    lines = ["", "### How this was tested", ""]
+    lines = ["", "### How this was tested", ""] if heading else []
     commands = record.get("testCommands", [])
     if not isinstance(commands, list) or not all(
         isinstance(c, str) and c.strip() for c in commands
@@ -201,6 +245,19 @@ def test_section(record):
     if commands:
         lines.extend(["```bash", *commands, "```", ""])
     lines.append(required(record, "verification"))
+    if "verificationLog" in record:
+        log = html.escape(required(record, "verificationLog"))
+        lines.extend(
+            [
+                "",
+                "<details>",
+                "<summary>Verification log</summary>",
+                "",
+                f"<pre>{log}</pre>",
+                "",
+                "</details>",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -260,10 +317,12 @@ def dispatch(event, key, dest, inputs):
     ):
         raise ValueError("no actionable fix handoff for this issue")
     base = proposal(event, dest, inputs, docs_only=docs_only)
+    repo = inputs / event["checkout"]
+    body = required(event, "body")
     lines = [
         f"# {required(event, 'title')}",
         "",
-        required(event, "body"),
+        proposal_body(repo, event, body),
         "",
         f"Base: {base}",
         required(event, "branchEvidence"),
@@ -307,14 +366,12 @@ def dispatch(event, key, dest, inputs):
                 )
             )
             (directory / "PROPOSAL.md").write_text(
-                f"# {event['title']} ({branch})\n\n{event['body']}\n\n"
+                f"# {event['title']} ({branch})\n\n{proposal_body(repo, decision, body)}\n\n"
                 f"Target: {branch} at {decision['base']}.\n\n{reason}\n"
                 + "\n".join(comment_lines)
-                + f"\n{test_section(decision)}\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
+                + "\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
             )
-    lines.extend(
-        [test_section(event), "", "[Patch](change.patch) · [Verification record](VERIFY.md)"]
-    )
+    lines.extend(["", "[Patch](change.patch) · [Verification record](VERIFY.md)"])
     write_json(
         dest / "proposal.json",
         {
