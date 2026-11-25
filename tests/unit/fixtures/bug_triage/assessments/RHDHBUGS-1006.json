@@ -1,0 +1,39 @@
+{
+  "key": "RHDHBUGS-1006",
+  "verdict": "already_fixed",
+  "evidence": [
+    {
+      "type": "pr",
+      "ref": "https://github.com/redhat-developer/rhdh/pull/999",
+      "why": "The merged PR changes the TechDocs publisher to resolve the external S3 endpoint before the build.",
+      "strength": "direct"
+    },
+    {
+      "type": "release_note",
+      "ref": "https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0",
+      "why": "The 2.1.0 release note lists the TechDocs external S3 endpoint fix.",
+      "strength": "direct"
+    }
+  ],
+  "fix": {
+    "pr": "https://github.com/redhat-developer/rhdh/pull/999",
+    "commit": "https://github.com/redhat-developer/rhdh/commit/9f2c1ab",
+    "release": "2.1.0",
+    "released": true,
+    "merged": true,
+    "coversWholeIssue": true,
+    "reviewRelease": "2.1.0",
+    "containedInReviewRelease": true
+  },
+  "proof": {
+    "fixMatches": {"summary": "The merged publisher change resolves the external S3 endpoint before building, addressing this ENOTFOUND failure.", "refs": ["https://github.com/redhat-developer/rhdh/pull/999"]},
+    "releaseContains": {"summary": "The released 2.1.0 notes explicitly list this endpoint-resolution fix.", "refs": ["https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0"]},
+    "validation": {"summary": "The PR's external-endpoint regression test covers the reported publisher configuration and failed lookup.", "refs": ["https://github.com/redhat-developer/rhdh/pull/999"]}
+  },
+  "review": {
+    "independentPasses": 2,
+    "agree": true
+  },
+  "notes": "Synthetic released-fix control. These proof claims are fixture data, not live verification or a backport decision.",
+  "comment": "The reported ENOTFOUND failure is fixed by [PR #999](https://github.com/redhat-developer/rhdh/pull/999) and included in the [2.1.0 release](https://github.com/redhat-developer/rhdh/releases/tag/v2.1.0). Closing as fixed; reopen with a current reproduction if it recurs on a supported release."
+}
