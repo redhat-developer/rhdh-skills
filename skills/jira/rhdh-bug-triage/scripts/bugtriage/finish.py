@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from urllib.parse import quote
 
 from .events import required
 from .layout import refresh_review
@@ -135,10 +136,8 @@ def command_finish(args):
             outcome_field = "resolution" if "resolution" in case else "finding"
             for field in (outcome_field, "verification", "next"):
                 value = case[field]
-                if len(value) > 320 or len(value.splitlines()) != 1 or "://" in value:
-                    raise ValueError(
-                        f"{key} needs brief single-line prose in {field}; cite URLs in evidence"
-                    )
+                if "://" in value:
+                    raise ValueError(f"{key} needs plain prose in {field}; cite URLs in evidence")
             refs = {item["ref"] for item in packet["evidence"]}
             ref = next(
                 (value for value in packet.get("validation", {}).get("refs", []) if value in refs),
@@ -176,13 +175,30 @@ def command_finish(args):
                     citation += " · Fix: " + ref_link(fix_link)
             elif stage == "patch":
                 citation = "Local proposal only. " + citation
-            case["proposedComment"] = "\n".join(
+            bullets = []
+            for assignment in case.get("nextActions", []):
+                bullet = f"- **{_linked_text(assignment['owner'])}** — {_linked_text(assignment['action'])}"
+                links = [
+                    f"[{_linked_text(item['label'])}](../../{quote(item['path'])})"
+                    for item in assignment.get("links", [])
+                    if item["path"] != f"01-triage/comments/{key}.md"
+                ]
+                if links:
+                    bullet += " Local files: " + " · ".join(links)
+                bullets.append(bullet)
+            case["proposedComment"] = "\n\n".join(
                 (
-                    f"**Outcome.** {_linked_text(case[outcome_field])}",
-                    f"**Checks.** {_linked_text(case['verification'])}",
-                    f"**Review.** {citation}",
-                    f"**Who does what next.** {_linked_text(case['next'])} "
+                    f"**Re: {ref_link(key)}** · {_linked_text(packet['summary'])}",
+                    "### Outcome",
+                    _linked_text(case[outcome_field]),
+                    "### Checks",
+                    _linked_text(case["verification"]),
+                    "### Review",
+                    citation,
+                    "### Who does what next",
+                    "\n".join(bullets) or _linked_text(case["next"]),
                     f"Triage reference: `{packet['commentPlan']['reference']}`.",
+                    "*rhdh-agentic-bug-triager · AI-generated. Check for accuracy.*",
                 )
             )
             case["delivery"] = (
