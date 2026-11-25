@@ -747,6 +747,7 @@ commit_push_paths() {
     log "Pushed ${message} to origin/${push_branch}"
 
     if [[ "${push_branch}" == chore/automated-update-rpm-lockfile/* ]] \
+        && git remote get-url origin 2>/dev/null | grep -q 'github.com' \
         && command -v gh >/dev/null 2>&1 \
         && ! gh pr list --head "${push_branch}" --state open --json number -q '.[0].number' 2>/dev/null | grep -q .; then
         # Title from what the branch actually carries: the funnel branch is
@@ -1360,8 +1361,13 @@ go_version_from_toolset_image() {
     # Prefer image config Env: go-toolset images carry VERSION=<go X.Y.Z>,
     # readable with skopeo — no container runtime needed, so this works on CI
     # runner pods where podman cannot start containers (RHIDP-18915).
-    env_version=$(skopeo inspect --no-tags "docker://${image}" 2>/dev/null \
-        | jq -r '.Env[]? | select(startswith("VERSION="))' \
+    # skopeo rejects tag@digest refs ("both a tag and digest are currently
+    # not supported"), and FROM lines carry digests; normalize to the
+    # digest-only ref (RHIDP-18915).
+    local inspect_ref
+    inspect_ref=$(printf '%s' "${image}" | sed -E 's/:[^:@/]+(@sha256:[0-9a-f]+)$/\1/')
+    env_version=$(skopeo inspect --no-tags "docker://${inspect_ref}" 2>/dev/null \
+        | jq -r '.Env[]? | select(startswith("VERSION="))' 2>/dev/null \
         | sed -r -e "s/VERSION=//")
     if [[ "${env_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         printf '%s\n' "${env_version}"
