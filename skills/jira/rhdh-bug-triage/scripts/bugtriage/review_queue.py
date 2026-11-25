@@ -96,9 +96,21 @@ def refresh_review(output_dir: Path):
             if current.get("blocker"):
                 lines.extend(["", f"**Blocked on.** {current['blocker']}"])
             lines.extend(["", "**Who does what next**", ""])
+            linked = set()
             if current.get("nextActions"):
                 for assignment in current["nextActions"]:
-                    lines.append(f"- **{assignment['owner']}** — {assignment['action']}")
+                    refs = []
+                    for item in assignment.get("links", []):
+                        refs.append(link(item["label"], item["path"]))
+                        linked.add(item["path"])
+                    lines.append(
+                        " ".join(
+                            [
+                                f"- **{assignment['owner']}** — {assignment['action']}",
+                                " · ".join(refs),
+                            ]
+                        ).rstrip()
+                    )
             elif current.get("next"):
                 lines.append(f"Owner unrecorded — {current['next']}")
             else:
@@ -110,17 +122,19 @@ def refresh_review(output_dir: Path):
                 label = f"{info.get('repository', 'Proposal')} {info.get('branch', '')}".strip()
                 location = proposal.parent.relative_to(root)
                 refs = [
-                    link(label, location / "PROPOSAL.md"),
-                    link("patch", location / "change.patch"),
-                    link("checks", location / "VERIFY.md"),
+                    (label, location / "PROPOSAL.md"),
+                    ("patch", location / "change.patch"),
+                    ("checks", location / "VERIFY.md"),
                 ]
                 targets = {
                     str(i): b["branch"] for i, b in enumerate(info.get("backports", []), start=1)
                 }
                 for backport in sorted((proposal.parent / "backports").glob("*/change.patch")):
                     branch = targets.get(backport.parent.name, backport.parent.name)
-                    refs.append(link(f"backport {branch}", backport.relative_to(root)))
-                lines.extend(["", "- " + " · ".join(refs)])
+                    refs.append((f"backport {branch}", backport.relative_to(root)))
+                remaining = [link(label, path) for label, path in refs if str(path) not in linked]
+                if remaining:
+                    lines.extend(["", "- " + " · ".join(remaining)])
             actions = [link("Triage evidence", f"01-triage/audit/bugs/{key}.md")]
             delivery = current.get("delivery") or packet.get("commentPlan", {}).get("status", "")
             if current.get("proposedComment", packet.get("proposedComment")):

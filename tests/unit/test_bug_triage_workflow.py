@@ -692,11 +692,18 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         key=key,
         stage="blocked",
         finding="Filter behavior is under investigation.",
+        resolution="The local replay is blocked on the missing identity fixture.",
         verification="Checked the local reproduction fixture.",
         next="Replay with the missing identity.",
         evidence=log.name,
         blocker="The reporter's identity fixture is unavailable.",
-        nextActions=[{"owner": "Reporter", "action": "Supply the missing identity fixture."}],
+        nextActions=[
+            {
+                "owner": "Reporter",
+                "action": "Supply the missing identity fixture.",
+                "links": [{"label": "Fixture log", "path": "@evidence"}],
+            }
+        ],
     )
     source = tmp_path / "results.json"
     args = ["finish", "--input", str(source), "--out", str(review)]
@@ -715,15 +722,33 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         [{**row, "stage": "ready_to_close"}],
         [{**row, "evidence": "missing.log"}],
         [{**row, "blocker": ""}],
+        [{**row, "resolution": "Invalid\nmultiline"}],
+        [{**row, "citationRef": "https://example.test/unverified"}],
+        [{**row, "reviewPRs": ["https://github.com/example/fixture/pull/9"]}],
+        [
+            {
+                **row,
+                "nextActions": [
+                    {**row["nextActions"][0], "links": [{"label": "Log", "path": "../fixture.log"}]}
+                ],
+            }
+        ],
     ):
         assert finish(invalid) == 2
         assert (review / "run.json").read_bytes() == initial
         assert not (review / "01-triage/audit/followthrough").exists()
     assert finish([row]) == 0
     assert (
-        "**Reporter** — Supply the missing identity fixture."
+        "**Reporter** — Supply the missing identity fixture. [Fixture log](01-triage/audit/followthrough/"
         in (review / "START-HERE.md").read_text()
     )
+    assert row["resolution"] in (review / "START-HERE.md").read_text()
+    draft = (review / f"01-triage/comments/{key}.md").read_text().splitlines()
+    assert len(draft) == 4
+    assert draft[0] == f"**Outcome.** {row['resolution']}"
+    assert draft[1] == f"**Checks.** {row['verification']}"
+    assert draft[2].startswith("**Review.** ")
+    assert draft[3].startswith(f"**Who does what next.** {row['next']}")
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
     assert case["stage"] == "blocked" and case["blocker"] == row["blocker"]

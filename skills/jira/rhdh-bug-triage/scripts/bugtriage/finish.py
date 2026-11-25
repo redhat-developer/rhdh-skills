@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -36,14 +37,6 @@ def command_finish(args):
         }
         if "resolution" in row:
             case["resolution"] = required(row, "resolution")
-        if "nextActions" in row:
-            assignments = row["nextActions"]
-            if not isinstance(assignments, list) or not assignments:
-                raise ValueError(f"{key} needs at least one owner and action")
-            case["nextActions"] = [
-                {field: required(assignment, field) for field in ("owner", "action")}
-                for assignment in assignments
-            ]
         stage = case["stage"]
         fix_link = ""
         if stage == "patch":
@@ -107,9 +100,40 @@ def command_finish(args):
         digest = hashlib.sha256(data).hexdigest()
         path = Path("01-triage/audit/followthrough") / f"{key}-{digest[:12]}{evidence.suffix}"
         case["evidence"] = path.as_posix()
+        if "nextActions" in row:
+            assignments = row["nextActions"]
+            if not isinstance(assignments, list) or not assignments:
+                raise ValueError(f"{key} needs at least one owner and action")
+            case["nextActions"] = []
+            for assignment in assignments:
+                action = {field: required(assignment, field) for field in ("owner", "action")}
+                if "links" in assignment:
+                    links = assignment["links"]
+                    if not isinstance(links, list):
+                        raise ValueError(f"{key} needs a list of action links")
+                    action["links"] = []
+                    for item in links:
+                        label, link_path = required(item, "label"), Path(required(item, "path"))
+                        if str(link_path) == "@evidence":
+                            action["links"].append({"label": label, "path": case["evidence"]})
+                            continue
+                        target = (run / link_path).resolve()
+                        if (
+                            link_path.is_absolute()
+                            or not target.is_relative_to(run.resolve())
+                            or not target.is_file()
+                        ):
+                            raise ValueError(
+                                f"{key} action link must identify a file in the review directory"
+                            )
+                        action["links"].append(
+                            {"label": label, "path": target.relative_to(run.resolve()).as_posix()}
+                        )
+                case["nextActions"].append(action)
         original = packet.get("proposedComment")
         if original:
-            for field in ("finding", "next"):
+            outcome_field = "resolution" if "resolution" in case else "finding"
+            for field in (outcome_field, "verification", "next"):
                 value = case[field]
                 if len(value) > 320 or len(value.splitlines()) != 1 or "://" in value:
                     raise ValueError(
@@ -120,14 +144,44 @@ def command_finish(args):
                 (value for value in packet.get("validation", {}).get("refs", []) if value in refs),
                 key,
             )
+            if "citationRef" in row:
+                ref = required(row, "citationRef")
+                if ref not in refs:
+                    raise ValueError(
+                        f"{key} citationRef must reference evidence in the triage packet"
+                    )
             citation = "Fix: " + ref_link(fix_link) if fix_link else "Evidence: " + ref_link(ref)
+            if not fix_link and any(
+                item["ref"] == ref and item["type"] == "doc" for item in packet["evidence"]
+            ):
+                citation = "Related guidance: " + ref_link(ref)
             if packet.get("verdict") == "duplicate":
                 citation = "Canonical issue: " + ref_link(packet["target"])
+            public_prs = row.get("reviewPRs", [])
+            verified_prs = {
+                item["ref"]
+                for item in packet["evidence"]
+                if item["type"] == "pr" and item.get("strength") == "direct"
+            }
+            if not isinstance(public_prs, list) or not all(
+                isinstance(url, str)
+                and url in verified_prs
+                and re.fullmatch(r"https://github\.com/[\w.-]+/[\w.-]+/pull/[1-9]\d*", url)
+                for url in public_prs
+            ):
+                raise ValueError(f"{key} reviewPRs must be directly evidenced GitHub pull requests")
+            if public_prs:
+                citation = " · ".join(ref_link(url) for url in dict.fromkeys(public_prs))
+                if fix_link and fix_link not in public_prs:
+                    citation += " · Fix: " + ref_link(fix_link)
+            elif stage == "patch":
+                citation = "Local proposal only. " + citation
             case["proposedComment"] = "\n".join(
                 (
-                    _linked_text(case["finding"]),
-                    citation,
-                    _linked_text(case["next"]),
+                    f"**Outcome.** {_linked_text(case[outcome_field])}",
+                    f"**Checks.** {_linked_text(case['verification'])}",
+                    f"**Review.** {citation}",
+                    f"**Who does what next.** {_linked_text(case['next'])} "
                     f"Triage reference: `{packet['commentPlan']['reference']}`.",
                 )
             )
