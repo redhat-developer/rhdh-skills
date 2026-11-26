@@ -83,7 +83,7 @@ chmod +x "${SKILL}/scripts/base-images-and-rpms.sh"
 | `--dry-run` | Print commands without executing |
 | `--analyze` | Read-only scan via `analyze-base-images.sh` (no `-b` required; defaults scripts to `main`) |
 
-**Default:** base image updates use `--pr --no-push` (local commits + PR creation, no push). RPM lockfile and node header changes are committed and **pushed to the same open `chore/automated-update-base-images-*` PR branch** when one exists; otherwise a `chore/automated-update-rpm-lockfile/<branch>` PR is opened.
+**Default:** base image updates use `--pr --no-push` (local commits + PR creation, no push). RPM lockfile and node header changes are committed and **pushed to the same open `chore/automated-update-base-images-*` PR branch** when one exists; otherwise a `chore/automated-update-repo-deps/<branch>` PR is opened.
 
 ## Analyze without updating
 
@@ -161,7 +161,7 @@ git commit -s -m "chore: update rpms.lock.yaml [skip-build]"
 git push origin <chore/automated-update-base-images-*>   # same PR as base images
 ```
 
-When no base-images PR exists (e.g. `--skip-base`), the script uses `chore/automated-update-rpm-lockfile/<branch>` and opens a PR.
+When no base-images PR exists (e.g. `--skip-base`), the script uses `chore/automated-update-repo-deps/<branch>` and opens a PR.
 
 `rpm-lockfile-prototype` often logs `No sources found for <pkg>` when the matching source RPM is unpublished (commonly `kernel-headers` and `efi-srpm-macros`). The bundled script drops those lines. Never list them as remaining risks; Konflux still consumes the binary lockfile.
 

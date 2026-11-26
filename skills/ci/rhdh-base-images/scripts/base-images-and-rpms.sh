@@ -616,7 +616,7 @@ update_rpm_lockfile() {
     if [[ ${DRY_RUN} -eq 1 ]]; then
         echo "  dry-run: bump OpenShift N-el9-beta URLs in ${repo_dir}/rpms.in.yaml when present"
         echo "  dry-run: (cd ${repo_dir} && ${rpm_tool} ${proto_args})"
-        echo "  dry-run: commit and push rpms.in.yaml and rpms.lock.yaml to open base-images PR branch (or chore/automated-update-rpm-lockfile/${branch})"
+        echo "  dry-run: commit and push rpms.in.yaml and rpms.lock.yaml to open base-images PR branch (or chore/automated-update-repo-deps/${branch})"
         return 0
     fi
 
@@ -679,10 +679,14 @@ ensure_automation_branch() {
         return 0
     fi
 
-    local rpm_branch="chore/automated-update-rpm-lockfile/${branch}"
-    log "No automation PR branch; using ${rpm_branch}" >&2
-    git checkout -B "${rpm_branch}" >/dev/null
-    printf '%s\n' "${rpm_branch}"
+    # Funnel branch for every dependent-component bump this skill makes on a
+    # repo when no base-images PR exists: rpm lockfile, node headers, catalog
+    # builder, overlays versions.json, go.mod. Named for the content, not the
+    # first kind that used it (RHIDP-18915).
+    local dep_branch="chore/automated-update-repo-deps/${branch}"
+    log "No automation PR branch; using ${dep_branch}" >&2
+    git checkout -B "${dep_branch}" >/dev/null
+    printf '%s\n' "${dep_branch}"
 }
 
 commit_push_paths() {
@@ -746,7 +750,7 @@ commit_push_paths() {
     fi
     log "Pushed ${message} to origin/${push_branch}"
 
-    if [[ "${push_branch}" == chore/automated-update-rpm-lockfile/* ]] \
+    if [[ "${push_branch}" == chore/automated-update-repo-deps/* ]] \
         && git remote get-url origin 2>/dev/null | grep -q 'github.com' \
         && command -v gh >/dev/null 2>&1 \
         && ! gh pr list --head "${push_branch}" --state open --json number -q '.[0].number' 2>/dev/null | grep -q .; then
@@ -769,7 +773,7 @@ commit_push_paths() {
             --title "${pr_title}" \
             --body "${CREATE_PR_BODY}" \
             2>/dev/null \
-            || warn "Could not open RPM lockfile PR for ${push_branch}"
+            || warn "Could not open repo-deps PR for ${push_branch}"
     fi
 }
 
