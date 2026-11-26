@@ -107,6 +107,10 @@ def test_patch_and_backport_check_without_changing_checkout(
                 reason="Same component",
                 impact="moderate",
                 workaround="costly",
+                supportStatus="supported",
+                supportSource="https://example.org/release-policy",
+                compatibility="compatible",
+                compatibilityEvidence="The previous configuration and defaults passed on stable.",
                 impactEvidence="Rebuilding the affected component interrupts service.",
             )
         ],
@@ -351,10 +355,22 @@ def test_comment_review_requires_full_thread_and_grounded_excerpts(tmp_path):
         "decision": "assess",
         "branch": "stable",
         "reason": "Supported and affected.",
+        "supportStatus": "supported",
+        "supportSource": "https://example.org/release-policy",
+        "compatibility": "compatible",
+        "compatibilityEvidence": "Existing configurations still pass.",
         "impact": "unknown",
         "workaround": "costly",
     }
     assert evidenced_backport(record, seen, False, tmp_path)[0] == "propose"
+    for override, expected in [
+        ({"supportStatus": "unsupported"}, "skip"),
+        ({"supportSource": ""}, "human_review"),
+        ({"compatibility": "breaking"}, "skip"),
+        ({"compatibilityEvidence": ""}, "human_review"),
+    ]:
+        for docs in (False, True):
+            assert evidenced_backport({**record, **override}, seen, docs, tmp_path)[0] == expected
     assert (
         evidenced_backport(record, [{**row, "scope": "older"}], False, tmp_path)[0]
         == "human_review"

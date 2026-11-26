@@ -371,6 +371,8 @@ class Ticket:
     customer_fields_read: List[str] = field(default_factory=list)
     unmapped_custom_fields: List[str] = field(default_factory=list)
     read_gaps: List[str] = field(default_factory=list)
+    fix_versions_empty: bool = False
+    release_note_fields: Dict[str, Any] = field(default_factory=dict)
     affects_versions_ambiguous: bool = False
     customer_fields_complete: bool = False
     former_keys: List[str] = field(default_factory=list)
@@ -468,6 +470,13 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
         components=components,
         labels=labels,
         fix_versions=as_names(_first(payload, "fixVersions", "fix_versions")),
+        fix_versions_empty=payload.get("fixVersions", payload.get("fix_versions")) == [],
+        release_note_fields={
+            name: payload[field_id]
+            for field_id, name in field_names.items()
+            if name in {"Release Note Text", "Release Note Type", "Release Note Status"}
+            and field_id in payload
+        },
         affects_versions=as_names(raw_versions),
         affects_versions_ambiguous=versions_ambiguous,
         assignee=as_name(_first(payload, "assignee")),

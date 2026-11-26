@@ -125,6 +125,9 @@ def plan_comment(
         ),
         "nextStep": next_step_kind(packet),
     }
+    classification = packet.investigation.get("classification", {})
+    if classification.get("kind") in {"feature", "task", "uncertain"}:
+        identity["classification"] = [classification["kind"], classification["ref"]]
     fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     marker = MARKER_PREFIX + fingerprint
 

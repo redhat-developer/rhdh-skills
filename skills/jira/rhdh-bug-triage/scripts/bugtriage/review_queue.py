@@ -11,6 +11,7 @@ STAGES = {
     "patch": "Local patch ready",
     "blocked": "Blocked",
     "verified_resolution": "Resolution verified",
+    "classification_review": "Issue type needs human review",
     "existing_fix": "Fix already shipped",
     "ready_to_close": "Ready for closure review",
 }
@@ -91,6 +92,8 @@ def refresh_review(output_dir: Path):
                     f"**{state}.** {finding}".rstrip(),
                 ]
             )
+            for message in current.get("jiraFieldSummary", []):
+                lines.extend(["", message])
             transition = current.get("jiraTransition", {})
             if transition:
                 status = transition["observed"]

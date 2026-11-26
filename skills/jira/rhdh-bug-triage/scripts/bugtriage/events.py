@@ -119,6 +119,19 @@ def evidenced_backport(record, comments, docs, inputs):
         return ("human_review" if action == "undetermined" else action), reason
     if gate not in {"assess", "propose"}:
         raise ValueError("invalid backport decision")
+    if record.get("supportStatus") == "unsupported":
+        return "skip", "Branch is outside the support window."
+    if record.get("compatibility") == "breaking":
+        return "skip", "The proposed change would break compatibility on this branch."
+    if record.get("supportStatus") != "supported" or not str(
+        record.get("supportSource") or ""
+    ).startswith("https://"):
+        return "human_review", "Target branch support is unverified."
+    if (
+        record.get("compatibility") != "compatible"
+        or not (record.get("compatibilityEvidence") or "").strip()
+    ):
+        return "human_review", "Target branch compatibility is unverified."
     if comments is None:
         return "human_review", "Complete verified Jira comment review unavailable."
     branch = required(record, "branch")
@@ -297,6 +310,12 @@ def dispatch(event, key, dest, inputs):
     run = inputs / required(event, "triageRun")
     packets = json.loads((run / "01-triage/audit/packets.json").read_bytes())
     finding = next((row for row in packets["packets"] if row["key"] == key), {})
+    if finding.get("investigation", {}).get("classification", {}).get("kind") in {
+        "feature",
+        "task",
+        "uncertain",
+    }:
+        raise ValueError("issue classification requires human review before preparing a fix")
     docs_only = event.get("kind") == "docs"
     scoped_docs = (
         docs_only
@@ -349,7 +368,23 @@ def dispatch(event, key, dest, inputs):
     for number, decision in enumerate(decisions):
         branch = required(decision, "branch")
         action, reason = evidenced_backport(decision, comments, docs_only, inputs)
-        evaluated.append({"branch": branch, "decision": action, "reason": reason})
+        evaluated.append(
+            {
+                "branch": branch,
+                "decision": action,
+                "reason": reason,
+                **{
+                    field: decision[field]
+                    for field in (
+                        "supportStatus",
+                        "supportSource",
+                        "compatibility",
+                        "compatibilityEvidence",
+                    )
+                    if field in decision
+                },
+            }
+        )
         if branch in seen:
             raise ValueError("invalid or duplicate backport decision")
         seen.add(branch)
@@ -372,10 +407,33 @@ def dispatch(event, key, dest, inputs):
                 + "\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
             )
     lines.extend(["", "[Patch](change.patch) · [Verification record](VERIFY.md)"])
+    release_targets = {}
+    for record in [
+        event,
+        *(
+            record
+            for record, result in zip(decisions, evaluated)
+            if result["decision"] == "propose"
+        ),
+    ]:
+        if "releaseTarget" in record:
+            target = record["releaseTarget"]
+            version, source = required(target, "version"), required(target, "source")
+            if not source.startswith("https://"):
+                raise ValueError("releaseTarget requires a cited branch-to-version mapping")
+            release_targets[record["branch"]] = {"version": version, "source": source}
+    for result in evaluated:
+        if result["branch"] in release_targets:
+            result["releaseTarget"] = release_targets[result["branch"]]
     write_json(
         dest / "proposal.json",
         {
             **{name: event.get(name) for name in ("repository", "branch", "kind", "title")},
+            **(
+                {"releaseTarget": release_targets[event["branch"]]}
+                if event["branch"] in release_targets
+                else {}
+            ),
             "reviewedCommentIds": [row["id"] for row in comments or []],
             "backports": evaluated,
         },

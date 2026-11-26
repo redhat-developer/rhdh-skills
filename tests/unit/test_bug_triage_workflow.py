@@ -808,3 +808,114 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         == "[PR #1](https://github.com/example/fixture/pull/1) — Check customer fields before closure."
     )
     assert line in (review / "START-HERE.md").read_text()
+
+    note = {"text": "Catalog filters now retain the selected owner.", "type": "Bug Fix"}
+    names = ("Release Note Type", "Release Note Text", "Release Note Status")
+    packet.update(fixVersions=[], fixVersionsEmpty=True, releaseNoteFields=dict.fromkeys(names))
+    packet["fix"]["release"] = "2.1.1"
+    packet_file.write_text(json.dumps(audit))
+    (tmp_path / "versions.json").write_text(
+        json.dumps([{"name": "2.1.1", "archived": False, "released": True}])
+    )
+    (tmp_path / "edit.json").write_text(
+        json.dumps(
+            {
+                "fields": {
+                    "customfield_1": {"name": names[0], "allowedValues": [{"value": "Bug Fix"}]},
+                    "customfield_2": {"name": names[2], "allowedValues": [{"value": "Proposed"}]},
+                    "customfield_3": {"name": names[1]},
+                }
+            }
+        )
+    )
+    result = {
+        **row,
+        "stage": "existing_fix",
+        "releaseNote": note,
+        "releaseNoteEditMeta": "edit.json",
+        "projectVersions": "versions.json",
+    }
+    assert finish([result]) == 0
+    fields = json.loads((review / "run.json").read_text())["cases"][key]["proposedJiraFields"]
+    assert fields == {
+        names[0]: note["type"],
+        names[1]: note["text"],
+        names[2]: "Proposed",
+        "Fix Version/s": ["2.1.1"],
+    }
+    for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
+        assert "Release note proposed (Bug Fix): " + note["text"] in artifact.read_text()
+    packet["releaseNoteFields"][names[2]] = {"value": "Approved"}
+    packet["fixVersions"] = ["2.0.0"]
+    packet_file.write_text(json.dumps(audit))
+    assert finish([result]) == 0
+    assert not json.loads((review / "run.json").read_text())["cases"][key]["proposedJiraFields"]
+
+    packet.setdefault("investigation", {})["classification"] = {
+        "kind": "feature",
+        "basis": "Adds a new filter.",
+        "ref": key,
+    }
+    packet_file.write_text(json.dumps(audit))
+    assert finish([result]) == 2
+    assert finish([{**result, "stage": "classification_review"}]) == 0
+    case = json.loads((review / "run.json").read_text())["cases"][key]
+    assert not case["proposedJiraFields"]
+    assert case["jiraTransition"]["state"] == "no_action"
+    assert "Human classification review requested (feature)" in case["proposedComment"]
+
+
+def test_version_plan_requires_unambiguous_eligible_targets(tmp_path):
+    from bugtriage.finish import jira_field_plan
+
+    (tmp_path / "versions.json").write_text(
+        json.dumps(
+            [
+                {"name": "2.2.0", "released": False, "archived": False},
+                {"name": "2.1.2", "released": False, "archived": False},
+            ]
+        )
+    )
+    packet = {"fixVersionsEmpty": True}
+    row = {"projectVersions": "versions.json"}
+    target = {
+        "repository": "org/repo",
+        "branch": "main",
+        "releaseTarget": {"version": "2.2.0"},
+        "backports": [
+            {"decision": "propose", "branch": "release-2.1", "releaseTarget": {"version": "2.1.2"}},
+            {"decision": "skip", "branch": "release-2.0"},
+        ],
+    }
+
+    def fields(proposals):
+        return jira_field_plan(packet, "patch", row, proposals, tmp_path)[0]
+
+    assert fields([target]) == {"Fix Version/s": ["2.1.2", "2.2.0"]}
+    assert not fields([target, {**target, "releaseTarget": {"version": "2.1.2"}}])
+    assert not fields([{**target, "releaseTarget": {}}])
+    packet["fixVersionsEmpty"] = False
+    assert not fields([target])
+
+
+@pytest.mark.parametrize("kind", ["feature", "task", "uncertain"])
+def test_issue_type_review_overrides_fix_handoff(inputs, kind):
+    key = "RHDHBUGS-101"
+    path = Path(inputs.assessments_dir) / f"{key}.json"
+    document = json.loads(path.read_text())
+    document.update(
+        investigation={
+            "classification": {"kind": kind, "basis": "Scope needs review.", "ref": key}
+        },
+        handoff={"outcome": "pull-requests"},
+    )
+    path.write_text(json.dumps(document))
+    result = run(inputs)
+    packet = result.packets[0]
+    assert packet.action == "comment_only"
+    assert packet.handoff["outcome"] == "blocked"
+    assert "Review issue classification" in packet.proposed_comment
+    assert (result.output_dir / "02-fixes" / "blocked" / key / "PLAN.md").is_file()
+    document["investigation"]["classification"]["ref"] = "RHDHBUGS-999"
+    with pytest.raises(ValueError, match="classification"):
+        parse_assessment(document)

@@ -132,7 +132,14 @@ code is written:
   in `validation` — or state exactly what is still unknown.
 - Follow [bug verification](../references/bug-verification.md) for every kind
   of bug: frontend, backend, configuration, docs, dependencies, installation.
-  Record the checks in `investigation`.
+  Record the checks in `investigation`. For each new assessment, set
+  `investigation.classification` with `kind`, `basis`, and an evidence `ref`.
+  Compare the reporter’s expected behavior with the documented contract and comments.
+  Use `bug` for a defect, `feature` for new behavior, `task` for operational work,
+  or `uncertain` when the evidence cannot distinguish them. For a real defect with
+  an additional feature request, keep the defect classified as a bug and record
+  the separate capability in the follow-through result. Route feature, task and
+  uncertain classifications to the triage owner for human review.
 - Compare the bug against its duplicate and related candidates; record the
   comparisons in `comparisons`, citing both tickets.
 - Write a `fixPlan`: what a fix would change, where it would land, how big

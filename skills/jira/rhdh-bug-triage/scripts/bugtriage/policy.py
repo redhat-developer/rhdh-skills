@@ -268,6 +268,15 @@ def parse_assessment(document: Dict[str, Any]) -> Assessment:
     repro = document.get("repro") if isinstance(document.get("repro"), dict) else {}
     review = document.get("review") if isinstance(document.get("review"), dict) else {}
     passes = review.get("independentPasses", 0)
+    classification = document.get("investigation", {}).get("classification")
+    if "classification" in document.get("investigation", {}) and (
+        not isinstance(classification, dict)
+        or classification.get("kind") not in {"bug", "feature", "task", "uncertain"}
+        or not isinstance(classification.get("basis"), str)
+        or not classification["basis"].strip()
+        or classification.get("ref") not in {item.ref for item in evidence}
+    ):
+        raise ValueError("classification needs a kind, basis and an assessment evidence ref")
     return Assessment(
         key=key,
         verdict=verdict,
@@ -1325,5 +1334,10 @@ def evaluate(
     if packet.verdict == "needs_repro" and not packet.validation:
         packet.gaps.append("no cited current-release validation result was supplied")
     packet.recommended_step = _next_step(packet)
+    classification = packet.investigation.get("classification", {})
+    if classification.get("kind") in {"feature", "task", "uncertain"}:
+        packet.verdict, packet.action = "unclear", "comment_only"
+        packet.handoff = {"outcome": "blocked"}
+        packet.recommended_step = "Review issue classification: " + classification["basis"]
     packet.proposed_comment = recommendation_comment(packet, ticket)
     return packet
