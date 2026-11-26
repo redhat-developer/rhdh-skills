@@ -43,6 +43,9 @@ Required:
 Options:
   --builder-tag TAG  published builder tag to build from, e.g. 2.1-10;
                      default: resolve the mutable :X.Y tag (its newest X.Y-N)
+  --builder-repo REPO builder image repository
+                     (default: quay.io/rhdh/plugin-catalog-builder-rhel10;
+                     rebuildGitlabRunner110.sh forces the rhel9 repo for 1.10)
   --version X.Y      RHDH stream version the runner tag uses (e.g. 2.1);
                      default: read version="X.Y" from the plugin-catalog
                      builder.Containerfile on the branch, when --catalog is given
@@ -69,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     '--rhdh') RHDH_CHECKOUT="$2"; shift 1;;
     '-b'|'--branch') STREAM="$2"; shift 1;;
     '--builder-tag') BUILDER_TAG="$2"; shift 1;;
+    '--builder-repo') BUILDER_REPO="$2"; shift 1;;
     '--version') STREAM_VERSION="$2"; shift 1;;
     '--catalog') CATALOG_CHECKOUT="$2"; shift 1;;
     '--bump-ci') CI_CHECKOUTS+=("$2"); shift 1;;

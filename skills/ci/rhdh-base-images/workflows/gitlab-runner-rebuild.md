@@ -61,6 +61,26 @@ nodes pull it fresh instead of serving a cached stale image. Reverting the pin t
 safer. Dated tags carry `quay.expires-after=150d`, so a stream that stops
 rebuilding for months needs its pin refreshed or the tag un-expired in Quay.
 
+### RHDH 1.10 (rhdh-1.10-rhel-9)
+
+The 1.10 stream builds its runner from `plugin-catalog-builder-rhel9`, not the
+rhel10 repo, and lives on the `rhdh-1.10-rhel-9` branch in both repos. Use
+[scripts/rebuildGitlabRunner110.sh](../scripts/rebuildGitlabRunner110.sh) — a
+thin wrapper over the main script that pins the rhel9 builder repo, the
+`rhdh-1.10-rhel-9` branch, and stream version `1.10`, and rejects `-b`,
+`--version`, and `--builder-repo` overrides. 1.9 has no runner rebuild.
+
+```bash
+"${SKILL}/scripts/rebuildGitlabRunner110.sh" \
+  --rhdh /path/to/rhdh \   # checked out on rhdh-1.10-rhel-9
+  --catalog /path/to/rhdh-plugin-catalog \   # same branch
+  --bump-ci /path/to/rhdh --bump-ci /path/to/rhdh-plugin-catalog \
+  --push
+```
+
+Delete the 110 script and this section once RHDH 2.1 is EOL in March 2027 and
+the 1.10 stream is closed.
+
 ## Land the changes
 
 Each repo with a changed file gets its own MR via `/rhdh-pr-mr` (pass the Jira
