@@ -37,6 +37,10 @@ options EXCEPT -b/--branch, --version, and --builder-repo, which are pinned
 here (rhdh-1.10-rhel-9, 1.10, and the rhel9 builder repo). 1.9 is not
 supported. Delete this script once RHDH 2.1 is EOL (March 2027).
 
+At the end of a successful run the underlying script opens the quay tag
+pages for plugin-catalog-builder-rhel9 and gitlab-runner in your browser
+(--no-open suppresses this).
+
 See: $MAIN --help
 EOF
 }

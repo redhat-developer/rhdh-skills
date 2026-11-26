@@ -54,6 +54,7 @@ Options:
                      image: line should be re-pinned to the new dated tag; repeatable
   --push             push the built tags (default: build locally only)
   --expires D        quay.expires-after label (default: ${EXPIRES})
+  --no-open          do not open the quay tag pages in a browser when done
   --dry-run          print the operations without editing, building, or pushing
   -h, --help         this help
 
@@ -67,6 +68,21 @@ die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 log() { printf '[INFO] %s\n' "$*"; }
 out() { printf '%s\n' "$*"; }
 
+# open a URL in the user's browser; headless hosts just get the link echoed
+openURL() {
+  if [[ -n "${NO_OPEN:-}" ]]; then return 0; fi
+  local url="$1"
+  if command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+    xdg-open "$url" >/dev/null 2>&1 &
+  elif command -v brave-browser >/dev/null 2>&1; then
+    brave-browser "$url" >/dev/null 2>&1 &
+  elif command -v google-chrome >/dev/null 2>&1; then
+    google-chrome "$url" >/dev/null 2>&1 &
+  else
+    log " >> $url"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     '--rhdh') RHDH_CHECKOUT="$2"; shift 1;;
@@ -78,6 +94,7 @@ while [[ $# -gt 0 ]]; do
     '--bump-ci') CI_CHECKOUTS+=("$2"); shift 1;;
     '--push') DO_PUSH=1;;
     '--expires') EXPIRES="$2"; shift 1;;
+    '--no-open') NO_OPEN=1;;
     '--dry-run') DRYRUN=1;;
     '-h'|'--help') usage; exit 0;;
     *) usage; die "unknown parameter: $1";;
@@ -186,3 +203,9 @@ done
 
 log "done. dated tag: ${DATED_TAG}"
 out "summary|builder=${BUILDER_TAG}@${BUILDER_DIGEST}|runner=${DATED_TAG}"
+
+# review links: open the quay tag pages for the builder and runner images
+if [[ -z "${DRYRUN:-}" ]]; then
+  openURL "https://quay.io/repository/${BUILDER_REPO#quay.io/}?tab=tags"
+  openURL "https://quay.io/repository/${RUNNER_REPO#quay.io/}?tab=tags"
+fi

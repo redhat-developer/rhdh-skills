@@ -228,3 +228,40 @@ class TestRebuildGitlabRunner110Script:
         )
         assert "quay.io/rhdh/gitlab-runner:1.10-" in result.stdout
         assert "quay.io/rhdh/gitlab-runner:1.10-yarn4-node24" in result.stdout
+
+    @pytest.mark.parametrize("script", ["main", "110"])
+    def test_dry_run_does_not_open_or_echo_review_links(self, tmp_path: Path, script: str) -> None:
+        """Dry runs change nothing, so no quay review links may be opened or echoed."""
+        if script == "110":
+            branch, version, tags = "rhdh-1.10-rhel-9", None, '["1.10-55"]'
+        else:
+            branch, version, tags = "release-2.1", "2.1", '["2.1-10"]'
+        rhdh = _fake_checkout(tmp_path, "rhdh", branch)
+        cf_dir = rhdh / "build" / "containerfiles"
+        cf_dir.mkdir(parents=True)
+        (cf_dir / "gitlab-runner.Containerfile").write_text(
+            "FROM quay.io/rhdh/plugin-catalog-builder-rhel10:2.1\n"
+        )
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "skopeo").write_text(
+            "#!/usr/bin/env bash\n"
+            'case "$1" in\n'
+            f"  list-tags) printf '{{\"Tags\":{tags}}}' ;;\n"
+            '  inspect) printf \'{"Digest":"sha256:abc123"}\' ;;\n'
+            "esac\n"
+        )
+        (bin_dir / "podman").write_text("#!/usr/bin/env bash\nexit 0\n")
+        for shim in ("skopeo", "podman"):
+            (bin_dir / shim).chmod(0o755)
+        run_env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+        target = RUNNER110_SCRIPT if script == "110" else RUNNER_SCRIPT
+        extra = ["-b", branch, "--version", version] if script == "main" else []
+        result = subprocess.run(
+            _shell_script_cmd(target, "--rhdh", str(rhdh), *extra, "--dry-run"),
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "https://quay.io/repository/" not in result.stdout + result.stderr

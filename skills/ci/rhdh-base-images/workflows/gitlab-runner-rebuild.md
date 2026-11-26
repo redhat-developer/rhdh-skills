@@ -61,6 +61,11 @@ nodes pull it fresh instead of serving a cached stale image. Reverting the pin t
 safer. Dated tags carry `quay.expires-after=150d`, so a stream that stops
 rebuilding for months needs its pin refreshed or the tag un-expired in Quay.
 
+After a successful (non-dry) run the script opens the quay tag pages for the
+builder image and `gitlab-runner` in the user's browser for review — the two
+places the new tags must appear. `--no-open` suppresses this; a headless host
+gets the URLs echoed instead.
+
 ### RHDH 1.10 (rhdh-1.10-rhel-9)
 
 The 1.10 stream builds its runner from `plugin-catalog-builder-rhel9`, not the
