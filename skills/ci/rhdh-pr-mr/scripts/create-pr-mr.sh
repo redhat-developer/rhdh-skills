@@ -180,10 +180,20 @@ if git fetch -q origin "+refs/heads/${HEAD}:refs/remotes/origin/${HEAD}" 2>/dev/
   && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
   if ! git rebase "origin/${HEAD}" >/dev/null 2>&1; then
     git rebase --abort 2>/dev/null || true
-    echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
-    exit 1
+    # A bot-owned branch whose remote tip conflicts is disposable: both sides
+    # are generated against the same base (e.g. two weekly yarn bumps), so a
+    # conflicted rebase just means the remote copy is stale. Replace the tip
+    # instead of failing the repo (RHIDP-18915).
+    if [[ "${HEAD}" == chore/automated-* ]]; then
+      echo "[INFO] rebase onto origin/${HEAD} hit conflicts; replacing the stale bot branch tip" >&2
+      rebased=1
+    else
+      echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
+      exit 1
+    fi
+  else
+    rebased=1
   fi
-  rebased=1
 fi
 base_tip=""
 for remote in origin upstream; do
