@@ -185,9 +185,21 @@ apply_repo_formatters() {
     echo "[INFO] dry-run: would prettier --write ${#changed[@]} changed files"
     return 0
   fi
+  # A fresh clone has neither node_modules nor a PnP setup, and yarn run
+  # needs one of them ("Couldn't find the node_modules state file"). Install
+  # before the first prettier attempt so it succeeds outright; the first
+  # yarn invocation also warms corepack's download of the pinned version.
+  if [[ ! -d node_modules && ! -f .pnp.cjs ]]; then
+    echo "[INFO] fresh clone: yarn install before prettier" >&2
+    if ! yarn install --immutable; then
+      echo "[ERROR] yarn install failed; refusing to commit an unformatted tree that CI prettier:check would reject" >&2
+      return 1
+    fi
+  fi
   echo "[INFO] prettier --write (${#changed[@]} files)"
   if ! yarn prettier --ignore-unknown --write -- "${changed[@]}"; then
-    echo "[INFO] prettier failed (no node_modules state file); installing dependencies and retrying" >&2
+    # Unexpected (install state exists): retry once in case it went stale.
+    echo "[WARN] prettier failed; reinstalling dependencies and retrying" >&2
     if ! yarn install --immutable; then
       echo "[ERROR] yarn install failed; refusing to commit an unformatted tree that CI prettier:check would reject" >&2
       return 1
