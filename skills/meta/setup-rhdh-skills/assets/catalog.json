@@ -320,6 +320,16 @@
       ]
     },
     {
+      "name": "rhdh-operator-eol",
+      "category": "ci",
+      "invocation": "model",
+      "requiresSkills": [
+        "mutation-gate",
+        "rhdh-pr-mr",
+        "rhdh-context"
+      ]
+    },
+    {
       "name": "rhdh-overlay-cve-export",
       "category": "release",
       "invocation": "model",

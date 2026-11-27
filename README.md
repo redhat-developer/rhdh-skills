@@ -48,7 +48,7 @@ one. It performs no work itself.
 and the single source of truth for membership. This file does not restate it.
 
 Three skills are human-invoked and never selected automatically: `/ask-rhdh`,
-`/setup-rhdh-skills`, and `/clean-prose`. The other 72 are model-invoked, and can
+`/setup-rhdh-skills`, and `/clean-prose`. The other 74 are model-invoked, and can
 also be called by name.
 
 Skills are grouped into eight folders:
@@ -57,7 +57,7 @@ Skills are grouped into eight folders:
 | --- | --- |
 | `jira/` | Creating, refining, updating, triaging aged bugs, and reporting on RHIDP, RHDHPLAN, RHDHBUGS, and RHDHSUPP work, plus sprint ceremonies and linking PRs to issues. |
 | `plugins/` | Authoring, wiring, exporting, and fixing Backstage dynamic plugins; the overlays repository; local RHDH; opening and reviewing pull requests; testing rhdh-operator PRs on a cluster; midstream propagation; browser UI verification with Playwright. |
-| `ci/` | Prow job configuration and nightly triggers, Konflux and Tekton task updates, plugin catalog index status, release-data admission tags, base images, and Yarn bumps. |
+| `ci/` | Prow job configuration and nightly triggers, Konflux and Tekton task updates, plugin catalog index status, release-data admission tags, base images, Yarn bumps, and rhdh-operator release-branch EOL. |
 | `release/` | Release status and readiness, candidate-feature capacity through Code Freeze, milestone schedules, freeze announcements, teams, fix-version sync across RHIDP/RHDHPLAN/RHDHBUGS, test-plan review, platform lifecycle, plugin CVE export, and RC/GA Helm+Operator smoke. |
 | `security/` | Dependabot / yarn.lock package impact classification, workspace CVE bumps, policy-gated alert dismiss, fullsend CVE PR assessment (`/cve-pr-review`), and daily CVE bump PR → Jira link playbook (Chai persona) for plugins monorepos (with room for `rhdh` later); risk rating and a merge recommendation for a dependency version bump, from registry metadata, OSV advisories, and Backstage release-manifest alignment. |
 | `refinement/` | The OpenSpec artifact-driven change workflow: propose, explore, implement, audit, verify, and archive a change. See [the workflow](docs/refinement/refinement-workflow.md). |

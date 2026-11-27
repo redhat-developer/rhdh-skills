@@ -1,0 +1,4 @@
+interface:
+  display_name: "RHDH Operator EOL"
+  short_description: "Drop an EOL operator release branch from nightly, upgrade paths, and Renovate"
+  
