@@ -20,6 +20,8 @@ thinking is done by the investigators.
 
 ## Route
 
+When asked to run again or continue an existing all-open run, invoke `next` in the same run root and carry its returned batch through follow-through. Reuse earlier batches only for an explicit replay. See [incremental review](workflows/review-events.md).
+
 For an all-open inventory, support intake, issue update, or local PR/backport proposal, use [incremental review](workflows/review-events.md). Triage produces fix plans. A fix request can generate concrete patches in a disposable local checkout.
 
 For the investigation stage follow [workflows/triage-aged-bugs.md](workflows/triage-aged-bugs.md). It is

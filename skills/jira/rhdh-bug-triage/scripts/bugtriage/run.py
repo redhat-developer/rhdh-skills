@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Dict, Iterable, List
 
 from .comments import DEFAULT_COOLDOWN_DAYS, attach_comment_plan
@@ -499,21 +500,25 @@ def run(config: RunConfig) -> RunResult:
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(Path(__file__).parent.glob("*.py"))
     }
-    write_phased_output(
-        output_dir,
-        packets=packets,
-        tickets=tickets_by_key,
-        sample=sample,
-        coverage=coverage,
-        meta=meta,
-        generated_at=generated_at,
-        as_of=as_of.date().isoformat(),
-        current_release=config.current_release,
-        jql=jql,
-        thresholds=thresholds,
-        release_evidence=config.release_evidence,
-        assessments_dir=config.assessments_dir,
-    )
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=output_dir.parent) as temp:
+        staged = Path(temp) / "review"
+        write_phased_output(
+            staged,
+            packets=packets,
+            tickets=tickets_by_key,
+            sample=sample,
+            coverage=coverage,
+            meta=meta,
+            generated_at=generated_at,
+            as_of=as_of.date().isoformat(),
+            current_release=config.current_release,
+            jql=jql,
+            thresholds=thresholds,
+            release_evidence=config.release_evidence,
+            assessments_dir=config.assessments_dir,
+        )
+        staged.rename(output_dir)
 
     return RunResult(
         packets=packets,

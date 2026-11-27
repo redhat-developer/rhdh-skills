@@ -386,3 +386,126 @@ def test_comment_review_requires_full_thread_and_grounded_excerpts(tmp_path):
     path.write_text(json.dumps([{"key": key, "fields": {"comment": thread}}]))
     assert reviewed_comments(event, key, tmp_path) is None
     assert evidenced_backport(record, None, False, tmp_path)[0] == "human_review"
+
+
+def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys):
+    from bugtriage import cycle
+
+    keys = [f"RHDHBUGS-{i}" for i in range(1, 11)]
+    monkeypatch.setattr(cycle, "search_acli", lambda *a, **kw: [{"key": k} for k in keys])
+    fetched = []
+
+    def fetch(jql, **kwargs):
+        batch = jql.split("(", 1)[1].split(")", 1)[0].split(", ")
+        fetched.append(batch)
+        return {
+            "provenance": {},
+            "issues": [
+                {
+                    "key": k,
+                    "fields": {
+                        "summary": "Fixture",
+                        "issuetype": {"name": "Bug"},
+                        "status": {"name": "Open"},
+                        "labels": [],
+                        "issuelinks": [],
+                    },
+                }
+                for k in batch
+            ],
+        }
+
+    monkeypatch.setattr(cycle, "export_from_acli", fetch)
+    args = ["next", "--root", str(tmp_path), "--current-release", "2.1.0"]
+
+    def advance():
+        assert main(args) == 0
+        return json.loads(capsys.readouterr().out)
+
+    def finish(batch, legacy=False):
+        review = Path(batch["review"])
+        audit = review / "01-triage/audit"
+        audit.mkdir(parents=True)
+        sample = json.loads(Path(batch["sample"]).read_bytes())
+        ordered = [row["key"] for row in sample["tickets"]]
+        assert set(ordered) == set(batch["keys"])
+        digest = hashlib.sha256((tmp_path / "private/bugs.json").read_bytes()).hexdigest()
+        coverage = {} if legacy else {"inventoryHash": digest}
+        (audit / "selection.json").write_text(json.dumps(sample))
+        (audit / "packets.json").write_text(
+            json.dumps(
+                {
+                    "currentRelease": "2.1.0",
+                    "meta": {"coverage": coverage},
+                    "packets": [
+                        {"key": k, "summary": "Fixture", "investigation": {"status": "completed"}}
+                        for k in ordered
+                    ],
+                }
+            )
+        )
+        (review / "run.json").write_text("{}")
+        if not legacy:
+            assert advance()["batch"] == batch["batch"]
+        (tmp_path / "proof.md").write_text("checked")
+        rows = [
+            dict(
+                key=k,
+                stage="blocked",
+                finding="Needs reproduction.",
+                verification="Checked.",
+                next="Supply fixture.",
+                evidence="proof.md",
+                blocker="Missing fixture.",
+            )
+            for k in ordered
+        ]
+        source = tmp_path / "results.json"
+        source.write_text(json.dumps(rows))
+        finish_args = ["finish", "--input", str(source), "--out", str(review)]
+        assert main(finish_args) == 0
+        return finish_args
+
+    first = advance()
+    assert first["batch"] == 1 and first["keys"] == keys[:5]
+    assert advance()["state"] == "resume"
+    finish(first, legacy=True)
+    assert main(args) == 2
+    inventory = tmp_path / "private/bugs.json"
+    source = tmp_path / "original.json"
+    source.write_bytes(inventory.read_bytes())
+    inventory.unlink()
+    wrong = tmp_path / "wrong.json"
+    wrong.write_text(json.dumps({**json.loads(source.read_bytes()), "keys": keys[::-1]}))
+    assert main([*args, "--inventory", str(wrong)]) == 2
+    assert not inventory.exists()
+    assert main([*args, "--inventory", str(source)]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["batch"] == 2 and second["keys"] == keys[5:]
+    assert advance()["batch"] == 2
+    finish_args = finish(second)
+    index = tmp_path / "START-HERE.md"
+    original = index.read_bytes()
+    assert "10 issues reviewed across 2 completed batches" in index.read_text()
+    assert "0 of 10 inventory entries remain" in index.read_text()
+    for key in keys:
+        assert index.read_text().count(f"[{key}]") == 1
+    assert main(finish_args) == 0
+    assert index.read_bytes() == original
+    assert advance() == advance() == {"state": "complete", "accounted": 10}
+    assert fetched == [keys[:5], keys[5:]]
+    assert (
+        main(
+            [
+                "progress",
+                "--inventory",
+                str(inventory),
+                "--run",
+                first["review"],
+                "--run",
+                second["review"],
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["pending"] == []

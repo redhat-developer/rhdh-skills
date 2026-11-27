@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import quote
 
 from .comments import comment_footer
+from .cycle import render_cycle_index
 from .events import required
 from .layout import refresh_review
 from .policy import CLOSE_ACTIONS, _linked_text, ref_link
@@ -410,4 +411,7 @@ def command_finish(args):
                 run / "01-triage/comments" / f"{key}.md", (case["proposedComment"] + "\n").encode()
             )
     refresh_review(run)
+    index = render_cycle_index(run)
+    if index is not None:
+        atomic_write(run.parent / "START-HERE.md", index.encode())
     return 0
