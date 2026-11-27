@@ -7,15 +7,14 @@ description: >-
   and bump overlays `versions.json` `node` on `main` or a `release-1.10` branch.
   Use for weekly base-image maintenance, a UBI or RHEL bump, an RPM lockfile
   refresh, "which base images are out of date", node-v*-headers.tar.gz, catalog
-  builder FROM, builder PipelineRun BASE_IMAGES, catalog release suffix, a
-  stale `helm_version` pin (helm comes from get.helm.sh, not an RPM repo),
+  builder FROM, builder PipelineRun BASE_IMAGES, catalog release suffix,
+  a stale `helm_version` pin,
   overlays Node version, UBI minor skew inside a Containerfile,
   or an OpenShift clients `N-el9-beta` / `4.21-el9-beta` RPM 404. After a
-  catalog builder bump merges and publishes: rebuild the GitLab runner image
-  from plugin-catalog-builder-rhel10 and re-pin .gitlab-ci.yml in rhdh and
-  rhdh-plugin-catalog. Use for "rebuild gitlab-runner",
-  "bump the gitlab-runner tag", gitlab-runner:2.x stale in .gitlab-ci.yml, or a
-  GitLab pipeline failing on the pre-fix runner after a builder update.
+  catalog builder bump merges and publishes, rebuild the GitLab runner image
+  and re-pin .gitlab-ci.yml in rhdh and rhdh-plugin-catalog. Use for
+  "rebuild gitlab-runner", "bump the gitlab-runner tag", gitlab-runner:2.x
+  stale in .gitlab-ci.yml, or a GitLab pipeline failing on the pre-fix runner.
 compatibility: "bash, jq, skopeo, curl, git, python3; podman or docker for toolchain detection; gh or glab for PR/MR creation."
 ---
 
