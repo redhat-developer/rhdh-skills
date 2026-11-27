@@ -819,6 +819,8 @@ def write_phased_output(
                 {
                     **packet.to_dict(),
                     "fixVersions": tickets[packet.key].fix_versions,
+                    "fixVersionsEmpty": tickets[packet.key].fix_versions_empty,
+                    "releaseNoteFields": tickets[packet.key].release_note_fields,
                     "reporter": {
                         "displayName": tickets[packet.key].reporter,
                         "accountId": tickets[packet.key].reporter_account_id,

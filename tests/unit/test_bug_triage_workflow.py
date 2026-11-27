@@ -252,6 +252,9 @@ def test_saved_controls_recheck_customer_and_done_exclusions(inputs, change):
     assert sample["eligibleCount"] == 0
     document["issues"][0]["fields"].update(change)
     path.write_text(json.dumps(document))
+    if "labels" in change:
+        run(inputs)
+        return
     with pytest.raises(RunError, match="control.*no longer eligible"):
         run(inputs)
     assert not Path(inputs.output_dir).exists()
@@ -329,8 +332,8 @@ def test_failed_searches_and_bounded_coverage_survive_into_report(inputs, tmp_pa
 
 
 def test_default_inventory_includes_unlabelled_issues():
-    assert "labels IS EMPTY" in default_jql(90)
-    assert 'labels NOT IN ("RHDH-Customer")' in default_jql(90)
+    assert "labels" not in default_jql(90)
+    assert "created <= -90d" in default_jql(90)
     assert "created <=" not in default_jql(90, "all-open")
 
 
@@ -686,6 +689,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     packet_file = review / "01-triage/audit/packets.json"
     audit = json.loads(packet_file.read_text())
     key = audit["packets"][0]["key"]
+    audit["packets"][0]["customerSignals"] = ["link:Related:RHDHSUPP-22", "text:RHDHSUPP-19"]
     audit["packets"][0]["reporter"] = {
         "displayName": "Fixture Reporter",
         "accountId": "fixture-account",
@@ -749,6 +753,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         in (review / "START-HERE.md").read_text()
     )
     assert row["resolution"] in (review / "START-HERE.md").read_text()
+    assert "Support coordination required" in (review / "START-HERE.md").read_text()
     draft = (review / f"01-triage/comments/{key}.md").read_text()
     assert f"### TL;DR\n\n{row['resolution']} Exact fix version unconfirmed." in draft
     assert "### How this was tested" not in draft
@@ -764,6 +769,8 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
     assert "@Fixture Reporter, please open a feature request for a new filter option" in draft
+    assert case["supportCases"] == ["RHDHSUPP-22"]
+    assert "RHDHSUPP-22" in draft and "RHDHSUPP-19" not in draft
     assert case["featureRequesterMention"]["attrs"] == {
         "id": "fixture-account",
         "text": "@Fixture Reporter",
@@ -773,6 +780,25 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     assert case["stage"] == "blocked" and case["blocker"] == row["blocker"]
     assert (review / case["evidence"]).read_bytes() == log.read_bytes()
     assert finish([row]) == 0 and (review / "run.json").read_bytes() == completed
+
+    assert "remove the customer name" not in draft
+    question = "Which command failed, and what error did it return?"
+    for named_customer, request in [
+        (True, {}),
+        (False, {"reporterReproRequest": question}),
+        (True, {"reporterReproRequest": question}),
+    ]:
+        assert finish([{**row, "customerNamePresent": named_customer, **request}]) == 0
+        revised = json.loads((review / "run.json").read_bytes())["cases"][key]
+        assert revised["reporterMention"]["attrs"]["id"] == "fixture-account"
+        action = revised["reporterNextStep"]
+        assert "@Fixture Reporter" in action
+        assert ("remove the customer name" in action) == named_customer
+        assert (question in action) == bool(request)
+        assert action in revised["proposedComment"]
+        assert action in (review / "START-HERE.md").read_text()
+        if named_customer:
+            assert audit["packets"][0]["summary"] not in revised["proposedComment"].splitlines()[0]
 
     # A raw fix object's booleans never establish release inclusion on their own.
     packet = audit["packets"][0]
@@ -797,8 +823,21 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         proof={"releaseContains": {"refs": ["https://example.test/release"]}},
     )
     packet_file.write_text(json.dumps(audit))
+    assert finish([{**row, "stage": "existing_fix"}]) == 2
     assert (
-        finish([{**row, "stage": "existing_fix", "next": "Check customer fields before closure."}])
+        finish(
+            [
+                {
+                    **row,
+                    "stage": "existing_fix",
+                    "next": "Check customer fields before closure.",
+                    "releaseNote": {
+                        "decision": "internal",
+                        "reason": "Only a test fixture changed.",
+                    },
+                }
+            ]
+        )
         == 0
     )
     draft = (review / f"01-triage/comments/{key}.md").read_text()
@@ -808,3 +847,144 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         == "[PR #1](https://github.com/example/fixture/pull/1) — Check customer fields before closure."
     )
     assert line in (review / "START-HERE.md").read_text()
+
+    note = {"text": "Catalog filters now retain the selected owner.", "type": "Bug Fix"}
+    names = ("Release Note Type", "Release Note Text", "Release Note Status")
+    packet.update(fixVersions=[], fixVersionsEmpty=True, releaseNoteFields=dict.fromkeys(names))
+    packet["fix"]["release"] = "2.1.1"
+    packet_file.write_text(json.dumps(audit))
+    (tmp_path / "versions.json").write_text(
+        json.dumps([{"name": "2.1.1", "archived": False, "released": True}])
+    )
+    (tmp_path / "edit.json").write_text(
+        json.dumps(
+            {
+                "fields": {
+                    "customfield_1": {"name": names[0], "allowedValues": [{"value": "Bug Fix"}]},
+                    "customfield_2": {"name": names[2], "allowedValues": [{"value": "Proposed"}]},
+                    "customfield_3": {"name": names[1]},
+                }
+            }
+        )
+    )
+    result = {
+        **row,
+        "stage": "existing_fix",
+        "releaseNote": note,
+        "releaseNoteEditMeta": "edit.json",
+        "projectVersions": "versions.json",
+    }
+    assert finish([result]) == 0
+    fields = json.loads((review / "run.json").read_text())["cases"][key]["proposedJiraFields"]
+    assert fields == {
+        names[0]: note["type"],
+        names[1]: note["text"],
+        names[2]: "Proposed",
+        "Fix Version/s": ["2.1.1"],
+    }
+    for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
+        assert "Release note proposed (Bug Fix): " + note["text"] in artifact.read_text()
+    # Without verified Jira choices the text must still reach reviewers.
+    pending = {**result, "releaseNote": {"text": note["text"]}}
+    del pending["releaseNoteEditMeta"]
+    assert finish([pending]) == 0
+    completed = (review / "run.json").read_bytes()
+    assert finish([pending]) == 0 and (review / "run.json").read_bytes() == completed
+    case = json.loads(completed)["cases"][key]
+    assert set(case["proposedJiraFields"]) == {"Fix Version/s"}
+    for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
+        assert "Release note draft: " + note["text"] in artifact.read_text()
+        assert "Jira field review pending" in artifact.read_text()
+    retained = {
+        **result,
+        "releaseNote": {"decision": "retain", "reason": "The workaround still applies."},
+    }
+    assert finish([retained]) == 2
+    packet["releaseNoteFields"].update(
+        {
+            names[0]: {"value": "Known Issue"},
+            names[1]: {"type": "doc", "content": [{"type": "text", "text": "Use YAML view."}]},
+            names[2]: {"value": "Done"},
+        }
+    )
+    packet_file.write_text(json.dumps(audit))
+    assert finish([retained]) == 0
+    for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
+        assert (
+            "Existing Known Issue note retained. The workaround still applies."
+            in artifact.read_text()
+        )
+    packet["releaseNoteFields"][names[2]] = {"value": "Approved"}
+    packet["fixVersions"] = ["2.0.0"]
+    packet_file.write_text(json.dumps(audit))
+    assert finish([result]) == 0
+    assert not json.loads((review / "run.json").read_text())["cases"][key]["proposedJiraFields"]
+
+    packet.setdefault("investigation", {})["classification"] = {
+        "kind": "feature",
+        "basis": "Adds a new filter.",
+        "ref": key,
+    }
+    packet_file.write_text(json.dumps(audit))
+    assert finish([result]) == 2
+    assert finish([{**result, "stage": "classification_review"}]) == 0
+    case = json.loads((review / "run.json").read_text())["cases"][key]
+    assert not case["proposedJiraFields"]
+    assert case["jiraTransition"]["state"] == "no_action"
+    assert "Human classification review requested (feature)" in case["proposedComment"]
+
+
+def test_version_plan_requires_unambiguous_eligible_targets(tmp_path):
+    from bugtriage.finish import jira_field_plan
+
+    (tmp_path / "versions.json").write_text(
+        json.dumps(
+            [
+                {"name": "2.2.0", "released": False, "archived": False},
+                {"name": "2.1.2", "released": False, "archived": False},
+            ]
+        )
+    )
+    packet = {"fixVersionsEmpty": True}
+    row = {"projectVersions": "versions.json", "releaseNote": {"text": "Example fix."}}
+    target = {
+        "repository": "org/repo",
+        "branch": "main",
+        "releaseTarget": {"version": "2.2.0"},
+        "backports": [
+            {"decision": "propose", "branch": "release-2.1", "releaseTarget": {"version": "2.1.2"}},
+            {"decision": "skip", "branch": "release-2.0"},
+        ],
+    }
+
+    def fields(proposals):
+        return jira_field_plan(packet, "patch", row, proposals, tmp_path)[0]
+
+    assert fields([target]) == {"Fix Version/s": ["2.1.2", "2.2.0"]}
+    assert not fields([target, {**target, "releaseTarget": {"version": "2.1.2"}}])
+    assert not fields([{**target, "releaseTarget": {}}])
+    packet["fixVersionsEmpty"] = False
+    assert not fields([target])
+
+
+@pytest.mark.parametrize("kind", ["feature", "task", "uncertain"])
+def test_issue_type_review_overrides_fix_handoff(inputs, kind):
+    key = "RHDHBUGS-101"
+    path = Path(inputs.assessments_dir) / f"{key}.json"
+    document = json.loads(path.read_text())
+    document.update(
+        investigation={
+            "classification": {"kind": kind, "basis": "Scope needs review.", "ref": key}
+        },
+        handoff={"outcome": "pull-requests"},
+    )
+    path.write_text(json.dumps(document))
+    result = run(inputs)
+    packet = result.packets[0]
+    assert packet.action == "comment_only"
+    assert packet.handoff["outcome"] == "blocked"
+    assert "Review issue classification" in packet.proposed_comment
+    assert (result.output_dir / "02-fixes" / "blocked" / key / "PLAN.md").is_file()
+    document["investigation"]["classification"]["ref"] = "RHDHBUGS-999"
+    with pytest.raises(ValueError, match="classification"):
+        parse_assessment(document)

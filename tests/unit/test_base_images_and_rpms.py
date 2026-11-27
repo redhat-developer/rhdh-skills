@@ -335,6 +335,7 @@ class TestBaseImagesAndRpmsScript:
             [
                 "bash",
                 "-c",
+                "node_version_from_image_rpmdb() { return 1; }\n"
                 f'warn() {{ echo "[WARN] $*" >&2; }}\n{function}\n'
                 "node_version_from_image registry.example.com/ubi10/nodejs-24:10.3",
             ],
@@ -361,6 +362,7 @@ class TestBaseImagesAndRpmsScript:
             [
                 "bash",
                 "-c",
+                "node_version_from_image_rpmdb() { return 1; }\n"
                 f'warn() {{ echo "[WARN] $*" >&2; }}\n{function}\n'
                 "node_version_from_image registry.example.com/ubi10/nodejs-24:10.3",
             ],

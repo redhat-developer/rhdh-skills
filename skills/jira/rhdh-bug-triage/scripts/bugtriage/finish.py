@@ -8,8 +8,10 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import quote
 
 from .comments import comment_footer
+from .cycle import render_cycle_index
 from .events import required
 from .layout import refresh_review
+from .model import as_text, verified_support_cases
 from .policy import CLOSE_ACTIONS, _linked_text, ref_link
 
 
@@ -59,6 +61,114 @@ def release_summary(packet, stage, run):
     return release
 
 
+def jira_field_plan(packet, stage, row, proposals, inputs):
+    """Build a local field preview from the issue snapshot and verified fix targets."""
+    fields, messages = {}, []
+    if stage not in {"patch", "existing_fix"}:
+        return fields, messages
+    if (
+        packet.get("fixVersionsEmpty")
+        and not packet.get("fixVersions")
+        and "projectVersions" in row
+    ):
+        catalog = json.loads((inputs / required(row, "projectVersions")).read_bytes())
+        if not isinstance(catalog, list):
+            raise ValueError("projectVersions must contain the Jira project versions array")
+        eligible = {
+            required(item, "name")
+            for item in catalog
+            if item.get("archived") is False and item.get("released") is (stage == "existing_fix")
+        }
+        if stage == "existing_fix":
+            targets = {packet.get("fix", {}).get("release")}
+        else:
+            by_branch = {}
+            for proposal in proposals:
+                for target in [
+                    proposal,
+                    *(b for b in proposal["backports"] if b["decision"] == "propose"),
+                ]:
+                    branch = (proposal["repository"], target["branch"])
+                    by_branch.setdefault(branch, set()).add(
+                        target.get("releaseTarget", {}).get("version")
+                    )
+            targets = (
+                set().union(*by_branch.values())
+                if all(len(v) == 1 for v in by_branch.values())
+                else set()
+            )
+        if targets and targets <= eligible:
+            fields["Fix Version/s"] = sorted(targets)
+            messages.append("Proposed fix versions: " + ", ".join(sorted(targets)) + ".")
+    note_fields, note_message = release_note_plan(packet, row, inputs)
+    fields.update(note_fields)
+    messages.append(note_message)
+    return fields, messages
+
+
+def release_note_plan(packet, row, inputs):
+    note = row.get("releaseNote")
+    if not isinstance(note, dict):
+        raise ValueError(
+            f"{packet.get('key', 'fix outcome')} needs releaseNote wording or a reason"
+        )
+    observed = packet.get("releaseNoteFields", {})
+    decision = note.get("decision", "draft")
+    existing_type = observed.get("Release Note Type")
+    if isinstance(existing_type, dict):
+        existing_type = existing_type.get("value")
+    if decision == "retain":
+        if not as_text(observed.get("Release Note Text")).strip():
+            raise ValueError("retaining a release note requires existing Jira note text")
+        return (
+            {},
+            f"Existing {existing_type or 'release'} note retained. {required(note, 'reason')}",
+        )
+    if decision == "internal":
+        return {}, f"Release note unnecessary for this internal change. {required(note, 'reason')}"
+    if decision != "draft":
+        raise ValueError("releaseNote.decision must be draft, retain or internal")
+
+    text = required(note, "text")
+    note_type = required(note, "type") if "type" in note else None
+    if any(len(value.splitlines()) > 1 for value in [text, note_type or ""]):
+        raise ValueError("use one line for the proposed release note")
+    draft = {
+        "Release Note Text": text,
+        "Release Note Type": note_type,
+        "Release Note Status": "Proposed",
+    }
+    metadata = {}
+    if row.get("releaseNoteEditMeta"):
+        path = inputs / required(row, "releaseNoteEditMeta")
+        if path.is_file():
+            metadata = json.loads(path.read_bytes())["fields"]
+    options = {
+        field.get("name"): {opt.get("value") for opt in field.get("allowedValues", [])}
+        for field in metadata.values()
+        if "set" in field.get("operations", ["set"])
+    }
+    pending = []
+    for name, value in draft.items():
+        current = observed.get(name)
+        if name != "Release Note Text" and isinstance(current, dict):
+            current = current.get("value")
+        if (
+            name not in observed
+            or current not in (None, "", value)
+            or name not in options
+            or (name != "Release Note Text" and (not value or value not in options[name]))
+        ):
+            pending.append(name)
+    if pending:
+        suggestion = f"Suggested type {note_type}. " if note_type else ""
+        return (
+            {},
+            f"Release note draft: {text} {suggestion}Suggested status Proposed. Jira field review pending for {', '.join(pending)}.",
+        )
+    return draft, f"Release note proposed ({note_type}): {text}"
+
+
 def command_finish(args):
     run = Path(args.out)
     source = Path(args.input)
@@ -80,6 +190,10 @@ def command_finish(args):
         if "resolution" in row:
             case["resolution"] = required(row, "resolution")
         stage = case["stage"]
+        classification = packet.get("investigation", {}).get("classification", {})
+        review_type = classification.get("kind") in {"feature", "task", "uncertain"}
+        if review_type and stage not in {"blocked", "classification_review"}:
+            raise ValueError(f"{key} requires human classification review")
         fix_link = ""
         if stage == "patch":
             if not any(
@@ -94,7 +208,11 @@ def command_finish(args):
             coverage_hold = (
                 packet["verdict"] == "unclear"
                 and errors
-                and all("customer-field read coverage is incomplete" in error for error in errors)
+                and all(
+                    "customer-field read coverage is incomplete" in error
+                    or error == "customer-linked ticket cannot receive a close proposal"
+                    for error in errors
+                )
             )
             proof_refs = packet.get("proof", {}).get("releaseContains", {}).get("refs", [])
             direct = {
@@ -124,6 +242,8 @@ def command_finish(args):
                 or packet["commentPlan"]["status"] != "propose"
             ):
                 raise ValueError(f"{key} has a closure or delivery hold")
+        elif stage == "classification_review" and review_type:
+            case["next"] = "Triage owner: review the issue type before scheduling work."
         elif stage == "blocked":
             case["blocker"] = required(row, "blocker")
         else:
@@ -174,8 +294,61 @@ def command_finish(args):
                             {"label": label, "path": target.relative_to(run.resolve()).as_posix()}
                         )
                 case["nextActions"].append(action)
+        if stage == "classification_review":
+            case["nextActions"] = [
+                {
+                    "owner": "Triage owner",
+                    "action": "Review the proposed issue type",
+                    "links": [{"label": "Evidence", "path": case["evidence"]}],
+                }
+            ]
         if fix_link:
             case["fixedNextStep"] = f"{ref_link(fix_link)} — {_linked_text(case['next'])}"
+        proposals = [
+            json.loads(path.read_bytes())
+            for path in (run / "02-fixes/events" / key).glob("*/proposal.json")
+        ]
+        fields, messages = jira_field_plan(packet, stage, row, proposals, source.parent)
+        signals = packet.get("customerSignals", [])
+        support_cases = verified_support_cases(signals)
+        if support_cases:
+            case["supportCases"] = support_cases
+            messages.append(
+                "Support coordination required. Review "
+                + ", ".join(support_cases)
+                + " with the support owner before customer communication or closure."
+            )
+        elif signals:
+            messages.append("Customer context recorded. A support-case link has not been verified.")
+        if review_type:
+            messages.append(
+                f"Human classification review requested ({classification['kind']}): {classification['basis']}"
+            )
+        case["proposedJiraFields"] = fields
+        case["jiraFieldSummary"] = messages
+        named_customer = row.get("customerNamePresent", False)
+        if not isinstance(named_customer, bool):
+            raise ValueError(f"{key} customerNamePresent must be a boolean")
+        requests = []
+        if named_customer:
+            requests.append(
+                "Please remove the customer name from this bug and use a neutral description such as “the affected deployment”."
+            )
+        if "reporterReproRequest" in row:
+            requests.append(required(row, "reporterReproRequest"))
+        reporter = packet.get("reporter") or {}
+        name = reporter.get("displayName")
+        account = reporter.get("accountId")
+        recipient = "Reporter"
+        if account and name:
+            recipient = "@" + _linked_text(name)
+        if requests:
+            case["reporterNextStep"] = f"- **{recipient}** — " + " ".join(requests)
+            if account and name:
+                case["reporterMention"] = {
+                    "type": "mention",
+                    "attrs": {"id": account, "text": "@" + name},
+                }
         original = packet.get("proposedComment")
         if original:
             outcome_field = "resolution" if "resolution" in case else "finding"
@@ -242,26 +415,33 @@ def command_finish(args):
             if packet.get("verdict") == "duplicate":
                 bullets.append("- " + citation)
             tldr = _linked_text(case[outcome_field]) + " " + release_summary(packet, stage, run)
-            if "featureRequest" in row:
+            if "Fix Version/s" in fields:
+                tldr = tldr.replace("Exact fix version unconfirmed.", "").strip()
+            if messages:
+                tldr += "\n\n" + "\n\n".join(_linked_text(message) for message in messages)
+            if "featureRequest" in row and not review_type:
                 capability = required(row, "featureRequest")
-                reporter = packet.get("reporter") or {}
-                account = reporter.get("accountId")
-                name = reporter.get("displayName")
-                recipient = "Reporter"
                 if account and name:
-                    recipient = "@" + _linked_text(name)
                     case["featureRequesterMention"] = {
                         "type": "mention",
                         "attrs": {"id": account, "text": "@" + name},
                     }
                 tldr += f" {recipient}, please open a feature request for {_linked_text(capability)} if you still need it."
+            next_steps = (
+                case.get("fixedNextStep") or "\n".join(bullets) or _linked_text(case["next"])
+            )
+            if requests:
+                next_steps = case["reporterNextStep"] + "\n" + next_steps
+            heading = f"**Re: {ref_link(key)}**"
+            if not named_customer:
+                heading += " · " + _linked_text(packet["summary"])
             case["proposedComment"] = "\n\n".join(
                 (
-                    f"**Re: {ref_link(key)}** · {_linked_text(packet['summary'])}",
+                    heading,
                     "### TL;DR",
                     tldr,
                     "### Next steps",
-                    case.get("fixedNextStep") or "\n".join(bullets) or _linked_text(case["next"]),
+                    next_steps,
                     comment_footer(packet["commentPlan"]["reference"]),
                 )
             )
@@ -275,7 +455,7 @@ def command_finish(args):
         elif (
             case.get("proposedComment")
             and case["delivery"] != "suppress"
-            and stage != "blocked"
+            and stage not in {"blocked", "classification_review"}
             and observed != "Unknown"
         ):
             transition.update(state="proposed_after_comment", target="In Review")
@@ -300,4 +480,7 @@ def command_finish(args):
                 run / "01-triage/comments" / f"{key}.md", (case["proposedComment"] + "\n").encode()
             )
     refresh_review(run)
+    index = render_cycle_index(run)
+    if index is not None:
+        atomic_write(run.parent / "START-HERE.md", index.encode())
     return 0

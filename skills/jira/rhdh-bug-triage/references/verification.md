@@ -30,7 +30,7 @@ definitive gate or become a command to post, close, fix, or backport.
 | Positive fixed | Matching incorporated artifact covers the whole issue, shipped carrying release and exact target ancestry, cited validation and independent agreement produce the correct fixed recommendation. |
 | Hard negatives | Similar title/different trigger or fix; inward duplicate link; newer/undated/customer target; duplicate chain; conflicting cluster; partial fix; closed-unmerged or unreleased PR; older-stream fix absent from target; contradictory runtime evidence; copied review flags. |
 | Current validity | Cited exact-release `persists` succeeds; cited `resolved` plus whole-scope removal supports obsolete. Open status, no PR hit, missing/wrong-release/uncited validation or non-repro without cause must not become definitive validity. |
-| Selection | Age exactly 90 days; younger/missing age; all affects older; mixed older/equal/newer; missing/ambiguous/non-comparable affects; `all-open` bypasses only age/affects; customer/Done always excluded; default 5 versus `--all`; reasons retained. |
+| Selection | Age exactly 90 days; younger/missing age; all affects older; mixed older/equal/newer; missing/ambiguous/non-comparable affects; `all-open` bypasses only age/affects; customer-related bugs included and Done excluded; default 5 versus `--all`; reasons retained. |
 | Investigation gate | Missing directory/file, mismatched key, blank/unknown verdict and malformed inputs fail before a successful report. An honestly investigated uncertainty is supported; a template is not adjudication. |
 | Requirement verification | `--require-investigation` rejects absent/not-started records, missing observations/citations, mismatched release and false completion with unknown requirements. Positive/negative checks need direct method-matching evidence. A specific blocked check is visible; a valid source diagnosis survives unrelated closure gates. |
 | Read adapters | Search-to-full-view fallback, pagination/partial envelope rejection, deployment-specific customer mappings, missing fields, ADF hidden Jira/PR/support links, and exact Jira-key boundaries. |
@@ -44,7 +44,7 @@ facts or reviewers; perform and retain the actual source inspection separately.
 
 ## Exact-comment and no-write safety
 
-Revalidate saved controls against current customer and Done exclusions. Controls
+Revalidate saved controls against current project and Done exclusions. Controls
 outside the selection scope do not count toward eligible-backlog coverage. Keep
 freshly hydrated candidate facts ahead of export snapshots, including customer
 signals and completion status. Hash a supplied selection manifest alongside the

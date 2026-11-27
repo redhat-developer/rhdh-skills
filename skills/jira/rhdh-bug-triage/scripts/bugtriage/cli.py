@@ -20,6 +20,7 @@ from typing import List, Optional
 from .brief import write_briefs
 from .collect import CollectConfig, collect
 from .comments import DEFAULT_COOLDOWN_DAYS
+from .cycle import adopted_review, resume
 from .evaluate import write_evaluation
 from .events import command_event, command_trigger
 from .forge import ForgeAdapterError
@@ -93,6 +94,14 @@ def _field_names(path: Optional[str]) -> Optional[dict]:
     return document
 
 
+def command_next(args):
+    default = Path(args.root) / "private/field-meta.json"
+    field_names = args.field_names or (str(default) if default.exists() else None)
+    result = resume(args.root, args.current_release, args.inventory, _field_names(field_names))
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def command_progress(args):
     inventory = Path(args.inventory).read_bytes()
     expected = set(json.loads(inventory)["keys"])
@@ -100,8 +109,11 @@ def command_progress(args):
     states = {}
     for directory in args.run:
         audit = Path(directory) / "01-triage" / "audit"
-        result = json.loads((audit / "packets.json").read_text())
-        if result["meta"]["coverage"].get("inventoryHash") != digest:
+        packet_bytes = (audit / "packets.json").read_bytes()
+        result = json.loads(packet_bytes)
+        if result["meta"]["coverage"].get("inventoryHash") != digest and not adopted_review(
+            Path(directory), digest, packet_bytes
+        ):
             raise RunError("batch comes from a different inventory")
         sample = json.loads((audit / "selection.json").read_text())
         rows = [(row["key"], "excluded") for row in sample["excluded"]]
@@ -537,6 +549,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 3")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    advance = subparsers.add_parser(
+        "next", help="resume or prepare the next all-open batch in this run"
+    )
+    advance.add_argument("--root", required=True)
+    advance.add_argument("--current-release", required=True)
+    advance.add_argument("--inventory", help="existing frozen inventory for initial import")
+    advance.add_argument("--field-names", help="Jira field metadata for new batch reads")
+    advance.set_defaults(func=command_next)
 
     progress = subparsers.add_parser(
         "progress", help="reconcile completed batch runs against a frozen inventory"

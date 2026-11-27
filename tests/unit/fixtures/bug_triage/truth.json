@@ -1,9 +1,9 @@
 {
   "RHDHBUGS-1001": {"verdict": "still_valid"},
   "RHDHBUGS-1002": {"verdict": "duplicate", "duplicateOf": "RHDHBUGS-1001"},
+  "RHDHBUGS-1003": {"verdict": "unclear"},
   "RHDHBUGS-1006": {"verdict": "already_fixed"},
   "RHDHBUGS-1007": {"verdict": "unclear"},
   "RHDHBUGS-1009": {"verdict": "still_valid"},
-  "RHDHBUGS-1010": {"verdict": "duplicate", "duplicateOf": "RHDHBUGS-1009"},
-  "RHDHBUGS-1011": {"verdict": "unclear"}
+  "RHDHBUGS-1010": {"verdict": "duplicate", "duplicateOf": "RHDHBUGS-1009"}
 }

@@ -1,6 +1,7 @@
 """Consume one locally prepared event; atomically retain one receipt per issue revision."""
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -118,6 +119,19 @@ def evidenced_backport(record, comments, docs, inputs):
         return ("human_review" if action == "undetermined" else action), reason
     if gate not in {"assess", "propose"}:
         raise ValueError("invalid backport decision")
+    if record.get("supportStatus") == "unsupported":
+        return "skip", "Branch is outside the support window."
+    if record.get("compatibility") == "breaking":
+        return "skip", "The proposed change would break compatibility on this branch."
+    if record.get("supportStatus") != "supported" or not str(
+        record.get("supportSource") or ""
+    ).startswith("https://"):
+        return "human_review", "Target branch support is unverified."
+    if (
+        record.get("compatibility") != "compatible"
+        or not (record.get("compatibilityEvidence") or "").strip()
+    ):
+        return "human_review", "Target branch compatibility is unverified."
     if comments is None:
         return "human_review", "Complete verified Jira comment review unavailable."
     branch = required(record, "branch")
@@ -190,9 +204,52 @@ def backport_decision(record):
     return action, f"{reason} Impact: {impact}. Workaround: {workaround}. {basis}"
 
 
-def test_section(record):
+def proposal_body(repo, record, fallback):
+    """Check the investigator's filled template against the verified target commit."""
+    paths = git(repo, "ls-tree", "-r", "--name-only", "-z", record["base"]).split("\0")
+    roots = ("", ".github/", "docs/")
+    defaults = [
+        path
+        for root in roots
+        for path in paths
+        if path.casefold() == root + "pull_request_template.md"
+    ]
+    named = [
+        path
+        for path in paths
+        if any(path.casefold().startswith(root + "pull_request_template/") for root in roots)
+        and path.lower().endswith(".md")
+    ]
+    selected = record.get("templatePath")
+    if selected is None:
+        candidates = defaults or named
+        if len(candidates) > 1:
+            raise ValueError("select the applicable PR template with templatePath")
+        selected = next(iter(candidates), None)
+    elif selected not in defaults + named:
+        raise ValueError("templatePath is not a PR template at the target base")
+    body = record.get("body", fallback)
+    if selected:
+        template = git(repo, "show", f"{record['base']}:{selected}")
+        headings = re.findall(r"^#{1,6} +.+$", template, re.M)
+        remaining = body.splitlines()
+        for heading in headings:
+            if heading not in remaining:
+                raise ValueError(f"fill the target PR template {selected}, preserving {heading}")
+            remaining = remaining[remaining.index(heading) + 1 :]
+        if body.strip() == template.strip():
+            raise ValueError("fill the PR template before proposing the change")
+    placeholder = "<!-- triage-verification -->"
+    if body.count(placeholder) > 1:
+        raise ValueError("use one verification placeholder per proposal")
+    if placeholder in body:
+        return body.replace(placeholder, test_section(record, heading=False))
+    return body + "\n" + test_section(record)
+
+
+def test_section(record, *, heading=True):
     """Render the investigator's recorded commands as text; never execute them."""
-    lines = ["", "### How this was tested", ""]
+    lines = ["", "### How this was tested", ""] if heading else []
     commands = record.get("testCommands", [])
     if not isinstance(commands, list) or not all(
         isinstance(c, str) and c.strip() for c in commands
@@ -201,6 +258,19 @@ def test_section(record):
     if commands:
         lines.extend(["```bash", *commands, "```", ""])
     lines.append(required(record, "verification"))
+    if "verificationLog" in record:
+        log = html.escape(required(record, "verificationLog"))
+        lines.extend(
+            [
+                "",
+                "<details>",
+                "<summary>Verification log</summary>",
+                "",
+                f"<pre>{log}</pre>",
+                "",
+                "</details>",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -240,6 +310,12 @@ def dispatch(event, key, dest, inputs):
     run = inputs / required(event, "triageRun")
     packets = json.loads((run / "01-triage/audit/packets.json").read_bytes())
     finding = next((row for row in packets["packets"] if row["key"] == key), {})
+    if finding.get("investigation", {}).get("classification", {}).get("kind") in {
+        "feature",
+        "task",
+        "uncertain",
+    }:
+        raise ValueError("issue classification requires human review before preparing a fix")
     docs_only = event.get("kind") == "docs"
     scoped_docs = (
         docs_only
@@ -260,10 +336,12 @@ def dispatch(event, key, dest, inputs):
     ):
         raise ValueError("no actionable fix handoff for this issue")
     base = proposal(event, dest, inputs, docs_only=docs_only)
+    repo = inputs / event["checkout"]
+    body = required(event, "body")
     lines = [
         f"# {required(event, 'title')}",
         "",
-        required(event, "body"),
+        proposal_body(repo, event, body),
         "",
         f"Base: {base}",
         required(event, "branchEvidence"),
@@ -290,7 +368,23 @@ def dispatch(event, key, dest, inputs):
     for number, decision in enumerate(decisions):
         branch = required(decision, "branch")
         action, reason = evidenced_backport(decision, comments, docs_only, inputs)
-        evaluated.append({"branch": branch, "decision": action, "reason": reason})
+        evaluated.append(
+            {
+                "branch": branch,
+                "decision": action,
+                "reason": reason,
+                **{
+                    field: decision[field]
+                    for field in (
+                        "supportStatus",
+                        "supportSource",
+                        "compatibility",
+                        "compatibilityEvidence",
+                    )
+                    if field in decision
+                },
+            }
+        )
         if branch in seen:
             raise ValueError("invalid or duplicate backport decision")
         seen.add(branch)
@@ -307,18 +401,39 @@ def dispatch(event, key, dest, inputs):
                 )
             )
             (directory / "PROPOSAL.md").write_text(
-                f"# {event['title']} ({branch})\n\n{event['body']}\n\n"
+                f"# {event['title']} ({branch})\n\n{proposal_body(repo, decision, body)}\n\n"
                 f"Target: {branch} at {decision['base']}.\n\n{reason}\n"
                 + "\n".join(comment_lines)
-                + f"\n{test_section(decision)}\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
+                + "\n\n[Patch](change.patch) · [Verification record](VERIFY.md)\n"
             )
-    lines.extend(
-        [test_section(event), "", "[Patch](change.patch) · [Verification record](VERIFY.md)"]
-    )
+    lines.extend(["", "[Patch](change.patch) · [Verification record](VERIFY.md)"])
+    release_targets = {}
+    for record in [
+        event,
+        *(
+            record
+            for record, result in zip(decisions, evaluated)
+            if result["decision"] == "propose"
+        ),
+    ]:
+        if "releaseTarget" in record:
+            target = record["releaseTarget"]
+            version, source = required(target, "version"), required(target, "source")
+            if not source.startswith("https://"):
+                raise ValueError("releaseTarget requires a cited branch-to-version mapping")
+            release_targets[record["branch"]] = {"version": version, "source": source}
+    for result in evaluated:
+        if result["branch"] in release_targets:
+            result["releaseTarget"] = release_targets[result["branch"]]
     write_json(
         dest / "proposal.json",
         {
             **{name: event.get(name) for name in ("repository", "branch", "kind", "title")},
+            **(
+                {"releaseTarget": release_targets[event["branch"]]}
+                if event["branch"] in release_targets
+                else {}
+            ),
             "reviewedCommentIds": [row["id"] for row in comments or []],
             "backports": evaluated,
         },

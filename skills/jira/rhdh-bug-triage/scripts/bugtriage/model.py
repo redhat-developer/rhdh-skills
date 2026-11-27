@@ -241,6 +241,17 @@ def _collect_commits(payload: Dict[str, Any]) -> List[str]:
     return sorted(set(COMMIT_URL_RE.findall(json.dumps(payload, default=str))))
 
 
+def verified_support_cases(signals: Iterable[str]) -> List[str]:
+    """Return references observed in structured Jira links or dedicated case fields."""
+    cases = set()
+    for signal in signals:
+        if signal.startswith("case:"):
+            cases.add(signal.removeprefix("case:"))
+        elif re.fullmatch(r"link:.*:RHDHSUPP-\d+", signal):
+            cases.add(signal.rsplit(":", 1)[1])
+    return sorted(cases)
+
+
 def _customer_signals(
     ticket_key: str,
     payload: Dict[str, Any],
@@ -272,6 +283,20 @@ def _customer_signals(
             continue
         if _populated(value):
             signals.append(f"field:{field_name}")
+            if field_name.casefold() in {
+                "case link",
+                "support case reference",
+                "sfdc cases links",
+                "sfdc cases",
+            }:
+                for ref in as_text(value).splitlines():
+                    ref = ref.strip().rstrip("/")
+                    if re.fullmatch(
+                        r"(?:https://redhat\.atlassian\.net/browse/)?RHDHSUPP-\d+", ref
+                    ):
+                        signals.append("case:" + ref.rsplit("/", 1)[-1])
+                    elif re.fullmatch(r"https://access\.redhat\.com/support/cases/\d+", ref):
+                        signals.append(f"case:{ref}")
 
     text = json.dumps(payload, default=str)
     for key in sorted(set(SUPPORT_KEY_RE.findall(text))):
@@ -371,6 +396,8 @@ class Ticket:
     customer_fields_read: List[str] = field(default_factory=list)
     unmapped_custom_fields: List[str] = field(default_factory=list)
     read_gaps: List[str] = field(default_factory=list)
+    fix_versions_empty: bool = False
+    release_note_fields: Dict[str, Any] = field(default_factory=dict)
     affects_versions_ambiguous: bool = False
     customer_fields_complete: bool = False
     former_keys: List[str] = field(default_factory=list)
@@ -468,6 +495,13 @@ def normalize_issue(issue: Dict[str, Any], field_names: Optional[Dict[str, str]]
         components=components,
         labels=labels,
         fix_versions=as_names(_first(payload, "fixVersions", "fix_versions")),
+        fix_versions_empty=payload.get("fixVersions", payload.get("fix_versions")) == [],
+        release_note_fields={
+            name: payload[field_id]
+            for field_id, name in field_names.items()
+            if name in {"Release Note Text", "Release Note Type", "Release Note Status"}
+            and field_id in payload
+        },
         affects_versions=as_names(raw_versions),
         affects_versions_ambiguous=versions_ambiguous,
         assignee=as_name(_first(payload, "assignee")),

@@ -63,6 +63,11 @@ def test_patch_and_backport_check_without_changing_checkout(
     git("init", "-q")
     git("remote", "add", "origin", "https://github.com/example/fixture.git")
     (repo / filename).write_text("old\n")
+    if kind == "docs":
+        template = repo / ".github/pull_request_template.md"
+        template.parent.mkdir()
+        template.write_text("## Description\n\n## Verification\n\n- [ ] Docs reviewed\n")
+        git("add", ".github")
     git("add", filename)
     git("-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "base")
     base = git("rev-parse", "HEAD")
@@ -102,6 +107,10 @@ def test_patch_and_backport_check_without_changing_checkout(
                 reason="Same component",
                 impact="moderate",
                 workaround="costly",
+                supportStatus="supported",
+                supportSource="https://example.org/release-policy",
+                compatibility="compatible",
+                compatibilityEvidence="The previous configuration and defaults passed on stable.",
                 impactEvidence="Rebuilding the affected component interrupts service.",
             )
         ],
@@ -124,6 +133,12 @@ def test_patch_and_backport_check_without_changing_checkout(
         }
     ]
     if kind == "docs":
+        event["body"] = (
+            "## Description\n\nExplain the new title.\n\n## Verification\n\n"
+            "<!-- triage-verification -->\n\n- [ ] Docs reviewed"
+        )
+        event["verificationLog"] = "main output: </details>"
+        event["backports"][0]["verificationLog"] = "stable output"
         checks = {}
         for field in ("behaviorCheck", "docsCheck"):
             path = tmp_path / f"{field}.log"
@@ -169,10 +184,23 @@ def test_patch_and_backport_check_without_changing_checkout(
     if accepted:
         drafts = list((tmp_path / "run").rglob("PROPOSAL.md"))
         assert len(drafts) == 2
-        assert all(
-            "### How this was tested\n\n```bash\ngit diff --check\n```" in draft.read_text()
-            for draft in drafts
-        )
+        for draft in drafts:
+            body = draft.read_text()
+            if kind == "docs":
+                assert body.index("## Description") < body.index("## Verification")
+                assert body.index("Title fixture checked") < body.index("<details>")
+                assert body.index("</details>") < body.index("- [ ] Docs reviewed")
+                assert "### How this was tested" not in body
+                assert "<!-- triage-verification -->" not in body
+                log = (
+                    "stable output"
+                    if "backports" in draft.parts
+                    else "main output: &lt;/details&gt;"
+                )
+                assert f"<pre>{log}</pre>" in body
+            else:
+                assert "### How this was tested\n\n```bash\ngit diff --check\n```" in body
+                assert "<details>" not in body
     assert git("status", "--porcelain") == status
     assert git("diff", "--cached") == ""
 
@@ -327,10 +355,22 @@ def test_comment_review_requires_full_thread_and_grounded_excerpts(tmp_path):
         "decision": "assess",
         "branch": "stable",
         "reason": "Supported and affected.",
+        "supportStatus": "supported",
+        "supportSource": "https://example.org/release-policy",
+        "compatibility": "compatible",
+        "compatibilityEvidence": "Existing configurations still pass.",
         "impact": "unknown",
         "workaround": "costly",
     }
     assert evidenced_backport(record, seen, False, tmp_path)[0] == "propose"
+    for override, expected in [
+        ({"supportStatus": "unsupported"}, "skip"),
+        ({"supportSource": ""}, "human_review"),
+        ({"compatibility": "breaking"}, "skip"),
+        ({"compatibilityEvidence": ""}, "human_review"),
+    ]:
+        for docs in (False, True):
+            assert evidenced_backport({**record, **override}, seen, docs, tmp_path)[0] == expected
     assert (
         evidenced_backport(record, [{**row, "scope": "older"}], False, tmp_path)[0]
         == "human_review"
@@ -346,3 +386,134 @@ def test_comment_review_requires_full_thread_and_grounded_excerpts(tmp_path):
     path.write_text(json.dumps([{"key": key, "fields": {"comment": thread}}]))
     assert reviewed_comments(event, key, tmp_path) is None
     assert evidenced_backport(record, None, False, tmp_path)[0] == "human_review"
+
+
+@pytest.mark.parametrize("done_case", [False, True])
+def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys, done_case):
+    from bugtriage import cycle
+
+    keys = [f"RHDHBUGS-{i}" for i in range(1, 11)]
+    monkeypatch.setattr(cycle, "search_acli", lambda *a, **kw: [{"key": k} for k in keys])
+    fetched = []
+
+    def fetch(jql, **kwargs):
+        batch = jql.split("(", 1)[1].split(")", 1)[0].split(", ")
+        fetched.append(batch)
+        return {
+            "provenance": {},
+            "issues": [
+                {
+                    "key": k,
+                    "fields": {
+                        "summary": "Fixture",
+                        "issuetype": {"name": "Bug"},
+                        "status": {"name": "Closed" if done_case and k == keys[-1] else "Open"},
+                        "labels": [],
+                        "issuelinks": [],
+                    },
+                }
+                for k in batch
+            ],
+        }
+
+    monkeypatch.setattr(cycle, "export_from_acli", fetch)
+    args = ["next", "--root", str(tmp_path), "--current-release", "2.1.0"]
+
+    def advance():
+        assert main(args) == 0
+        return json.loads(capsys.readouterr().out)
+
+    def finish(batch, legacy=False):
+        review = Path(batch["review"])
+        audit = review / "01-triage/audit"
+        audit.mkdir(parents=True)
+        sample = json.loads(Path(batch["sample"]).read_bytes())
+        ordered = [row["key"] for row in sample["tickets"]]
+        assert set(ordered) | {item["key"] for item in sample["excluded"]} == set(batch["keys"])
+        digest = hashlib.sha256((tmp_path / "private/bugs.json").read_bytes()).hexdigest()
+        coverage = {} if legacy else {"inventoryHash": digest}
+        (audit / "selection.json").write_text(json.dumps(sample))
+        (audit / "packets.json").write_text(
+            json.dumps(
+                {
+                    "currentRelease": "2.1.0",
+                    "meta": {"coverage": coverage},
+                    "packets": [
+                        {"key": k, "summary": "Fixture", "investigation": {"status": "completed"}}
+                        for k in ordered
+                    ],
+                }
+            )
+        )
+        (review / "run.json").write_text("{}")
+        if not legacy:
+            assert advance()["batch"] == batch["batch"]
+        (tmp_path / "proof.md").write_text("checked")
+        rows = [
+            dict(
+                key=k,
+                stage="blocked",
+                finding="Needs reproduction.",
+                verification="Checked.",
+                next="Supply fixture.",
+                evidence="proof.md",
+                blocker="Missing fixture.",
+            )
+            for k in ordered
+        ]
+        source = tmp_path / "results.json"
+        source.write_text(json.dumps(rows))
+        finish_args = ["finish", "--input", str(source), "--out", str(review)]
+        assert main(finish_args) == 0
+        return finish_args
+
+    first = advance()
+    assert first["batch"] == 1 and first["keys"] == keys[:5]
+    assert advance()["state"] == "resume"
+    finish(first, legacy=True)
+    assert main(args) == 2
+    inventory = tmp_path / "private/bugs.json"
+    source = tmp_path / "original.json"
+    source.write_bytes(inventory.read_bytes())
+    inventory.unlink()
+    wrong = tmp_path / "wrong.json"
+    wrong.write_text(json.dumps({**json.loads(source.read_bytes()), "keys": keys[::-1]}))
+    assert main([*args, "--inventory", str(wrong)]) == 2
+    assert not inventory.exists()
+    assert main([*args, "--inventory", str(source)]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["batch"] == 2 and second["keys"] == keys[5:]
+    assert advance()["batch"] == 2
+    finish_args = finish(second)
+    index = tmp_path / "START-HERE.md"
+    original = index.read_bytes()
+    assert f"{10 - int(done_case)} issues reviewed across 2 completed batches" in index.read_text()
+    for page in [index, Path(second["review"]) / "START-HERE.md"]:
+        assert ("Excluded after screening" in page.read_text()) == done_case
+        if done_case:
+            assert (
+                f"[{keys[-1]}](https://redhat.atlassian.net/browse/{keys[-1]})" in page.read_text()
+            )
+            assert "done" in page.read_text().lower()
+    assert "0 of 10 inventory entries remain" in index.read_text()
+    for key in keys:
+        assert index.read_text().count(f"[{key}]") == 1
+    assert main(finish_args) == 0
+    assert index.read_bytes() == original
+    assert advance() == advance() == {"state": "complete", "accounted": 10}
+    assert fetched == [keys[:5], keys[5:]]
+    assert (
+        main(
+            [
+                "progress",
+                "--inventory",
+                str(inventory),
+                "--run",
+                first["review"],
+                "--run",
+                second["review"],
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["pending"] == []
