@@ -36,6 +36,105 @@ def comment_footer(reference: str) -> str:
     return f"{ATTRIBUTION}  \n`{reference.removeprefix('rhdh-bug-triage:')}`"
 
 
+ADF_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
+ADF_BULLET_RE = re.compile(r"^[-*]\s+(.*)")
+ADF_ORDERED_RE = re.compile(r"^\d+\.\s+(.*)")
+ADF_INLINE_RE = re.compile(r"\*\*(.+?)\*\*|`([^`\n]+)`|(?<!\\)\[([^\]]+)\]\(([^)\s]+)\)")
+
+
+def _adf_text(text, marks):
+    node = {"type": "text", "text": text.replace("\\[", "[").replace("\\]", "]")}
+    if marks:
+        node["marks"] = list(marks)
+    return node
+
+
+def _adf_inline(text, marks=()):
+    """Turn the draft's Markdown inline marks into ADF text nodes."""
+    nodes, last = [], 0
+    for match in ADF_INLINE_RE.finditer(text):
+        if match.start() > last:
+            nodes.append(_adf_text(text[last : match.start()], marks))
+        bold, code, label, url = match.groups()
+        if bold is not None:
+            nodes.extend(_adf_inline(bold, (*marks, {"type": "strong"})))
+        elif code is not None:
+            nodes.append(_adf_text(code, (*marks, {"type": "code"})))
+        else:
+            nodes.append(_adf_text(label, (*marks, {"type": "link", "attrs": {"href": url}})))
+        last = match.end()
+    if last < len(text):
+        nodes.append(_adf_text(text[last:], marks))
+    return [node for node in nodes if node["text"]] or [{"type": "text", "text": ""}]
+
+
+def _adf_blocks(markdown):
+    lines = markdown.splitlines()
+    blocks, index = [], 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        if not stripped:
+            index += 1
+            continue
+        heading = ADF_HEADING_RE.match(stripped)
+        if heading:
+            blocks.append(
+                {
+                    "type": "heading",
+                    "attrs": {"level": len(heading.group(1))},
+                    "content": _adf_inline(heading.group(2)),
+                }
+            )
+            index += 1
+            continue
+        for pattern, kind in ((ADF_BULLET_RE, "bulletList"), (ADF_ORDERED_RE, "orderedList")):
+            if not pattern.match(stripped):
+                continue
+            items = []
+            while index < len(lines):
+                item = pattern.match(lines[index].strip())
+                if not item:
+                    break
+                items.append(
+                    {
+                        "type": "listItem",
+                        "content": [{"type": "paragraph", "content": _adf_inline(item.group(1))}],
+                    }
+                )
+                index += 1
+            blocks.append({"type": kind, "content": items})
+            break
+        else:
+            group = []
+            while index < len(lines):
+                candidate = lines[index].strip()
+                if not candidate or candidate.startswith(("#", "- ", "* ")):
+                    break
+                if ADF_ORDERED_RE.match(candidate):
+                    break
+                group.append(lines[index])
+                index += 1
+            if group:
+                content = []
+                for position, raw in enumerate(group):
+                    if position and group[position - 1].endswith("  "):
+                        content.append({"type": "hardBreak"})
+                    content.extend(_adf_inline(raw.strip()))
+                blocks.append({"type": "paragraph", "content": content})
+    return blocks
+
+
+def render_adf(markdown: str) -> dict:
+    """Render a draft as Atlassian Document Format so Jira shows real structure.
+
+    The Markdown draft stays the reviewable source. Jira's editor does not
+    render Markdown pasted into a comment, so the writer posts this ADF body
+    through the REST API instead.
+    """
+    return {"version": 1, "type": "doc", "content": _adf_blocks(markdown)}
+
+
 def _history_review(ticket: Ticket, assessment: Assessment | None) -> dict | None:
     """Accept an explicit source-linked review of exactly the fetched comments."""
     review = assessment.history_review if assessment and assessment.key == ticket.key else {}

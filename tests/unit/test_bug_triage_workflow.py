@@ -734,7 +734,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         [{**row, "blocker": ""}],
         [{**row, "resolution": "See https://example.test/unverified"}],
         [{**row, "citationRef": "https://example.test/unverified"}],
-        [{**row, "reviewPRs": ["https://github.com/example/fixture/pull/9"]}],
+        [{**row, "reviewPRs": ["https://github.com/redhat-developer/fixture/pull/9"]}],
         [
             {
                 **row,
@@ -838,7 +838,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     packet = audit["packets"][0]
     packet.update(
         fix={
-            "pr": "https://github.com/example/fixture/pull/1",
+            "pr": "https://github.com/redhat-developer/fixture/pull/1",
             "merged": True,
             "containedInReviewRelease": True,
         },
@@ -878,7 +878,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     line = draft.split("### Next steps\n\n")[1].split("\n\n")[0]
     assert (
         line
-        == "[PR #1](https://github.com/example/fixture/pull/1) — Check customer fields before closure."
+        == "[PR #1](https://github.com/redhat-developer/fixture/pull/1) — Check customer fields before closure."
     )
     assert line in (review / "START-HERE.md").read_text()
 
@@ -1022,3 +1022,49 @@ def test_issue_type_review_overrides_fix_handoff(inputs, kind):
     document["investigation"]["classification"]["ref"] = "RHDHBUGS-999"
     with pytest.raises(ValueError, match="classification"):
         parse_assessment(document)
+
+
+def test_known_issue_without_fix_version_flags_reporter(inputs, tmp_path):
+    review = run(inputs).output_dir
+    packet_file = review / "01-triage/audit/packets.json"
+    audit = json.loads(packet_file.read_text())
+    packet = audit["packets"][0]
+    key = packet["key"]
+    packet["reporter"] = {"displayName": "Fixture Reporter", "accountId": "fixture-account"}
+    packet["releaseNoteFields"] = {"Release Note Type": {"value": "Known Issue"}}
+    packet["fixVersions"] = []
+    packet["fixVersionsEmpty"] = True
+    packet_file.write_text(json.dumps(audit))
+    log = tmp_path / "fixture.log"
+    log.write_text("Checked the release record.\n")
+    row = dict(
+        key=key,
+        stage="blocked",
+        finding="The defect is still valid.",
+        verification="Checked the release record.",
+        next="Prepare the fix.",
+        evidence=log.name,
+        blocker="The fix is not implemented yet.",
+    )
+    source = tmp_path / "results.json"
+    source.write_text(json.dumps([row]))
+    assert cli.main(["finish", "--input", str(source), "--out", str(review)]) == 0
+    case = json.loads((review / "run.json").read_text())["cases"][key]
+    assert "Known Issue" in " ".join(case["jiraFieldSummary"])
+    assert case["reporterNextStep"].startswith("- **@Fixture Reporter** — ")
+    assert "please add the fix version" in case["reporterNextStep"]
+    draft = (review / f"01-triage/comments/{key}.md").read_text()
+    assert "please add the fix version" in draft
+    assert "commits us to a fix in a future release" in draft
+    adf = json.loads((review / f"01-triage/comments/{key}.adf.json").read_text())
+    assert adf["type"] == "doc"
+    assert any(node["type"] == "heading" for node in adf["content"])
+
+
+def test_upstream_pull_request_detection():
+    from bugtriage.finish import upstream_pull_request
+
+    assert upstream_pull_request("https://github.com/backstage/backstage/pull/1")
+    assert upstream_pull_request("https://github.com/backstage/community-plugins/pull/2")
+    assert upstream_pull_request("https://github.com/knex/knex/pull/4")
+    assert not upstream_pull_request("https://github.com/redhat-developer/rhdh/pull/3")

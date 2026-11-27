@@ -305,3 +305,47 @@ def test_unclear_draft_cannot_turn_legacy_advice_into_a_human_reproduction_reque
     assert "Ask Documentation" not in packet.proposed_comment
     assert "reproduce" not in packet.recommended_step.lower()
     assert "close " not in packet.recommended_step.lower()
+
+
+def test_comment_draft_renders_as_jira_adf():
+    """Jira gets structure, not Markdown: headings, links, lists and code."""
+    from bugtriage.comments import render_adf
+
+    draft = "\n\n".join(
+        [
+            "**Re: [RHDHBUGS-1](https://redhat.atlassian.net/browse/RHDHBUGS-1)** · Title",
+            "### TL;DR",
+            "Still valid in 2.1.0, per [knex 3.1.0](https://github.com/knex/knex/blob/3.1.0/x.js).",
+            "### Next steps",
+            "- **Reporter** — Add the Fix Version/s.\n- Review `change.patch`.",
+            "rhdh-agentic-bug-triager · AI-generated. Check for accuracy.  \n`v1:abc`",
+        ]
+    )
+    document = render_adf(draft)
+    assert document["type"] == "doc"
+    assert [node["type"] for node in document["content"]] == [
+        "paragraph",
+        "heading",
+        "paragraph",
+        "heading",
+        "bulletList",
+        "paragraph",
+    ]
+    assert document["content"][1]["attrs"]["level"] == 3
+    header = document["content"][0]["content"]
+    assert any(
+        mark["type"] == "link"
+        and mark["attrs"]["href"] == "https://redhat.atlassian.net/browse/RHDHBUGS-1"
+        for node in header
+        for mark in node.get("marks", [])
+    )
+    assert any(mark["type"] == "strong" for node in header for mark in node.get("marks", []))
+    items = [item["content"][0]["content"] for item in document["content"][4]["content"]]
+    assert len(items) == 2
+    assert any(mark["type"] == "code" for node in items[1] for mark in node.get("marks", []))
+    footer = document["content"][5]["content"]
+    assert any(node["type"] == "hardBreak" for node in footer)
+    text = "".join(
+        node.get("text", "") for block in document["content"] for node in block.get("content", [])
+    )
+    assert "**" not in text and "](" not in text and "###" not in text

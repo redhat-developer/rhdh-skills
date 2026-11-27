@@ -5,20 +5,39 @@ import json
 import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
-from .comments import comment_footer
+from .comments import comment_footer, render_adf
 from .cycle import render_cycle_index
 from .events import required
 from .layout import refresh_review
 from .model import TRIAGED_LABEL, as_text
-from .policy import CLOSE_ACTIONS, _linked_text, ref_link
+from .policy import CLOSE_ACTIONS, _linked_text, is_upstream_repository, ref_link
 
 
 def atomic_write(path, data):
     with NamedTemporaryFile(dir=path.parent, delete=False) as target:
         target.write(data)
     Path(target.name).replace(path)
+
+
+def known_issue_without_fix_version(packet):
+    """A Known Issue commits us to a fix, so it needs a fix version to land in."""
+    observed = packet.get("releaseNoteFields", {})
+    note_type = observed.get("Release Note Type")
+    if isinstance(note_type, dict):
+        note_type = note_type.get("value")
+    return (
+        as_text(note_type).strip().casefold() == "known issue"
+        and packet.get("fixVersionsEmpty") is True
+        and not packet.get("fixVersions")
+    )
+
+
+def upstream_pull_request(url):
+    """True for a pull request in a repository RHDH is built on top of."""
+    path = urlsplit(url).path.split("/")
+    return len(path) > 2 and is_upstream_repository("/".join(path[1:3]))
 
 
 def release_summary(packet, stage, run):
@@ -84,6 +103,9 @@ def jira_field_plan(packet, stage, row, proposals, inputs):
         else:
             by_branch = {}
             for proposal in proposals:
+                if proposal.get("upstream"):
+                    # An upstream patch does not determine this ticket's RHDH release.
+                    continue
                 for target in [
                     proposal,
                     *(b for b in proposal["backports"] if b["decision"] == "propose"),
@@ -304,11 +326,22 @@ def command_finish(args):
             ]
         if fix_link:
             case["fixedNextStep"] = f"{ref_link(fix_link)} — {_linked_text(case['next'])}"
-        proposals = [
-            json.loads(path.read_bytes())
-            for path in (run / "02-fixes/events" / key).glob("*/proposal.json")
-        ]
+        proposal_paths = list((run / "02-fixes/events" / key).glob("*/proposal.json"))
+        proposals = [json.loads(path.read_bytes()) for path in proposal_paths]
         fields, messages = jira_field_plan(packet, stage, row, proposals, source.parent)
+        for path, proposal in zip(proposal_paths, proposals):
+            if not proposal.get("upstream"):
+                continue
+            patch = (path.parent / "change.patch").relative_to(run).as_posix()
+            messages.append(
+                f"Upstream fix belongs in {proposal['repository']}: attach `{patch}` to {key} "
+                "and mention the upstream follow-up in the comment instead of opening a pull request."
+            )
+        if known_issue_without_fix_version(packet):
+            messages.append(
+                "Release Note Type is Known Issue but no Fix Version/s is set. "
+                "A Known Issue commits us to fixing it in a future release, so the reporter is asked to name that release."
+            )
         steps = row.get("reproductionSteps", [])
         if not isinstance(steps, list) or not all(
             isinstance(step, str) and step.strip() for step in steps
@@ -365,6 +398,12 @@ def command_finish(args):
             )
         if "reporterReproRequest" in row:
             requests.append(required(row, "reporterReproRequest"))
+        if known_issue_without_fix_version(packet):
+            requests.append(
+                "This bug is marked as a Known Issue in its release note but has no Fix Version/s. "
+                "A Known Issue commits us to a fix in a future release, so please add the fix version "
+                "for the release that will carry the fix."
+            )
         reporter = packet.get("reporter") or {}
         name = reporter.get("displayName")
         account = reporter.get("accountId")
@@ -416,6 +455,10 @@ def command_finish(args):
                 for url in public_prs
             ):
                 raise ValueError(f"{key} reviewPRs must be directly evidenced GitHub pull requests")
+            if any(upstream_pull_request(url) for url in public_prs):
+                raise ValueError(
+                    f"{key} upstream fixes are attached to the ticket as a patch, not proposed as pull requests"
+                )
             bullets = []
             pending_prs = dict.fromkeys(public_prs)
             for assignment in case.get("nextActions", []):
@@ -425,6 +468,10 @@ def command_finish(args):
                 if pr:
                     if pr not in public_prs:
                         raise ValueError(f"{key} action PR must be a verified reviewPR")
+                    if upstream_pull_request(pr):
+                        raise ValueError(
+                            f"{key} attach the upstream patch to the ticket instead of opening a pull request"
+                        )
                     pending_prs.pop(pr, None)
                     target = ref_link(pr)
                 else:
@@ -517,6 +564,13 @@ def command_finish(args):
         if case.get("proposedComment"):
             atomic_write(
                 run / "01-triage/comments" / f"{key}.md", (case["proposedComment"] + "\n").encode()
+            )
+            atomic_write(
+                run / "01-triage/comments" / f"{key}.adf.json",
+                (
+                    json.dumps(render_adf(case["proposedComment"]), indent=2, ensure_ascii=False)
+                    + "\n"
+                ).encode(),
             )
     refresh_review(run)
     index = render_cycle_index(run)

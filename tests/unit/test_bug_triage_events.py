@@ -61,7 +61,7 @@ def test_patch_and_backport_check_without_changing_checkout(
         return subprocess.check_output(["git", "-C", str(repo), *args]).decode().strip()
 
     git("init", "-q")
-    git("remote", "add", "origin", "https://github.com/example/fixture.git")
+    git("remote", "add", "origin", "https://github.com/redhat-developer/fixture.git")
     (repo / filename).write_text("old\n")
     if kind == "docs":
         template = repo / ".github/pull_request_template.md"
@@ -92,7 +92,7 @@ def test_patch_and_backport_check_without_changing_checkout(
         kind=kind,
         revision="1",
         checkout="fixture",
-        repository="example/fixture",
+        repository="redhat-developer/fixture",
         branch="main",
         branchEvidence="CONTRIBUTING",
         title="Restore title",
@@ -168,7 +168,7 @@ def test_patch_and_backport_check_without_changing_checkout(
                         "verdict": "needs_repro" if kind else "still_valid",
                         "investigation": {"status": "blocked" if kind else "completed"},
                         "handoff": {"outcome": "docs" if kind else "pull_request"},
-                        "fixPlan": {"areas": [{"repository": "example/fixture"}]},
+                        "fixPlan": {"areas": [{"repository": "redhat-developer/fixture"}]},
                     }
                 ]
             }
@@ -535,3 +535,74 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys, 
     finish(third)
     assert f"{11 - int(done_case)} issues reviewed across 3 completed batches" in index.read_text()
     assert advance()["keys"] == ["RHDHBUGS-12"]
+
+
+def test_upstream_fix_is_attached_to_jira_not_proposed_as_pr(tmp_path, monkeypatch):
+    for key in list(os.environ):
+        if key.startswith("GIT_"):
+            monkeypatch.delenv(key)
+    repo = tmp_path / "fixture"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(repo), *args]).decode().strip()
+
+    git("init", "-q")
+    git("remote", "add", "origin", "https://github.com/backstage/backstage.git")
+    (repo / "service.ts").write_text("old\n")
+    git("add", "service.ts")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/master", base)
+    (repo / "service.ts").write_text("new\n")
+    patch = subprocess.check_output(["git", "-C", str(repo), "diff"])
+    (tmp_path / "change.patch").write_bytes(patch)
+
+    review = tmp_path / "review"
+    case = review / "02-fixes" / "pull-requests" / "RHDHBUGS-2"
+    case.mkdir(parents=True)
+    (case / "PLAN.md").write_text("Serialise the first-boot migration.")
+    audit = review / "01-triage/audit"
+    audit.mkdir(parents=True)
+    (audit / "packets.json").write_text(
+        json.dumps(
+            {
+                "packets": [
+                    {
+                        "key": "RHDHBUGS-2",
+                        "verdict": "still_valid",
+                        "investigation": {"status": "completed"},
+                        "fixPlan": {"areas": [{"repository": "backstage/backstage"}]},
+                    }
+                ]
+            }
+        )
+    )
+    event = dict(
+        type="fix.requested",
+        key="RHDHBUGS-2",
+        revision="1",
+        checkout="fixture",
+        repository="backstage/backstage",
+        branch="master",
+        base=base,
+        patch="change.patch",
+        patchHash=hashlib.sha256(patch).hexdigest(),
+        verification="Patch applied in an isolated index.",
+        title="Serialise first-boot migrations",
+        body="Use an advisory lock so concurrent starts cannot race.",
+        triageRun="review",
+    )
+    assert consume(tmp_path, event) == 0
+    note = next((tmp_path / "run").rglob("UPSTREAM-PATCH.md")).read_text()
+    assert "Do not open a pull request" in note
+    assert "Attach `change.patch` to RHDHBUGS-2" in note
+    assert "must land upstream first" in note
+    proposal = json.loads(next((tmp_path / "run").rglob("proposal.json")).read_text())
+    assert proposal["upstream"] is True
+    assert proposal["attachment"] == "change.patch"
+    assert proposal["backports"] == []
+    assert not list((tmp_path / "run").rglob("PROPOSAL.md"))
+    assert not list((tmp_path / "run").rglob("BACKPORT*"))
+    # RHDH release backports do not apply to an upstream patch.
+    assert consume(tmp_path, {**event, "revision": "2", "backports": [{"branch": "master"}]}) == 2
