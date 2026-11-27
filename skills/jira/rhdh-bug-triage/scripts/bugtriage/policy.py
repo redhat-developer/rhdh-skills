@@ -51,6 +51,17 @@ REPRO_RESULTS = {
     "resolved",
 }
 JIRA_BROWSE_URL = "https://redhat.atlassian.net/browse/"
+# Repositories outside the RHDH organization are upstream projects RHDH is built
+# on top of. A fix there cannot be opened as a pull request by this workflow; it
+# is attached to the RHDHBUGS issue as a patch and picked up once upstream ships.
+RHDH_ORGANIZATIONS = {"redhat-developer"}
+
+
+def is_upstream_repository(repository: str) -> bool:
+    """True when the repository is not one of RHDH's own GitHub repositories."""
+    return repository.strip().lower().split("/", 1)[0] not in RHDH_ORGANIZATIONS
+
+
 PROOF_FIELDS = {
     "duplicate": ("sameFailure", "sameTrigger", "sameFix", "canonical"),
     "already_fixed": ("fixMatches", "releaseContains", "validation"),

@@ -170,6 +170,7 @@ Open `START-HERE.md` for the current PR queue, other outcomes, verification and 
 - `01-triage/START-HERE.md` — the decision page: metrics, one row per bug,
   the reading order, and the limits.
 - `01-triage/comments/KEY.md` — the exact draft. Finished drafts have spaced Markdown sections, action bullets, a triage reference and an AI attribution. Local artifact links resolve from the comment file in the review bundle. The queue and machine record carry delivery status, including holds and suppression.
+- `01-triage/comments/KEY.adf.json` — the same comment as Atlassian Document Format. Post this body through the Jira REST API; pasting the Markdown into the editor loses headings, links and list structure.
 - `01-triage/audit/` — `METHOD.md`, `RUN.md`, `release.md`, `selection.json`,
   `manifest.json`, `packets.json`, `assessments/KEY.json` and
   `bugs/KEY.md` (proof, validation, fix plan, owner, next step, limits).

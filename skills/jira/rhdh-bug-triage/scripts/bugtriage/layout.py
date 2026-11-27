@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List
 
+from .comments import render_adf
 from .model import Ticket
 from .policy import Packet
 from .report import write_json, write_text
@@ -768,6 +769,11 @@ def write_phased_output(
     )
     for packet in packets:
         write_text(triage / "comments" / f"{packet.key}.md", render_comment_file(packet))
+        if packet.proposed_comment:
+            write_json(
+                triage / "comments" / f"{packet.key}.adf.json",
+                render_adf(packet.proposed_comment),
+            )
         write_text(
             triage / "audit" / "bugs" / f"{packet.key}.md",
             render_bug_audit(packet, tickets[packet.key]),

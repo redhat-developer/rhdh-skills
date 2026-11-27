@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from .model import load_export
+from .policy import is_upstream_repository
 from .report import now_iso, write_json
 from .run import build_sample_manifest, parse_as_of
 from .selection import SelectionConfig
@@ -86,6 +87,43 @@ def proposal(event, dest, inputs, *, docs_only=False):
     verify = required(event, "verification")
     (dest / "VERIFY.md").write_text(f"Patch applies to {sha}.\n\n{verify}\n")
     return f"{required(event, 'repository')} {branch} at {sha}"
+
+
+def upstream_patch_handoff(event, dest, key, base):
+    """An upstream fix is attached to the Jira issue, never opened as a pull request."""
+    repository, branch = event["repository"], event["branch"]
+    note = "\n".join(
+        [
+            f"# Suggested upstream patch for {key}",
+            "",
+            f"- Upstream repository: {repository}",
+            f"- Branch: {branch} at {base}",
+            "- Patch: [change.patch](change.patch)",
+            "- Verification: [VERIFY.md](VERIFY.md)",
+            "",
+            "Do not open a pull request in this upstream repository from this workflow.",
+            f"Attach `change.patch` to {key} in RHDHBUGS and mention the follow-up in the comment.",
+            "",
+            "Suggested comment line:",
+            "",
+            f"> A suggested fix for {repository} is attached as `change.patch` "
+            f"(based on {branch} at {base}).",
+            "> It must land upstream first; RHDH can pick it up once it is released.",
+        ]
+    )
+    if event.get("body"):
+        note += f"\n\n## Proposed change\n\n{event['body']}\n"
+    (dest / "UPSTREAM-PATCH.md").write_text(note + "\n")
+    write_json(
+        dest / "proposal.json",
+        {
+            **{name: event.get(name) for name in ("repository", "branch", "kind", "title")},
+            "upstream": True,
+            "attachment": "change.patch",
+            "backports": [],
+        },
+    )
+    return "review_patch"
 
 
 def reviewed_comments(event, key, inputs):
@@ -335,7 +373,13 @@ def dispatch(event, key, dest, inputs):
         for outcome in ("docs", "pull-requests")
     ):
         raise ValueError("no actionable fix handoff for this issue")
+    if is_upstream_repository(event["repository"]) and event.get("backports"):
+        raise ValueError(
+            "upstream fixes are attached to the RHDHBUGS ticket as one patch; remove the backports"
+        )
     base = proposal(event, dest, inputs, docs_only=docs_only)
+    if is_upstream_repository(event["repository"]):
+        return upstream_patch_handoff(event, dest, key, base)
     repo = inputs / event["checkout"]
     body = required(event, "body")
     lines = [
