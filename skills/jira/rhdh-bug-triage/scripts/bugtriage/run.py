@@ -68,7 +68,7 @@ class RunConfig:
     backlog_path: str = ""
     jql: str = ""
     comment_cooldown_days: int = DEFAULT_COOLDOWN_DAYS
-    scope: str = "aged"
+    scope: str = "all-open"
     all_tickets: bool = False
     release_evidence: str = ""
     evidence_dir: str = ""
@@ -86,13 +86,10 @@ class RunResult:
     output_dir: Path
 
 
-def default_jql(aged_days: int, scope: str = "aged") -> str:
-    if scope == "all-open":
-        return "project = RHDHBUGS AND issuetype = Bug AND statusCategory != Done ORDER BY created ASC, key ASC"
+def default_jql(aged_days=None, scope="all-open") -> str:
     return (
-        "project = RHDHBUGS AND statusCategory != Done "
-        + (f"AND created <= -{aged_days}d " if scope == "aged" else "")
-        + "ORDER BY created ASC"
+        "project = RHDHBUGS AND issuetype = Bug AND statusCategory != Done "
+        'AND (labels IS EMPTY OR labels NOT IN ("rhdh-bug-triaged")) ORDER BY created ASC, key ASC'
     )
 
 
@@ -117,9 +114,7 @@ def build_sample_manifest(
         "generatedAt": now_iso(),
         "asOf": as_of.date().isoformat(),
         "jql": jql,
-        "agedDays": config.aged_days,
         "size": config.size,
-        "seed": config.seed,
         "scope": config.scope,
         "currentRelease": config.current_release,
         "allTickets": config.all_tickets,
@@ -204,7 +199,7 @@ def run(config: RunConfig) -> RunResult:
     if not tickets:
         raise RunError(f"{config.input_path} contains no issues")
     tickets_by_key = {ticket.key: ticket for ticket in tickets}
-    jql = config.jql or default_jql(config.aged_days, config.scope)
+    jql = config.jql or default_jql()
 
     if config.sample_path:
         sample = load_sample_manifest(config.sample_path)
@@ -233,8 +228,6 @@ def run(config: RunConfig) -> RunResult:
 
     # Eligibility changes with time and incoming records even when every selected
     # key is still present. An old zero-item manifest must not hide the backlog.
-    if sample.get("agedDays", config.aged_days) != config.aged_days:
-        raise RunError("sample age threshold does not match this run; select again")
     _, current_exclusions, current_eligible = select_sample(
         tickets,
         SelectionConfig(
@@ -262,22 +255,10 @@ def run(config: RunConfig) -> RunResult:
     selected_eligible = 0
     for key, entry in selection.items():
         ticket = tickets_by_key[key]
-        reason = exclusion_reason(
-            ticket, as_of, config.aged_days, config.current_release, config.scope
-        )
-        if not reason:
-            selected_eligible += 1
-        if entry.get("kind") == "control":
-            # Controls bypass age/version filters only, including on a rerun
-            # against an export whose customer or completion status changed.
-            reason = exclusion_reason(
-                ticket, as_of, config.aged_days, config.current_release, "all-open"
-            )
-            if reason:
-                raise RunError(f"sample control {key} is no longer eligible: {reason}")
-            continue
+        reason = exclusion_reason(ticket)
         if reason:
             raise RunError(f"sample issue {key} is no longer eligible: {reason}")
+        selected_eligible += 1
 
     backlog = tickets
     if config.backlog_path:

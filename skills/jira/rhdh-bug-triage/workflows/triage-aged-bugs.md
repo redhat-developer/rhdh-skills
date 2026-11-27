@@ -42,26 +42,20 @@ invent field IDs.
 An example search:
 
 ```jql
-project = RHDHBUGS AND statusCategory != Done AND created <= -90d
-ORDER BY created ASC
+project = RHDHBUGS AND issuetype = Bug AND statusCategory != Done
+AND (labels IS EMPTY OR labels NOT IN ("rhdh-bug-triaged"))
+ORDER BY created ASC, key ASC
 ```
 
-Include customer-related issues in this query. The local checks below apply the version rules.
+Include customer-related issues in this query.
 
 ```bash
 python3 scripts/triage.py select --input export.json \
-  --current-release "$CURRENT_RELEASE" --scope aged --out sample.json
+  --current-release "$CURRENT_RELEASE" --scope all-open --out sample.json
 ```
 
-- Default: open, at least 90 days old, every affected version
-  known and strictly older than the release under review. A bug affecting
-  both old and current versions is not eligible. Unknown, equal or newer
-  versions are excluded, with a reason written down.
-- Default: 5 bugs, spread across teams.
-  `--all` takes every eligible bug in the export.
-- `--scope all-open` drops only the age and version checks, never the
-  project or closed checks. It needs a matching wider export for both
-  `select` and `run`.
+- Select the five oldest eligible bugs, including assigned and customer-related bugs. Skip Done and previously labelled bugs. An offline export with an unreadable creation date sorts after dated bugs.
+- Use `--all` for every eligible issue in a supplied batch export.
 
 Then build the comparison list — the open **and closed** bugs we will search
 for duplicates and fixes. Searching only open, only aged bugs is not a real
@@ -152,9 +146,11 @@ version number, an empty fix field or a search that found no fix still never
 justify "still valid".
 
 A specialist like `/rhdh-plugin-bug-fix` may help if used
-**inspection-only**; never run its default fix workflow. No running product
-code, builds, deploys, cluster changes, fixes, PRs or backports — here or
-anywhere in this workflow.
+**inspection-only** during investigation. Never provision a cluster. Use release source,
+regression tests and existing evidence to establish the cause. Follow the local
+fix-request workflow for a supported patch and link its proposal in the draft.
+When only existing-cluster observations can settle the issue, use the blocked
+`clusterVerification` handoff described in SKILL.md.
 
 For duplicate and already-fixed verdicts, get two genuinely independent
 reviews: fresh contexts that see the evidence but not each other's

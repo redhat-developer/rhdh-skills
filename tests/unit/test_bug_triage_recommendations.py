@@ -193,12 +193,11 @@ def test_outward_duplicate_link_never_overrides_unknown_or_newer_chronology(targ
 @pytest.mark.parametrize(
     "changes",
     [
-        {"customer_signals": ["label:RHDH-Customer"]},
         {"duplicate_of": ["RHDHBUGS-1"]},
         {"resolution": "Duplicate"},
     ],
 )
-def test_canonical_target_is_not_a_customer_or_another_duplicate(changes):
+def test_duplicate_cannot_use_another_duplicate_as_its_canonical_target(changes):
     ticket, candidates, document = case("duplicate")
     candidates = [
         replace(c, **changes) if c.key == document["duplicateOf"] else c for c in candidates
@@ -274,7 +273,7 @@ def test_unmarked_owner_hold_requires_human_review_not_an_automatic_first_commen
     assert plan_comment(ticket, packet, assessment, NOW)["status"] == "review_required"
 
 
-def test_adf_hidden_links_feed_search_and_customer_exclusion():
+def test_adf_hidden_links_feed_search_and_record_customer_context():
     ticket = normalize_issue(
         {
             "key": "RHDHBUGS-1",
@@ -313,7 +312,7 @@ def test_adf_hidden_links_feed_search_and_customer_exclusion():
         ("Customer Cloud Subscription (CCS)", "subscription"),
     ],
 )
-def test_flat_customer_fields_remain_close_disabled(name, value):
+def test_flat_customer_fields_record_customer_context(name, value):
     ticket = normalize_issue({"key": "RHDHBUGS-1", name: value})
     assert ticket.customer_signals
 
@@ -426,8 +425,8 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
             {
                 "schemaVersion": 3,
                 "currentRelease": CURRENT_RELEASE,
-                "scope": "aged",
-                "eligibleCount": 10,
+                "scope": "all-open",
+                "eligibleCount": 11,
                 "tickets": [
                     {"key": key, "kind": "control"} for key in ["RHDHBUGS-1006", "RHDHBUGS-1010"]
                 ],
@@ -497,7 +496,7 @@ def test_already_posted_recommendation_has_no_new_handoff_file(tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["duplicate", "already_fixed"])
-def test_completed_and_customer_tickets_cannot_pass_even_with_complete_proof(kind):
+def test_verified_findings_can_recommend_closure_for_open_customer_bugs(kind):
     ticket, candidates, document = case(kind)
     assessment = parse_assessment(document)
     done = copy.deepcopy(ticket)
@@ -506,7 +505,13 @@ def test_completed_and_customer_tickets_cannot_pass_even_with_complete_proof(kin
     customer.customer_signals = ["label:RHDH-Customer"]
     for blocked in [done, customer]:
         packet = evaluate(blocked, candidates, assessment)
-        assert packet.action == ("abstain" if blocked.is_done else "comment_only")
+        assert packet.action == (
+            "abstain"
+            if blocked.is_done
+            else {"duplicate": "propose_close_duplicate", "already_fixed": "propose_close_fixed"}[
+                kind
+            ]
+        )
         assert bool(packet.proposed_comment) == (not blocked.is_done)
 
 

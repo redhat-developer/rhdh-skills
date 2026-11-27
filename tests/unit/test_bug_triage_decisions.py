@@ -207,7 +207,7 @@ def test_unclear_preserves_checked_validation_without_claiming_no_check_occurred
         summary="The current guide resolves the documented path, but the reported environment still needs comparison.",
     )
     packet = evaluate(ticket(), [], finding, RELEASE)
-    assert packet.policy_version == 4
+    assert packet.policy_version == 5
     assert packet.verdict == "unclear"
     assert "no definitive triage conclusion is established" in packet.proposed_comment
     assert finding.validation["summary"] in packet.proposed_comment
@@ -425,7 +425,13 @@ def test_customer_receives_a_draft_and_completed_issues_remain_excluded(kind):
     for changes in ({"customer_signals": ["label:RHDH-Customer"]}, {"is_done": True}):
         excluded = replace(issue, **changes)
         packet = evaluate(excluded, candidates, finding, RELEASE)
-        assert packet.action == ("abstain" if excluded.is_done else "comment_only")
+        assert packet.action == (
+            "abstain"
+            if excluded.is_done
+            else {"duplicate": "propose_close_duplicate", "already_fixed": "propose_close_fixed"}[
+                kind
+            ]
+        )
         assert bool(packet.proposed_comment) == (not excluded.is_done)
 
 

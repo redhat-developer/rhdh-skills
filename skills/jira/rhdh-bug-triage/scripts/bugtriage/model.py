@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
+TRIAGED_LABEL = "rhdh-bug-triaged"
 DEFAULT_AGED_DAYS = 90
 DEFAULT_SAMPLE_SIZE = 5
 DEFAULT_SEED = 18094
@@ -239,17 +240,6 @@ def _collect_pr_urls(payload: Dict[str, Any], links: List["Link"]) -> List[str]:
 
 def _collect_commits(payload: Dict[str, Any]) -> List[str]:
     return sorted(set(COMMIT_URL_RE.findall(json.dumps(payload, default=str))))
-
-
-def verified_support_cases(signals: Iterable[str]) -> List[str]:
-    """Return references observed in structured Jira links or dedicated case fields."""
-    cases = set()
-    for signal in signals:
-        if signal.startswith("case:"):
-            cases.add(signal.removeprefix("case:"))
-        elif re.fullmatch(r"link:.*:RHDHSUPP-\d+", signal):
-            cases.add(signal.rsplit(":", 1)[1])
-    return sorted(cases)
 
 
 def _customer_signals(

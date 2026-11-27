@@ -393,7 +393,8 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys, 
     from bugtriage import cycle
 
     keys = [f"RHDHBUGS-{i}" for i in range(1, 11)]
-    monkeypatch.setattr(cycle, "search_acli", lambda *a, **kw: [{"key": k} for k in keys])
+    live = list(keys)
+    monkeypatch.setattr(cycle, "search_acli", lambda *a, **kw: [{"key": k} for k in live])
     fetched = []
 
     def fetch(jql, **kwargs):
@@ -484,6 +485,8 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys, 
     second = json.loads(capsys.readouterr().out)
     assert second["batch"] == 2 and second["keys"] == keys[5:]
     assert advance()["batch"] == 2
+    if done_case:
+        live.remove(keys[-1])
     finish_args = finish(second)
     index = tmp_path / "START-HERE.md"
     original = index.read_bytes()
@@ -517,3 +520,18 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys, 
         == 0
     )
     assert json.loads(capsys.readouterr().out)["pending"] == []
+
+    # A previously reviewed bug leaves the eligible search. Once eligible
+    # again, it takes its place ahead of a newly filed bug.
+    live.remove(keys[0])
+    assert advance()["state"] == "complete"
+    live.insert(0, keys[0])
+    live.append("RHDHBUGS-11")
+    third = advance()
+    assert third["keys"] == [keys[0], "RHDHBUGS-11"]
+    assert "2 of 11 inventory entries remain" in index.read_text()
+    live.append("RHDHBUGS-12")
+    assert advance()["keys"] == third["keys"]
+    finish(third)
+    assert f"{11 - int(done_case)} issues reviewed across 3 completed batches" in index.read_text()
+    assert advance()["keys"] == ["RHDHBUGS-12"]

@@ -491,7 +491,7 @@ def render_method(
             "",
             "1. **Verify the release.** The release under review is recorded in `release.md`; the tool records the supplied evidence link but does not verify its contents.",
             "2. **Read the bugs in full.** The export carries descriptions, comments, links, versions, and customer signals. Missing fields stay unknown, never empty.",
-            "3. **Select the sample.** Age, customer, and affects-version rules are applied locally. Excluded bugs are listed with reasons in `selection.json`.",
+            "3. **Select the sample.** Select the oldest open RHDHBUGS bugs without the `rhdh-bug-triaged` label. Excluded bugs are listed with reasons in `selection.json`.",
             "4. **Build the comparison corpus.** Open and closed bugs are searched for duplicate and fix leads. Leads are not verdicts.",
             "5. **Investigate one bug per fresh agent.** Each investigator writes one assessment with requirements, evidence, validation, and a fix plan.",
             "6. **Compose and check.** The tool checks evidence shape, method matching, proof gates, and delivery eligibility. It writes this phase.",
@@ -818,6 +818,7 @@ def write_phased_output(
             "packets": [
                 {
                     **packet.to_dict(),
+                    "labels": tickets[packet.key].labels,
                     "fixVersions": tickets[packet.key].fix_versions,
                     "fixVersionsEmpty": tickets[packet.key].fix_versions_empty,
                     "releaseNoteFields": tickets[packet.key].release_note_fields,

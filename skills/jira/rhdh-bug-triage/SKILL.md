@@ -3,14 +3,10 @@ name: rhdh-bug-triage
 description: >-
   Investigates picked RHDHBUGS bugs and drafts the verdict, cited evidence,
   current-release validation or honest uncertainty, a fix plan, and the exact
-  local Jira comment for each bug. Use for "triage aged bugs". Defaults to
-  aged bugs affecting only releases older than the verified
-  current release; explicit all-open scope bypasses age and affected-version
-  filters while preserving Done exclusions. Includes support intake and local PR/backport
-  proposals. Jira and shared repositories stay read-only.
+  local Jira comment for each bug. Use for "triage aged bugs". Reviews open, untriaged RHDHBUGS issues oldest first, five per batch. Prepares local fix and backport proposals. Jira and shared repositories stay read-only.
 ---
 
-# Triage aged RHDH bugs
+# Triage open RHDH bugs
 
 Read every bug carefully, say what should happen next, and write the exact
 comment that would be posted — but never post it. Every bug we pick gets a
@@ -109,17 +105,17 @@ Run `python3 scripts/triage.py` from the installed skill directory. The
   Pass `--require-investigation --require-fix-plan` on a full run. Continue
   through local verification and `finish` for every selected bug.
 
-By default we review open bugs at least 90 days old whose
-affected versions are all older than the release under review (5 of them,
-spread across teams). `--scope all-open` drops the age and version checks
-only. `--all` reviews every eligible bug in the export. Neither flag proves
-the export covers the whole tracker.
+Review open RHDHBUGS bugs in creation order, breaking ties by Jira key. There is no minimum age. Include bugs across all affected versions, priorities, assignees and teams. Skip bugs carrying `rhdh-bug-triaged`. Finish the current five before refreshing the eligible Jira list. A completed investigation, including a blocked one with an evidenced handoff, proposes adding this label. Preserve other labels, including `rhdh-bug-needs-cluster`. Both label operations are local previews.
+
+When asking someone to reproduce an issue, supply `reproductionSteps` in the finish result. Use ordered instructions: name the reported version and setup, the trigger, the expected result and the reported symptom. Then ask for the same test on the exact current release verified for the run, under equivalent starting conditions. State what to record for each version. If the original version or steps are missing, ask the reporter for them instead of guessing.
+
+Never provision a cluster for triage. Trace the reported path in the released code, configuration and tests first. Link a verified shipped fix in the Jira draft. If the evidence identifies an outstanding defect, prepare and test a local PR proposal and link it in the draft. When the code and available evidence cannot distinguish the cause and an existing cluster is needed, keep the bug open. Set `clusterVerification` in the blocked finish result to a question the named verifier can answer from their existing environment. Spell out the reported steps and the observable result for each. This previews adding `rhdh-bug-needs-cluster` and asks the verifier to record the result and remove the label.
 
 RHDHBUGS tickets must omit customer names. When the issue text names a customer, continue ordinary technical triage and set `customerNamePresent: true` in the finish result. The local Jira draft tags the reporter to anonymize the issue. Write all draft prose without the name. A label or support link alone does not establish that a name appears in the text.
 
 Read the report and discussion before asking for more detail. If reproduction is still unclear because the report lacks information, record what was observed and set `reporterReproRequest` in the finish result. Ask the reporter for the specific missing steps, expected or actual result, version, or sanitized evidence needed to proceed. Distinguish local test conditions from the reporter’s environment.
 
-Customer-related bugs receive the same technical investigation, fix proposals, and local Jira drafts. Record customer context privately. A structured Jira link to RHDHSUPP or an explicit support reference in a mapped case field requires coordination with the support owner before customer communication or closure. Names, labels, account records and free-text mentions alone do not establish a support case. Keep customer identifiers out of public PR drafts.
+Investigate and draft the normal technical outcome for every selected RHDHBUGS bug. Keep customer identifiers out of PR drafts. A support link does not introduce a coordination step or change the assignee, comment or closure criteria.
 
 ## Completion
 

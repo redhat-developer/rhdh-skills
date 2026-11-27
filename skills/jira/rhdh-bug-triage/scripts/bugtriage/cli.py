@@ -1,4 +1,4 @@
-"""Command-line surface for the RHDH aged-bug triage skill.
+"""Command-line surface for the RHDH bug triage skill.
 
 Every command is read-only. ``run`` refuses to accept an apply flag because no
 write path exists; proposed actions are files under the output directory.
@@ -64,7 +64,7 @@ def _controls(values: Optional[List[str]]) -> List[Control]:
 def _load_tickets(args: argparse.Namespace):
     if args.source == "acli":
         return load_tickets_from_acli(
-            args.jql or default_jql(args.aged_days, args.scope),
+            args.jql or default_jql(),
             field_names=_field_names(args.field_names),
         )
     if not args.input:
@@ -107,7 +107,25 @@ def command_progress(args):
     expected = set(json.loads(inventory)["keys"])
     digest = hashlib.sha256(inventory).hexdigest()
     states = {}
-    for directory in args.run:
+    queue_path = Path(args.inventory).with_name("queue.json")
+    queue = json.loads(queue_path.read_bytes()) if queue_path.is_file() else None
+    batches = {}
+    directories = [Path(p).resolve() for p in args.run]
+    if queue:
+        if queue["inventoryHash"] != digest:
+            raise RunError("queue belongs to a different inventory")
+        root = queue_path.resolve().parent.parent
+        first = root / ("review" if (root / "review").exists() else "review-1")
+        batches = {
+            (first if i == 1 else root / f"review-{i}"): (i, keys)
+            for i, keys in enumerate(queue["batches"], 1)
+        }
+        if len(set(directories)) != len(directories) or any(p not in batches for p in directories):
+            raise RunError("unexpected or repeated review directory")
+        directories.sort(key=lambda p: batches[p][0])
+        latest_batch = {key: path for path, (_, keys) in batches.items() for key in keys}
+        expected = set(queue["pending"]).union(*queue["batches"])
+    for directory in directories:
         audit = Path(directory) / "01-triage" / "audit"
         packet_bytes = (audit / "packets.json").read_bytes()
         result = json.loads(packet_bytes)
@@ -122,9 +140,18 @@ def command_progress(args):
             for row in result["packets"]
         )
         for key, status in rows:
-            if key not in expected or key in states:
+            if (
+                key not in expected
+                or (key in states and not queue)
+                or (queue and key not in batches[directory][1])
+            ):
                 raise RunError("overlapping or out-of-inventory batch")
+            if queue and latest_batch[key] != directory:
+                continue
             states[key] = status if status in {"excluded", "completed", "blocked"} else "pending"
+    if queue:
+        for key in queue["pending"]:
+            states.pop(key, None)
     print(
         json.dumps(
             {
@@ -140,7 +167,7 @@ def command_progress(args):
 def command_inventory(args):
     path = Path(args.out)
     jql = (
-        default_jql(DEFAULT_AGED_DAYS, "all-open")
+        default_jql()
         if args.project == "RHDHBUGS"
         else "project = RHDHSUPP AND statusCategory != Done ORDER BY updated ASC, key ASC"
     )
@@ -196,7 +223,7 @@ def command_fetch(args: argparse.Namespace) -> int:
 def command_select(args: argparse.Namespace) -> int:
     as_of = parse_as_of(args.as_of)
     tickets = _load_tickets(args)
-    jql = args.jql or default_jql(args.aged_days, args.scope)
+    jql = args.jql or default_jql()
     config = SelectionConfig(
         size=args.size,
         aged_days=args.aged_days,
@@ -545,9 +572,9 @@ def command_check(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="triage",
-        description="Read-only aged RHDHBUGS triage: select, collect, assess, report.",
+        description="Read-only oldest-first RHDHBUGS triage: select, collect, assess, report.",
     )
-    parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 3")
+    parser.add_argument("--version", action="version", version="rhdh-bug-triage policy 5")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     advance = subparsers.add_parser(
@@ -616,14 +643,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--field-names", help="field-ID map for live Jira reads; exports carry their own"
     )
     select_parser.add_argument("--jql", help="JQL for acli or for the manifest record")
-    select_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
+    select_parser.add_argument(
+        "--aged-days", type=int, default=DEFAULT_AGED_DAYS, help=argparse.SUPPRESS
+    )
     select_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)
     select_parser.add_argument(
         "--batch", type=int, default=1, help="one-based page of the same frozen selection"
     )
-    select_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    select_parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help=argparse.SUPPRESS)
     select_parser.add_argument("--current-release", required=True)
-    select_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")
+    select_parser.add_argument("--scope", choices=("all-open",), default="all-open")
     select_parser.add_argument(
         "--all", action="store_true", help="review every eligible bug, not just a sample"
     )
@@ -698,7 +727,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="web link that proves that version shipped (checked first)",
     )
-    run_parser.add_argument("--scope", choices=("aged", "all-open"), default="aged")
+    run_parser.add_argument("--scope", choices=("all-open",), default="all-open")
     run_parser.add_argument("--all", action="store_true")
     run_parser.add_argument(
         "--evidence", help="collection directory, retained in the audit with search failures"
@@ -723,9 +752,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="minimum days between comments on one bug; unchanged advice is never repeated",
     )
     run_parser.add_argument("--as-of", default="")
-    run_parser.add_argument("--aged-days", type=int, default=DEFAULT_AGED_DAYS)
+    run_parser.add_argument(
+        "--aged-days", type=int, default=DEFAULT_AGED_DAYS, help=argparse.SUPPRESS
+    )
     run_parser.add_argument("--size", type=int, default=DEFAULT_SAMPLE_SIZE)
-    run_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    run_parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help=argparse.SUPPRESS)
     run_parser.add_argument("--control", action="append", help="control key, KEY=label")
     run_parser.add_argument("--backlog", help="larger export for duplicate retrieval")
     run_parser.add_argument("--jql", help="record the selection JQL in the report")

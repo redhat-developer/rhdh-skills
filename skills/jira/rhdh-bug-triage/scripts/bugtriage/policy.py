@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 from .duplicates import DUPLICATE_CLOSE_THRESHOLD, DuplicateCandidate
 from .model import JIRA_KEY_RE, Ticket, parse_datetime
 
-POLICY_VERSION = 4
+POLICY_VERSION = 5
 FIXED_CLOSE_THRESHOLD = 0.80
 VERDICTS = {
     "duplicate",
@@ -767,8 +767,6 @@ def verify_packet(packet: Packet, ticket: Ticket) -> List[str]:
         errors.append("release under review is not numerically comparable")
     if ticket.is_done:
         errors.append("ticket is already Done")
-    if ticket.customer_signals or packet.customer_signals:
-        errors.append("customer-linked ticket cannot receive a close proposal")
     if packet.invalid_evidence:
         errors.append("invalid evidence must be reconciled before a close")
     if not packet.evidence or any(
@@ -800,8 +798,6 @@ def verify_packet(packet: Packet, ticket: Ticket) -> List[str]:
             )
             if source_time is None or target_time is None or target_time >= source_time:
                 errors.append("canonical issue is not demonstrably older; human selection required")
-            if target.customer_signals:
-                errors.append("customer-linked canonical issue requires separate human review")
             if target.duplicate_of or target.resolution.casefold() == "duplicate":
                 errors.append(
                     "canonical issue is itself a duplicate; retrieve the authoritative tracker"

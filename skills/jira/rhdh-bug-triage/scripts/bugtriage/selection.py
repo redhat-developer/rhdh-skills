@@ -1,24 +1,19 @@
-"""Deterministic, customer-safe sample selection.
-
-The sample is stratified by team (or the first component when Team is absent)
-and ordered by a stable hash, so two people with the same export and seed get
-the same ticket list on any machine. Customer context is retained for human review.
-"""
+"""Select open, untriaged bugs in creation order."""
 
 from __future__ import annotations
 
-import hashlib
-import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional
 
 from .model import (
     DEFAULT_AGED_DAYS,
     DEFAULT_SAMPLE_SIZE,
     DEFAULT_SEED,
+    TRIAGED_LABEL,
     Ticket,
     age_days,
+    parse_datetime,
     validate_issue_key,
 )
 
@@ -36,7 +31,7 @@ class SelectionConfig:
     seed: int = DEFAULT_SEED
     controls: List[Control] = field(default_factory=list)
     current_release: str = ""
-    scope: str = "aged"
+    scope: str = "all-open"
     all_tickets: bool = False
 
 
@@ -69,66 +64,19 @@ def stratum_of(ticket: Ticket) -> str:
     return "Unowned"
 
 
-def _release_tuple(value: str) -> Optional[tuple[int, int, int]]:
-    if not isinstance(value, str):
-        return None
-    match = re.fullmatch(r"v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", value.strip())
-    return tuple(int(part or 0) for part in match.groups()) if match else None
-
-
-def _validate_scope(current_release: str, scope: str, aged_days: int) -> None:
-    if scope not in {"aged", "all-open"}:
-        raise ValueError(f"unknown selection scope: {scope!r}")
-    if scope == "aged":
-        if _release_tuple(current_release) is None:
-            raise ValueError("aged selection requires a parseable current_release")
-        if aged_days < DEFAULT_AGED_DAYS:
-            raise ValueError(f"aged selection requires at least {DEFAULT_AGED_DAYS}d")
-
-
-def _base_exclusion(ticket: Ticket) -> str:
+def exclusion_reason(ticket: Ticket, *legacy_selection_args) -> str:
     validate_issue_key(ticket.key)
     if not ticket.key.startswith("RHDHBUGS-"):
         return "outside RHDHBUGS project"
+    if ticket.issue_type and ticket.issue_type.casefold() != "bug":
+        return "issue type is not Bug"
+    if TRIAGED_LABEL in ticket.labels:
+        return f"already labelled {TRIAGED_LABEL}"
     if ticket.is_done:
         return f"done ({ticket.status or 'unknown status'})"
     if not ticket.status and not ticket.status_category:
         return "status unreadable; cannot establish an open issue"
     return ""
-
-
-def exclusion_reason(
-    ticket: Ticket,
-    as_of: datetime,
-    aged_days: int,
-    current_release: str = "",
-    scope: str = "aged",
-) -> str:
-    _validate_scope(current_release, scope, aged_days)
-    reason = _base_exclusion(ticket)
-    if reason or scope == "all-open":
-        return reason
-    age = age_days(ticket.created, as_of)
-    if age is None:
-        return "created date unreadable"
-    if age < aged_days:
-        return f"younger than {aged_days}d ({age}d)"
-    if ticket.affects_versions_ambiguous:
-        return "affects versions contain ambiguous or unreadable values"
-    if not ticket.affects_versions:
-        return "affects versions missing; aged scope requires versions older than the release under review"
-    current = _release_tuple(current_release)
-    for version in ticket.affects_versions:
-        parsed = _release_tuple(version)
-        if parsed is None:
-            return f"affects version ambiguous or unreadable ({version!r})"
-        if parsed >= current:
-            return f"affects version {version} is not older than the release under review ({current_release})"
-    return ""
-
-
-def _stable_order(key: str, seed: int) -> str:
-    return hashlib.sha256(f"{seed}:{key}".encode()).hexdigest()
 
 
 def select_sample(
@@ -137,7 +85,6 @@ def select_sample(
     as_of: datetime,
 ) -> tuple[List[Selection], List[Dict[str, str]], int]:
     """Return selected tickets, exclusions, and the eligible population size."""
-    _validate_scope(config.current_release, config.scope, config.aged_days)
     if config.size < 0:
         raise ValueError("sample size must be nonnegative")
     by_key: Dict[str, Ticket] = {}
@@ -156,52 +103,33 @@ def select_sample(
     excluded: List[Dict[str, str]] = []
     for key in sorted(by_key):
         ticket = by_key[key]
-        reason = exclusion_reason(
-            ticket, as_of, config.aged_days, config.current_release, config.scope
-        )
+        reason = exclusion_reason(ticket)
         if reason:
-            # Controls may bypass age/version filters, but not the base safety
-            # filters. Report them once, in the control loop below.
+            # Report control exclusions once, in the control loop below.
             if key not in control_keys:
                 excluded.append({"key": key, "reason": reason})
             continue
         eligible.append(ticket)
 
-    strata: Dict[str, List[Ticket]] = {}
-    for ticket in eligible:
-        strata.setdefault(stratum_of(ticket), []).append(ticket)
-    for group in strata.values():
-        group.sort(key=lambda item: (_stable_order(item.key, config.seed), item.key))
-
-    selected: List[Selection] = []
-    # Round-robin keeps a large team from owning the whole sample.
-    ordered_strata = sorted(strata)
-    cursor = 0
-    target_size = len(eligible) if config.all_tickets else config.size
-    while len(selected) < target_size and any(strata.values()):
-        name = ordered_strata[cursor % len(ordered_strata)]
-        group = strata[name]
-        if group:
-            ticket = group.pop(0)
-            if ticket.key not in control_keys:
-                selected.append(
-                    Selection(
-                        ticket=ticket,
-                        kind=config.scope,
-                        stratum=name,
-                        age_days=age_days(ticket.created, as_of),
-                    )
-                )
-        cursor += 1
-        if not any(strata.values()):
-            break
+    eligible.sort(
+        key=lambda t: (
+            parse_datetime(t.created) or datetime.max.replace(tzinfo=timezone.utc),
+            int(t.key.split("-")[1]),
+        )
+    )
+    candidates = [t for t in eligible if t.key not in control_keys]
+    if not config.all_tickets:
+        candidates = candidates[: config.size]
+    selected = [
+        Selection(t, "all-open", stratum_of(t), age_days(t.created, as_of)) for t in candidates
+    ]
 
     for control in config.controls:
         ticket = by_key.get(control.key)
         if ticket is None:
             excluded.append({"key": control.key, "reason": "control not present in the export"})
             continue
-        reason = _base_exclusion(ticket)
+        reason = exclusion_reason(ticket)
         if reason:
             excluded.append(
                 {
