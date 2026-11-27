@@ -797,8 +797,21 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         proof={"releaseContains": {"refs": ["https://example.test/release"]}},
     )
     packet_file.write_text(json.dumps(audit))
+    assert finish([{**row, "stage": "existing_fix"}]) == 2
     assert (
-        finish([{**row, "stage": "existing_fix", "next": "Check customer fields before closure."}])
+        finish(
+            [
+                {
+                    **row,
+                    "stage": "existing_fix",
+                    "next": "Check customer fields before closure.",
+                    "releaseNote": {
+                        "decision": "internal",
+                        "reason": "Only a test fixture changed.",
+                    },
+                }
+            ]
+        )
         == 0
     )
     draft = (review / f"01-triage/comments/{key}.md").read_text()
@@ -845,6 +858,36 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     }
     for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
         assert "Release note proposed (Bug Fix): " + note["text"] in artifact.read_text()
+    # Without verified Jira choices the text must still reach reviewers.
+    pending = {**result, "releaseNote": {"text": note["text"]}}
+    del pending["releaseNoteEditMeta"]
+    assert finish([pending]) == 0
+    completed = (review / "run.json").read_bytes()
+    assert finish([pending]) == 0 and (review / "run.json").read_bytes() == completed
+    case = json.loads(completed)["cases"][key]
+    assert set(case["proposedJiraFields"]) == {"Fix Version/s"}
+    for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
+        assert "Release note draft: " + note["text"] in artifact.read_text()
+        assert "Jira field review pending" in artifact.read_text()
+    retained = {
+        **result,
+        "releaseNote": {"decision": "retain", "reason": "The workaround still applies."},
+    }
+    assert finish([retained]) == 2
+    packet["releaseNoteFields"].update(
+        {
+            names[0]: {"value": "Known Issue"},
+            names[1]: {"type": "doc", "content": [{"type": "text", "text": "Use YAML view."}]},
+            names[2]: {"value": "Done"},
+        }
+    )
+    packet_file.write_text(json.dumps(audit))
+    assert finish([retained]) == 0
+    for artifact in (review / "START-HERE.md", review / f"01-triage/comments/{key}.md"):
+        assert (
+            "Existing Known Issue note retained. The workaround still applies."
+            in artifact.read_text()
+        )
     packet["releaseNoteFields"][names[2]] = {"value": "Approved"}
     packet["fixVersions"] = ["2.0.0"]
     packet_file.write_text(json.dumps(audit))
@@ -877,7 +920,7 @@ def test_version_plan_requires_unambiguous_eligible_targets(tmp_path):
         )
     )
     packet = {"fixVersionsEmpty": True}
-    row = {"projectVersions": "versions.json"}
+    row = {"projectVersions": "versions.json", "releaseNote": {"text": "Example fix."}}
     target = {
         "repository": "org/repo",
         "branch": "main",

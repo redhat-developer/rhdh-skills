@@ -11,6 +11,7 @@ from .comments import comment_footer
 from .cycle import render_cycle_index
 from .events import required
 from .layout import refresh_review
+from .model import as_text
 from .policy import CLOSE_ACTIONS, _linked_text, ref_link
 
 
@@ -99,46 +100,73 @@ def jira_field_plan(packet, stage, row, proposals, inputs):
         if targets and targets <= eligible:
             fields["Fix Version/s"] = sorted(targets)
             messages.append("Proposed fix versions: " + ", ".join(sorted(targets)) + ".")
-    if "releaseNote" in row:
-        note = row["releaseNote"]
-        draft = {
-            "Release Note Type": required(note, "type"),
-            "Release Note Text": required(note, "text"),
-            "Release Note Status": "Proposed",
-        }
-        if any("\n" in value or "\r" in value for value in draft.values()):
-            raise ValueError("use one line for the proposed release note")
-        observed = packet.get("releaseNoteFields", {})
-        metadata = {}
-        if row.get("releaseNoteEditMeta"):
-            metadata = json.loads((inputs / required(row, "releaseNoteEditMeta")).read_bytes())[
-                "fields"
-            ]
-        options = {
-            field.get("name"): {opt.get("value") for opt in field.get("allowedValues", [])}
-            for field in metadata.values()
-        }
-        if any(
-            draft[name] not in options.get(name, set())
-            for name in ("Release Note Type", "Release Note Status")
-        ):
-            messages.append(
-                "Release note needs review of the available Jira type and status options."
-            )
-            return fields, messages
-        for name, value in draft.items():
-            existing = observed.get(name)
-            if isinstance(existing, dict):
-                existing = existing.get("value", existing)
-            if name not in observed or existing not in (None, "", value):
-                messages.append("Release note needs field review before proposing changes.")
-                break
-        else:
-            fields.update(draft)
-            messages.append(
-                f"Release note proposed ({draft['Release Note Type']}): {draft['Release Note Text']}"
-            )
+    note_fields, note_message = release_note_plan(packet, row, inputs)
+    fields.update(note_fields)
+    messages.append(note_message)
     return fields, messages
+
+
+def release_note_plan(packet, row, inputs):
+    note = row.get("releaseNote")
+    if not isinstance(note, dict):
+        raise ValueError(
+            f"{packet.get('key', 'fix outcome')} needs releaseNote wording or a reason"
+        )
+    observed = packet.get("releaseNoteFields", {})
+    decision = note.get("decision", "draft")
+    existing_type = observed.get("Release Note Type")
+    if isinstance(existing_type, dict):
+        existing_type = existing_type.get("value")
+    if decision == "retain":
+        if not as_text(observed.get("Release Note Text")).strip():
+            raise ValueError("retaining a release note requires existing Jira note text")
+        return (
+            {},
+            f"Existing {existing_type or 'release'} note retained. {required(note, 'reason')}",
+        )
+    if decision == "internal":
+        return {}, f"Release note unnecessary for this internal change. {required(note, 'reason')}"
+    if decision != "draft":
+        raise ValueError("releaseNote.decision must be draft, retain or internal")
+
+    text = required(note, "text")
+    note_type = required(note, "type") if "type" in note else None
+    if any(len(value.splitlines()) > 1 for value in [text, note_type or ""]):
+        raise ValueError("use one line for the proposed release note")
+    draft = {
+        "Release Note Text": text,
+        "Release Note Type": note_type,
+        "Release Note Status": "Proposed",
+    }
+    metadata = {}
+    if row.get("releaseNoteEditMeta"):
+        path = inputs / required(row, "releaseNoteEditMeta")
+        if path.is_file():
+            metadata = json.loads(path.read_bytes())["fields"]
+    options = {
+        field.get("name"): {opt.get("value") for opt in field.get("allowedValues", [])}
+        for field in metadata.values()
+        if "set" in field.get("operations", ["set"])
+    }
+    pending = []
+    for name, value in draft.items():
+        current = observed.get(name)
+        if name != "Release Note Text" and isinstance(current, dict):
+            current = current.get("value")
+        if (
+            name not in observed
+            or current not in (None, "", value)
+            or name not in options
+            or (name != "Release Note Text" and (not value or value not in options[name]))
+        ):
+            pending.append(name)
+    if pending:
+        suggestion = f"Suggested type {note_type}. " if note_type else ""
+        return (
+            {},
+            f"Release note draft: {text} {suggestion}Suggested status Proposed. Jira field review pending for {', '.join(pending)}.",
+        )
+    return draft, f"Release note proposed ({note_type}): {text}"
 
 
 def command_finish(args):

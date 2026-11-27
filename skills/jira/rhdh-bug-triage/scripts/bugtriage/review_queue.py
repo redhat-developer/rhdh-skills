@@ -25,6 +25,12 @@ def _save(path, lines):
     os.replace(f.name, path)
 
 
+def batch_counts(reviewed, excluded):
+    customers = sum(row.get("reason", "").startswith("customer-linked") for row in excluded)
+    counts = f"{reviewed + len(excluded)} examined · {reviewed} reviewed · {len(excluded)} excluded"
+    return f"{counts} ({customers} customer-linked)" if customers else counts
+
+
 def refresh_review(output_dir: Path):
     """Refresh the review index after triage, fix events or follow-through completion."""
     root = Path(output_dir)
@@ -54,6 +60,12 @@ def refresh_review(output_dir: Path):
         f"RHDH {audit['currentRelease']} · {len(cases)} bugs reviewed · {total} local PR proposals",
         "",
     ]
+    selection = packets_file.with_name("selection.json")
+    if audit.get("meta", {}).get("coverage", {}).get("inventoryHash") and selection.is_file():
+        exclusions = json.loads(selection.read_bytes())["excluded"]
+        lines[2] = (
+            f"RHDH {audit['currentRelease']} · {batch_counts(len(cases), exclusions)} · {total} local PR proposals"
+        )
     for title, pr_queue in (("PR queue", True), ("Other outcomes", False)):
         lines.extend([f"## {title}", ""])
         group = [row for row in cases if row[3] == pr_queue]

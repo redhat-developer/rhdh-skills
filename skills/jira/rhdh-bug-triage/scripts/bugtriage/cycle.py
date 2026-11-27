@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from .jira import export_from_acli, search_acli
 from .model import DEFAULT_SAMPLE_SIZE, normalize_export
 from .report import now_iso
+from .review_queue import batch_counts
 from .run import RunError, build_sample_manifest, default_jql, parse_as_of
 from .selection import SelectionConfig
 
@@ -121,11 +122,17 @@ def render_cycle_index(review):
         cases = json.loads((directory / "run.json").read_bytes())["cases"]
         lines = [f"## [Batch {number}]({directory.name}/START-HERE.md)", ""]
         audit = f"{directory.name}/01-triage/audit"
+        excluded = json.loads((directory / "01-triage/audit/selection.json").read_bytes())[
+            "excluded"
+        ]
+        lines.extend([batch_counts(len(cases), excluded), ""])
         for key in batch:
             if key in cases:
                 case = cases[key]
                 finding = case.get("resolution") or case["finding"]
                 lines.append(f"- [{key}]({audit}/bugs/{key}.md) — {finding}")
+                for message in case.get("jiraFieldSummary", []):
+                    lines.append(f"  - {message}")
             else:
                 lines.append(f"- {key} — excluded. [Selection record]({audit}/selection.json)")
         sections.append("\n".join(lines))
