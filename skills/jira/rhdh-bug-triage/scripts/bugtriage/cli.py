@@ -39,6 +39,7 @@ from .model import (
     DEFAULT_SEED,
     load_export,
 )
+from .release import DEFAULT_RELEASE_REPOSITORIES, resolve_release
 from .report import now_iso, write_json
 from .run import (
     RunConfig,
@@ -569,6 +570,29 @@ def command_check(args: argparse.Namespace) -> int:
     return 0 if probe.get("readable") or args.allow_missing else 1
 
 
+def command_release(args: argparse.Namespace) -> int:
+    repositories = list(args.repo or DEFAULT_RELEASE_REPOSITORIES)
+    document = resolve_release(repositories, timeout=args.timeout)
+    if args.json:
+        print(json.dumps(document, indent=2))
+        return 0
+    for row in document["repositories"]:
+        latest = row["latest"] or "no exact x.y.z tag"
+        print(f"{row['repository']}: {latest} ({len(row['tags'])} release tag(s))")
+    if not document["agreement"]:
+        print("Repositories disagree on the latest z-stream; resolve the difference by hand.")
+    elif document["latest"]:
+        print(f"Latest z-stream candidate: {document['latest']}")
+        for label, urls in document["releaseNotes"].items():
+            print(f"  {label}:")
+            for url in urls:
+                print(f"    {url}")
+    else:
+        print("No exact x.y.z tag found; do not guess a release.")
+    print(document["limits"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="triage",
@@ -836,6 +860,21 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("--json", action="store_true")
     check_parser.add_argument("--allow-missing", action="store_true")
     check_parser.set_defaults(func=command_check)
+
+    release_parser = subparsers.add_parser(
+        "release",
+        help="list exact x.y.z product tags and the release-notes pages to verify",
+    )
+    release_parser.add_argument(
+        "--repo",
+        action="append",
+        default=[],
+        help="GitHub owner/repo to read tags from (repeatable); defaults to "
+        + ", ".join(DEFAULT_RELEASE_REPOSITORIES),
+    )
+    release_parser.add_argument("--timeout", type=int, default=60)
+    release_parser.add_argument("--json", action="store_true")
+    release_parser.set_defaults(func=command_release)
 
     return parser
 

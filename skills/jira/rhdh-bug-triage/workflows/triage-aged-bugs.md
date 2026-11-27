@@ -13,12 +13,39 @@ not defaults.
 
 ## 1. Check the release and the reading tools
 
-Use `/rhdh-context` to find the released product version under review and
-its repositories. Then read the official release record yourself — the
-context skill's cached table or a repository tag can be wrong or stale, and
-neither alone proves the product actually shipped. If you cannot establish
-what shipped, stop; do not guess. Write down where you verified it and when.
-`--release-evidence` records the link; the tool does not open it for you.
+Use `/rhdh-context` for the repositories and as a version hint only. Its
+compatibility matrix is cached and can be stale. Establish the release under
+review yourself.
+
+List the product tags first:
+
+```bash
+python3 scripts/triage.py release --json
+```
+
+By default this runs `git ls-remote --tags` against `redhat-developer/rhdh`;
+pass `--repo` to read another repository. Only an exact `refs/tags/<x.y.z>`
+counts. `2.1` names a stream, `v0.2.0` is not the product tag scheme, and
+`redhat-developer-hub-2.1.0` in `rhdh-chart` is a chart version bumped whenever
+a chart changes, independently of the release train. Ignore all three; do not
+prefix-match and do not add a `v`.
+
+A tag is a candidate, not proof that the product shipped. Read the official
+release notes and confirm a section for that z-stream on **both** pages, because
+a security-only patch may appear only on the second one:
+
+- `https://docs.redhat.com/en/documentation/red_hat_developer_hub/{major.minor}/html/red_hat_developer_hub_release_notes/fixed-issues`
+- `https://docs.redhat.com/en/documentation/red_hat_developer_hub/{major.minor}/html/red_hat_developer_hub_release_notes/fixed-security-issues`
+
+From 2.x the same content is published under
+`{major.minor}/whats_new-fixed_issues` and
+`{major.minor}/whats_new-fixed_security_issues`; the `release` command prints
+both URL shapes. `docs.redhat.com` answers 403 to plain HTTP clients, so treat a
+403 as "read it in a browser", never as a missing page.
+
+If the tag and both pages do not agree, stop; do not guess. Write down what you
+verified and when. `--release-evidence` records the link; the tool does not open
+it for you.
 
 Use `/rhdh-jira-api` for authenticated Jira reading. Credentials stay inside
 its adapter. If reading is broken, that is a job for `/setup-rhdh-skills`,
