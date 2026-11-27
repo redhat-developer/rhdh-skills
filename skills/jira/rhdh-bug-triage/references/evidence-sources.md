@@ -22,7 +22,7 @@ Customer checks include `RHDH-Customer`, RHDHSUPP/ACCOUNT links or text referenc
 and populated customer, case, impact or SFDC fields. Resolve deployment-specific
 field names through the read adapter. A short familiar field list or absence of
 a label is not proof of complete coverage. Record mappings, fields actually read
-and any uncertainty. Never omit customer/Done exclusions in `all-open` scope.
+and any uncertainty. Never omit Done exclusions in `all-open` scope.
 The read CLI accepts adapter-resolved mapping JSON via `--field-names` on `fetch`
 and live `select`; exported `fieldNames` retain that metadata. Never substitute
 invented tenant IDs or infer completeness from the mapping alone.

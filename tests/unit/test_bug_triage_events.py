@@ -388,7 +388,8 @@ def test_comment_review_requires_full_thread_and_grounded_excerpts(tmp_path):
     assert evidenced_backport(record, None, False, tmp_path)[0] == "human_review"
 
 
-def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("done_case", [False, True])
+def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys, done_case):
     from bugtriage import cycle
 
     keys = [f"RHDHBUGS-{i}" for i in range(1, 11)]
@@ -406,7 +407,7 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys):
                     "fields": {
                         "summary": "Fixture",
                         "issuetype": {"name": "Bug"},
-                        "status": {"name": "Open"},
+                        "status": {"name": "Closed" if done_case and k == keys[-1] else "Open"},
                         "labels": [],
                         "issuelinks": [],
                     },
@@ -428,7 +429,7 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys):
         audit.mkdir(parents=True)
         sample = json.loads(Path(batch["sample"]).read_bytes())
         ordered = [row["key"] for row in sample["tickets"]]
-        assert set(ordered) == set(batch["keys"])
+        assert set(ordered) | {item["key"] for item in sample["excluded"]} == set(batch["keys"])
         digest = hashlib.sha256((tmp_path / "private/bugs.json").read_bytes()).hexdigest()
         coverage = {} if legacy else {"inventoryHash": digest}
         (audit / "selection.json").write_text(json.dumps(sample))
@@ -486,7 +487,14 @@ def test_next_resumes_until_finish_then_advances(tmp_path, monkeypatch, capsys):
     finish_args = finish(second)
     index = tmp_path / "START-HERE.md"
     original = index.read_bytes()
-    assert "10 issues reviewed across 2 completed batches" in index.read_text()
+    assert f"{10 - int(done_case)} issues reviewed across 2 completed batches" in index.read_text()
+    for page in [index, Path(second["review"]) / "START-HERE.md"]:
+        assert ("Excluded after screening" in page.read_text()) == done_case
+        if done_case:
+            assert (
+                f"[{keys[-1]}](https://redhat.atlassian.net/browse/{keys[-1]})" in page.read_text()
+            )
+            assert "done" in page.read_text().lower()
     assert "0 of 10 inventory entries remain" in index.read_text()
     for key in keys:
         assert index.read_text().count(f"[{key}]") == 1

@@ -4,9 +4,9 @@ description: >-
   Investigates picked RHDHBUGS bugs and drafts the verdict, cited evidence,
   current-release validation or honest uncertainty, a fix plan, and the exact
   local Jira comment for each bug. Use for "triage aged bugs". Defaults to
-  aged non-customer bugs affecting only releases older than the verified
+  aged bugs affecting only releases older than the verified
   current release; explicit all-open scope bypasses age and affected-version
-  filters, not customer or Done exclusions. Includes support intake and local PR/backport
+  filters while preserving Done exclusions. Includes support intake and local PR/backport
   proposals. Jira and shared repositories stay read-only.
 ---
 
@@ -109,11 +109,13 @@ Run `python3 scripts/triage.py` from the installed skill directory. The
   Pass `--require-investigation --require-fix-plan` on a full run. Continue
   through local verification and `finish` for every selected bug.
 
-By default we review open, non-customer bugs at least 90 days old whose
+By default we review open bugs at least 90 days old whose
 affected versions are all older than the release under review (5 of them,
 spread across teams). `--scope all-open` drops the age and version checks
 only. `--all` reviews every eligible bug in the export. Neither flag proves
 the export covers the whole tracker.
+
+Customer-related bugs receive the same technical investigation, fix proposals, and local Jira drafts. Record customer context privately. A structured Jira link to RHDHSUPP or an explicit support reference in a mapped case field requires coordination with the support owner before customer communication or closure. Names, labels, account records and free-text mentions alone do not establish a support case. Keep customer identifiers out of public PR drafts.
 
 ## Completion
 

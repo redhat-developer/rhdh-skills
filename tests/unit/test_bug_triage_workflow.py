@@ -252,6 +252,9 @@ def test_saved_controls_recheck_customer_and_done_exclusions(inputs, change):
     assert sample["eligibleCount"] == 0
     document["issues"][0]["fields"].update(change)
     path.write_text(json.dumps(document))
+    if "labels" in change:
+        run(inputs)
+        return
     with pytest.raises(RunError, match="control.*no longer eligible"):
         run(inputs)
     assert not Path(inputs.output_dir).exists()
@@ -329,8 +332,8 @@ def test_failed_searches_and_bounded_coverage_survive_into_report(inputs, tmp_pa
 
 
 def test_default_inventory_includes_unlabelled_issues():
-    assert "labels IS EMPTY" in default_jql(90)
-    assert 'labels NOT IN ("RHDH-Customer")' in default_jql(90)
+    assert "labels" not in default_jql(90)
+    assert "created <= -90d" in default_jql(90)
     assert "created <=" not in default_jql(90, "all-open")
 
 
@@ -686,6 +689,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     packet_file = review / "01-triage/audit/packets.json"
     audit = json.loads(packet_file.read_text())
     key = audit["packets"][0]["key"]
+    audit["packets"][0]["customerSignals"] = ["link:Related:RHDHSUPP-22", "text:RHDHSUPP-19"]
     audit["packets"][0]["reporter"] = {
         "displayName": "Fixture Reporter",
         "accountId": "fixture-account",
@@ -749,6 +753,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         in (review / "START-HERE.md").read_text()
     )
     assert row["resolution"] in (review / "START-HERE.md").read_text()
+    assert "Support coordination required" in (review / "START-HERE.md").read_text()
     draft = (review / f"01-triage/comments/{key}.md").read_text()
     assert f"### TL;DR\n\n{row['resolution']} Exact fix version unconfirmed." in draft
     assert "### How this was tested" not in draft
@@ -764,6 +769,8 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
     assert "@Fixture Reporter, please open a feature request for a new filter option" in draft
+    assert case["supportCases"] == ["RHDHSUPP-22"]
+    assert "RHDHSUPP-22" in draft and "RHDHSUPP-19" not in draft
     assert case["featureRequesterMention"]["attrs"] == {
         "id": "fixture-account",
         "text": "@Fixture Reporter",

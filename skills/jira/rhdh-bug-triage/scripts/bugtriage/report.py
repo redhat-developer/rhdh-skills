@@ -119,7 +119,7 @@ def render_report(
             lines += [f"> {line}" if line else ">" for line in packet.proposed_comment.splitlines()]
         else:
             lines += [
-                "No comment draft: this bug is customer-linked, already closed, or the inputs were unsafe."
+                "No comment draft: this issue was already closed or the inputs were insufficient."
             ]
         lines += [
             "",

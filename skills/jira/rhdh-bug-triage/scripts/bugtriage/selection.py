@@ -2,9 +2,7 @@
 
 The sample is stratified by team (or the first component when Team is absent)
 and ordered by a stable hash, so two people with the same export and seed get
-the same ticket list on any machine. Customer-linked tickets are excluded from
-normal sampling and from the control set: this skill never proposes closing a
-customer bug.
+the same ticket list on any machine. Customer context is retained for human review.
 """
 
 from __future__ import annotations
@@ -63,14 +61,6 @@ class Selection:
         return entry
 
 
-def customer_reason(ticket: Ticket) -> str:
-    """Prefer a cited relationship over populated-field screening metadata."""
-    return next(
-        (signal for signal in ticket.customer_signals if not signal.startswith("field:")),
-        ticket.customer_signals[0] if ticket.customer_signals else "",
-    )
-
-
 def stratum_of(ticket: Ticket) -> str:
     if ticket.team:
         return ticket.team
@@ -100,11 +90,6 @@ def _base_exclusion(ticket: Ticket) -> str:
     validate_issue_key(ticket.key)
     if not ticket.key.startswith("RHDHBUGS-"):
         return "outside RHDHBUGS project"
-    signal = customer_reason(ticket)
-    if signal:
-        if signal.startswith("field:"):
-            return f"customer-field precaution ({signal}; populated metadata is not proof of a customer case)"
-        return f"customer-linked ({signal})"
     if ticket.is_done:
         return f"done ({ticket.status or 'unknown status'})"
     if not ticket.status and not ticket.status_category:

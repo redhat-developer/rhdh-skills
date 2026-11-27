@@ -241,6 +241,17 @@ def _collect_commits(payload: Dict[str, Any]) -> List[str]:
     return sorted(set(COMMIT_URL_RE.findall(json.dumps(payload, default=str))))
 
 
+def verified_support_cases(signals: Iterable[str]) -> List[str]:
+    """Return references observed in structured Jira links or dedicated case fields."""
+    cases = set()
+    for signal in signals:
+        if signal.startswith("case:"):
+            cases.add(signal.removeprefix("case:"))
+        elif re.fullmatch(r"link:.*:RHDHSUPP-\d+", signal):
+            cases.add(signal.rsplit(":", 1)[1])
+    return sorted(cases)
+
+
 def _customer_signals(
     ticket_key: str,
     payload: Dict[str, Any],
@@ -272,6 +283,20 @@ def _customer_signals(
             continue
         if _populated(value):
             signals.append(f"field:{field_name}")
+            if field_name.casefold() in {
+                "case link",
+                "support case reference",
+                "sfdc cases links",
+                "sfdc cases",
+            }:
+                for ref in as_text(value).splitlines():
+                    ref = ref.strip().rstrip("/")
+                    if re.fullmatch(
+                        r"(?:https://redhat\.atlassian\.net/browse/)?RHDHSUPP-\d+", ref
+                    ):
+                        signals.append("case:" + ref.rsplit("/", 1)[-1])
+                    elif re.fullmatch(r"https://access\.redhat\.com/support/cases/\d+", ref):
+                        signals.append(f"case:{ref}")
 
     text = json.dumps(payload, default=str)
     for key in sorted(set(SUPPORT_KEY_RE.findall(text))):

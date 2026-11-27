@@ -11,7 +11,7 @@ from .comments import comment_footer
 from .cycle import render_cycle_index
 from .events import required
 from .layout import refresh_review
-from .model import as_text
+from .model import as_text, verified_support_cases
 from .policy import CLOSE_ACTIONS, _linked_text, ref_link
 
 
@@ -208,7 +208,11 @@ def command_finish(args):
             coverage_hold = (
                 packet["verdict"] == "unclear"
                 and errors
-                and all("customer-field read coverage is incomplete" in error for error in errors)
+                and all(
+                    "customer-field read coverage is incomplete" in error
+                    or error == "customer-linked ticket cannot receive a close proposal"
+                    for error in errors
+                )
             )
             proof_refs = packet.get("proof", {}).get("releaseContains", {}).get("refs", [])
             direct = {
@@ -305,6 +309,17 @@ def command_finish(args):
             for path in (run / "02-fixes/events" / key).glob("*/proposal.json")
         ]
         fields, messages = jira_field_plan(packet, stage, row, proposals, source.parent)
+        signals = packet.get("customerSignals", [])
+        support_cases = verified_support_cases(signals)
+        if support_cases:
+            case["supportCases"] = support_cases
+            messages.append(
+                "Support coordination required. Review "
+                + ", ".join(support_cases)
+                + " with the support owner before customer communication or closure."
+            )
+        elif signals:
+            messages.append("Customer context recorded. A support-case link has not been verified.")
         if review_type:
             messages.append(
                 f"Human classification review requested ({classification['kind']}): {classification['basis']}"

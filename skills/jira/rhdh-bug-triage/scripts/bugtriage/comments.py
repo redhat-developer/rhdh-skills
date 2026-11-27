@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
-from .model import Ticket, parse_datetime
+from .model import Ticket, parse_datetime, verified_support_cases
 from .policy import (
     CLOSE_ACTIONS,
     EVIDENCE_TYPES,
@@ -128,10 +128,17 @@ def plan_comment(
     classification = packet.investigation.get("classification", {})
     if classification.get("kind") in {"feature", "task", "uncertain"}:
         identity["classification"] = [classification["kind"], classification["ref"]]
+    if support_cases := verified_support_cases(ticket.customer_signals):
+        identity["supportCases"] = support_cases
     fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     marker = MARKER_PREFIX + fingerprint
 
     def decision(status: str, reason: str, **details) -> dict:
+        if status == "propose" and ticket.customer_signals:
+            status, reason = (
+                "review_required",
+                "Review customer context before delivering this draft.",
+            )
         return {
             "status": status,
             "reason": reason,
@@ -151,8 +158,8 @@ def plan_comment(
         return decision("suppress", "No triage comment was drafted.")
     if verify_packet(packet, ticket):
         return decision("suppress", "Finding failed re-verification; the draft is not eligible.")
-    if ticket.customer_signals or ticket.is_done:
-        return decision("suppress", "Customer-linked or completed issue; no comment proposed.")
+    if ticket.is_done:
+        return decision("suppress", "Completed issue; no comment proposed.")
     # A private validity finding can remain supported while customer context is
     # incomplete. Delivery still requires the full mapped-field read coverage.
     missing = input_errors(ticket, require_customer_coverage=True)

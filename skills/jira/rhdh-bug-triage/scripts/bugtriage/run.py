@@ -92,7 +92,6 @@ def default_jql(aged_days: int, scope: str = "aged") -> str:
     return (
         "project = RHDHBUGS AND statusCategory != Done "
         + (f"AND created <= -{aged_days}d " if scope == "aged" else "")
-        + 'AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer")) '
         + "ORDER BY created ASC"
     )
 

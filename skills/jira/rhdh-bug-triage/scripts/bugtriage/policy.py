@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 from .duplicates import DUPLICATE_CLOSE_THRESHOLD, DuplicateCandidate
 from .model import JIRA_KEY_RE, Ticket, parse_datetime
 
-POLICY_VERSION = 3
+POLICY_VERSION = 4
 FIXED_CLOSE_THRESHOLD = 0.80
 VERDICTS = {
     "duplicate",
@@ -1249,11 +1249,9 @@ def evaluate(
         current_release=current_release,
         verification=verification or {},
     )
-    if ticket.customer_signals or ticket.is_done:
+    if ticket.is_done:
         packet.verdict, packet.action = "unclear", "abstain"
-        packet.gaps.append(
-            "customer-linked or completed ticket is outside aged non-customer triage scope"
-        )
+        packet.gaps.append("completed ticket is outside open-bug triage scope")
         if assessment is not None and not matched:
             packet.gaps.append("assessment does not match the issue under review")
         return packet

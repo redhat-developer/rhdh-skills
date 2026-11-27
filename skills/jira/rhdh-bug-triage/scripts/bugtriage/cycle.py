@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from .jira import export_from_acli, search_acli
 from .model import DEFAULT_SAMPLE_SIZE, normalize_export
 from .report import now_iso
-from .review_queue import batch_counts
+from .review_queue import batch_counts, exclusion_lines
 from .run import RunError, build_sample_manifest, default_jql, parse_as_of
 from .selection import SelectionConfig
 
@@ -133,8 +133,8 @@ def render_cycle_index(review):
                 lines.append(f"- [{key}]({audit}/bugs/{key}.md) — {finding}")
                 for message in case.get("jiraFieldSummary", []):
                     lines.append(f"  - {message}")
-            else:
-                lines.append(f"- {key} — excluded. [Selection record]({audit}/selection.json)")
+        if excluded:
+            lines.extend(["", *exclusion_lines(excluded, audit, "### Excluded after screening")])
         sections.append("\n".join(lines))
         reviewed += len(cases)
         accounted += len(batch)

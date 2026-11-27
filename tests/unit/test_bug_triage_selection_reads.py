@@ -29,6 +29,7 @@ from bugtriage.model import (  # noqa: E402
     load_export,
     normalize_export,
     normalize_issue,
+    verified_support_cases,
 )
 from bugtriage.selection import (  # noqa: E402
     Control,
@@ -132,11 +133,11 @@ def test_all_open_bypasses_only_age_and_affects_filters():
         SelectionConfig(scope="all-open", all_tickets=True),
         AS_OF,
     )
-    assert {item.ticket.key for item in selected} == {"RHDHBUGS-1", "RHDHBUGS-2"}
+    assert {item.ticket.key for item in selected} == {"RHDHBUGS-1", "RHDHBUGS-2", "RHDHBUGS-3"}
     assert {item.kind for item in selected} == {"all-open"}
-    assert eligible == 2
+    assert eligible == 3
     reasons = {item["key"]: item["reason"] for item in excluded}
-    assert "customer-linked" in reasons["RHDHBUGS-3"]
+    assert "RHDHBUGS-3" not in reasons
     assert "done" in reasons["RHDHBUGS-4"]
     assert "project" in reasons["OTHER-5"]
 
@@ -168,7 +169,7 @@ def test_all_tickets_is_stable_and_sampling_remains_stratified():
     assert {item.stratum for item in sampled} == {"Install", "UI"}
 
 
-def test_controls_bypass_age_versions_but_not_customer_done_or_project_filters():
+def test_controls_bypass_age_versions_but_not_done_or_project_filters():
     records = [
         issue("RHDHBUGS-1", versions=[], created=AS_OF.isoformat()),
         issue("RHDHBUGS-2", labels=["RHDH-Customer"]),
@@ -178,9 +179,9 @@ def test_controls_bypass_age_versions_but_not_customer_done_or_project_filters()
     selected, excluded, _ = select(
         records, size=0, controls=[Control(record["key"]) for record in records]
     )
-    assert [item.ticket.key for item in selected] == ["RHDHBUGS-1"]
+    assert [item.ticket.key for item in selected] == ["RHDHBUGS-1", "RHDHBUGS-2"]
     assert selected[0].kind == "control"
-    assert len(excluded) == 3
+    assert len(excluded) == 2
 
 
 def test_rest_status_category_is_authoritative_over_flat_category_alias():
@@ -696,7 +697,7 @@ def test_account_relationship_to_another_project_is_a_native_customer_signal(typ
     )
     ticket = normalize_issue(record)
     assert "link:Account:CIPOE-203270" in ticket.customer_signals
-    assert "customer-linked" in exclusion_reason(ticket, AS_OF, 90, "2.1.0", "all-open")
+    assert not exclusion_reason(ticket, AS_OF, 90, "2.1.0", "all-open")
 
 
 @pytest.mark.parametrize(
@@ -729,9 +730,7 @@ def test_populated_qe_impact_is_a_screening_precaution_not_a_claim_of_a_customer
     )
     assert ticket.customer_signals == ["field:Customer Impact"]
     reason = exclusion_reason(ticket, AS_OF, 90, "2.1.0")
-    assert "precaution" in reason
-    assert "not proof of a customer case" in reason
-    assert "customer-linked" not in reason
+    assert not reason
 
 
 def test_native_relationship_takes_precedence_over_a_populated_impact_precaution():
@@ -743,8 +742,8 @@ def test_native_relationship_takes_precedence_over_a_populated_impact_precaution
         {"customfield_42": "Customer Impact"},
     )
     reason = exclusion_reason(ticket, AS_OF, 90, "2.1.0")
-    assert "customer-linked" in reason
-    assert "link:Account:CIPOE-203270" in reason
+    assert not reason
+    assert "link:Account:CIPOE-203270" in ticket.customer_signals
 
 
 def test_missing_global_account_and_support_fields_stay_unknown_not_fetched_and_empty():
@@ -793,8 +792,8 @@ def test_cited_host_customer_review_is_additive_and_never_completes_field_reads(
     assert f"host:{ref}:Explicit customer POC in comment" in ticket.customer_signals
     assert not ticket.customer_fields_complete
     selected, excluded, _ = select([record])
-    assert selected == []
-    assert "customer-linked" in excluded[0]["reason"]
+    assert [item.ticket.key for item in selected] == ["RHDHBUGS-1519"]
+    assert not excluded
 
 
 def test_cited_host_review_can_screen_a_semantic_poc_without_a_native_signal():
@@ -842,3 +841,23 @@ def test_empty_host_customer_declarations_do_not_clear_native_customer_signals()
     record = issue(labels=["RHDH-Customer"])
     record["triageCustomerSignals"] = []
     assert "label:RHDH-Customer" in normalize_issue(record).customer_signals
+
+
+def test_support_coordination_requires_a_structured_case_reference():
+    portal = "https://access.redhat.com/support/cases/123456"
+    ticket = normalize_issue(
+        issue(
+            labels=["RHDH-Customer"],
+            description="A different report mentioned RHDHSUPP-19",
+            customfield_11=[portal, "RHDHSUPP-22"],
+            issuelinks=[
+                {"type": {"name": "Related"}, "outwardIssue": {"key": "RHDHSUPP-22"}},
+                {"type": {"name": "Account"}, "outwardIssue": {"key": "ACCOUNT-33"}},
+            ],
+        ),
+        {"customfield_11": "Support Case Reference"},
+    )
+    assert verified_support_cases(ticket.customer_signals) == ["RHDHSUPP-22", portal]
+    other = normalize_issue(issue(description="See RHDHSUPP-19", labels=["RHDH-Customer"]))
+    assert other.customer_signals
+    assert verified_support_cases(other.customer_signals) == []

@@ -43,27 +43,24 @@ An example search:
 
 ```jql
 project = RHDHBUGS AND statusCategory != Done AND created <= -90d
-AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer"))
 ORDER BY created ASC
 ```
 
-The parentheses and `IS EMPTY` keep unlabelled reports in — a search that
-silently drops them is the classic mistake. This query does not check every
-customer signal or version rule; the local checks below still apply.
+Include customer-related issues in this query. The local checks below apply the version rules.
 
 ```bash
 python3 scripts/triage.py select --input export.json \
   --current-release "$CURRENT_RELEASE" --scope aged --out sample.json
 ```
 
-- Default: open, non-customer, at least 90 days old, every affected version
+- Default: open, at least 90 days old, every affected version
   known and strictly older than the release under review. A bug affecting
   both old and current versions is not eligible. Unknown, equal or newer
   versions are excluded, with a reason written down.
 - Default: 5 bugs, spread across teams.
   `--all` takes every eligible bug in the export.
 - `--scope all-open` drops only the age and version checks, never the
-  customer or closed checks. It needs a matching wider export for both
+  project or closed checks. It needs a matching wider export for both
   `select` and `run`.
 
 Then build the comparison list — the open **and closed** bugs we will search
@@ -72,9 +69,9 @@ duplicate search:
 
 ```bash
 python3 scripts/triage.py backlog --out backlog.json \
-  --search-jql 'project = RHDHBUGS AND statusCategory != Done AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer"))' \
-  --search-jql 'project = RHDHBUGS AND statusCategory = Done AND fixVersion IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer"))' \
-  --full-jql 'project = RHDHBUGS AND statusCategory = Done AND fixVersion IS NOT EMPTY AND (labels IS EMPTY OR labels NOT IN ("RHDH-Customer"))'
+  --search-jql 'project = RHDHBUGS AND statusCategory != Done' \
+  --search-jql 'project = RHDHBUGS AND statusCategory = Done AND fixVersion IS EMPTY' \
+  --full-jql 'project = RHDHBUGS AND statusCategory = Done AND fixVersion IS NOT EMPTY'
 ```
 
 The `--search-jql` parts are fast and cover whole partitions, but their
