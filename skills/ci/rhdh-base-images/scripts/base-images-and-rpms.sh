@@ -836,7 +836,7 @@ node_version_from_image() {
         printf '%s\n' "${out}"
         return 0
     fi
-    local err_file
+    err_file=$(mktemp) || return 1
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
     # --network=host --cgroups=disabled: CI runner pods have a read-only
