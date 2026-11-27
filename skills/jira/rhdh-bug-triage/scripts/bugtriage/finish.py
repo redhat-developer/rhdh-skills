@@ -326,6 +326,29 @@ def command_finish(args):
             )
         case["proposedJiraFields"] = fields
         case["jiraFieldSummary"] = messages
+        named_customer = row.get("customerNamePresent", False)
+        if not isinstance(named_customer, bool):
+            raise ValueError(f"{key} customerNamePresent must be a boolean")
+        requests = []
+        if named_customer:
+            requests.append(
+                "Please remove the customer name from this bug and use a neutral description such as “the affected deployment”."
+            )
+        if "reporterReproRequest" in row:
+            requests.append(required(row, "reporterReproRequest"))
+        reporter = packet.get("reporter") or {}
+        name = reporter.get("displayName")
+        account = reporter.get("accountId")
+        recipient = "Reporter"
+        if account and name:
+            recipient = "@" + _linked_text(name)
+        if requests:
+            case["reporterNextStep"] = f"- **{recipient}** — " + " ".join(requests)
+            if account and name:
+                case["reporterMention"] = {
+                    "type": "mention",
+                    "attrs": {"id": account, "text": "@" + name},
+                }
         original = packet.get("proposedComment")
         if original:
             outcome_field = "resolution" if "resolution" in case else "finding"
@@ -398,24 +421,27 @@ def command_finish(args):
                 tldr += "\n\n" + "\n\n".join(_linked_text(message) for message in messages)
             if "featureRequest" in row and not review_type:
                 capability = required(row, "featureRequest")
-                reporter = packet.get("reporter") or {}
-                account = reporter.get("accountId")
-                name = reporter.get("displayName")
-                recipient = "Reporter"
                 if account and name:
-                    recipient = "@" + _linked_text(name)
                     case["featureRequesterMention"] = {
                         "type": "mention",
                         "attrs": {"id": account, "text": "@" + name},
                     }
                 tldr += f" {recipient}, please open a feature request for {_linked_text(capability)} if you still need it."
+            next_steps = (
+                case.get("fixedNextStep") or "\n".join(bullets) or _linked_text(case["next"])
+            )
+            if requests:
+                next_steps = case["reporterNextStep"] + "\n" + next_steps
+            heading = f"**Re: {ref_link(key)}**"
+            if not named_customer:
+                heading += " · " + _linked_text(packet["summary"])
             case["proposedComment"] = "\n\n".join(
                 (
-                    f"**Re: {ref_link(key)}** · {_linked_text(packet['summary'])}",
+                    heading,
                     "### TL;DR",
                     tldr,
                     "### Next steps",
-                    case.get("fixedNextStep") or "\n".join(bullets) or _linked_text(case["next"]),
+                    next_steps,
                     comment_footer(packet["commentPlan"]["reference"]),
                 )
             )

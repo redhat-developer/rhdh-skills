@@ -159,6 +159,8 @@ def refresh_review(output_dir: Path):
             if current.get("blocker"):
                 lines.extend(["", f"**Blocked on.** {current['blocker']}"])
             lines.extend(["", "**Who does what next**", ""])
+            if current.get("reporterNextStep"):
+                lines.append(current["reporterNextStep"])
             linked = set()
             if current.get("fixedNextStep"):
                 lines.append(current["fixedNextStep"])

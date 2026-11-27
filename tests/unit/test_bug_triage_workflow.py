@@ -781,6 +781,25 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     assert (review / case["evidence"]).read_bytes() == log.read_bytes()
     assert finish([row]) == 0 and (review / "run.json").read_bytes() == completed
 
+    assert "remove the customer name" not in draft
+    question = "Which command failed, and what error did it return?"
+    for named_customer, request in [
+        (True, {}),
+        (False, {"reporterReproRequest": question}),
+        (True, {"reporterReproRequest": question}),
+    ]:
+        assert finish([{**row, "customerNamePresent": named_customer, **request}]) == 0
+        revised = json.loads((review / "run.json").read_bytes())["cases"][key]
+        assert revised["reporterMention"]["attrs"]["id"] == "fixture-account"
+        action = revised["reporterNextStep"]
+        assert "@Fixture Reporter" in action
+        assert ("remove the customer name" in action) == named_customer
+        assert (question in action) == bool(request)
+        assert action in revised["proposedComment"]
+        assert action in (review / "START-HERE.md").read_text()
+        if named_customer:
+            assert audit["packets"][0]["summary"] not in revised["proposedComment"].splitlines()[0]
+
     # A raw fix object's booleans never establish release inclusion on their own.
     packet = audit["packets"][0]
     packet.update(

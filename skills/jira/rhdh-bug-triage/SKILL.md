@@ -115,6 +115,10 @@ spread across teams). `--scope all-open` drops the age and version checks
 only. `--all` reviews every eligible bug in the export. Neither flag proves
 the export covers the whole tracker.
 
+RHDHBUGS tickets must omit customer names. When the issue text names a customer, continue ordinary technical triage and set `customerNamePresent: true` in the finish result. The local Jira draft tags the reporter to anonymize the issue. Write all draft prose without the name. A label or support link alone does not establish that a name appears in the text.
+
+Read the report and discussion before asking for more detail. If reproduction is still unclear because the report lacks information, record what was observed and set `reporterReproRequest` in the finish result. Ask the reporter for the specific missing steps, expected or actual result, version, or sanitized evidence needed to proceed. Distinguish local test conditions from the reporter’s environment.
+
 Customer-related bugs receive the same technical investigation, fix proposals, and local Jira drafts. Record customer context privately. A structured Jira link to RHDHSUPP or an explicit support reference in a mapped case field requires coordination with the support owner before customer communication or closure. Names, labels, account records and free-text mentions alone do not establish a support case. Keep customer identifiers out of public PR drafts.
 
 ## Completion
