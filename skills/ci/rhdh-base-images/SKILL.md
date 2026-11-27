@@ -7,10 +7,14 @@ description: >-
   and bump overlays `versions.json` `node` on `main` or a `release-1.10` branch.
   Use for weekly base-image maintenance, a UBI or RHEL bump, an RPM lockfile
   refresh, "which base images are out of date", node-v*-headers.tar.gz, catalog
-  builder FROM, builder PipelineRun BASE_IMAGES, catalog release suffix, a
-  stale `helm_version` pin (helm comes from get.helm.sh, not an RPM repo),
+  builder FROM, builder PipelineRun BASE_IMAGES, catalog release suffix,
+  a stale `helm_version` pin,
   overlays Node version, UBI minor skew inside a Containerfile,
-  or an OpenShift clients `N-el9-beta` / `4.21-el9-beta` RPM 404.
+  or an OpenShift clients `N-el9-beta` / `4.21-el9-beta` RPM 404. After a
+  catalog builder bump merges and publishes, rebuild the GitLab runner image
+  and re-pin .gitlab-ci.yml in rhdh and rhdh-plugin-catalog. Use for
+  "rebuild gitlab-runner", "bump the gitlab-runner tag", gitlab-runner:2.x
+  stale in .gitlab-ci.yml, or a GitLab pipeline failing on the pre-fix runner.
 compatibility: "bash, jq, skopeo, curl, git, python3; podman or docker for toolchain detection; gh or glab for PR/MR creation."
 ---
 
@@ -29,6 +33,7 @@ discovers another skill's paths.
 | Explain repository rules | `references/repos.md` |
 | Preview an update | `workflows/update-base-images.md`, then `scripts/base-images-and-rpms.sh --dry-run ...` |
 | Update images, lockfiles, Node headers, catalog builder, overlays node, Go toolchain, or the helm_version pin | `workflows/update-base-images.md` |
+| Rebuild the GitLab runner image after a catalog builder bump merged and published, and re-pin `.gitlab-ci.yml` in rhdh + rhdh-plugin-catalog | `workflows/gitlab-runner-rebuild.md` |
 
 A scan reports, per repository: every `FROM` image with its current and latest
 tag, UBI minor skew within a file, Node or Go toolchain drift, the registries and
@@ -120,6 +125,13 @@ until that path is migrated.
   `release-1.*` (no Go module). Never lower `go` or `toolchain` to match an
   older image; a newer pin (for example from Renovate) is valid.
 - Exclude RHDH `e2e-tests/` and `.ci/` from image scans.
+- After a catalog builder bump merges and Konflux publishes `X.Y-N`, rebuild
+  `quay.io/rhdh/gitlab-runner` from it and pin `.gitlab-ci.yml` in **both**
+  rhdh and rhdh-plugin-catalog to the **dated** tag (`X.Y-<yyyymmdd-hhmm>`),
+  never the mutable `X.Y` — runner pods pull with `IfNotPresent`, so a mutable
+  tag keeps serving stale node caches for days (RHIDP-19218). Both repos use
+  the same runner tag per stream; land both MRs together. Full workflow:
+  `workflows/gitlab-runner-rebuild.md`.
 - Ignore `rpm-lockfile-prototype` lines matching `No sources found for` or
   "no matching sources". Those source RPMs are often unpublished; the binary
   lockfile is still valid. Do not report them as unread, failed, or remaining
@@ -155,4 +167,6 @@ contains `node-v` matching `.nvmrc`, and name the overlays `versions.json`
 builder Containerfile changed, name the `release` old→new and confirm builder
 PipelineRun `BASE_IMAGES` matches that file's `FROM` (or that the Containerfile
 did not change). When `helm_version` changed, name the pin old→new for each
-file that moved (or that no in-scope checkout carried a helm pin).
+file that moved (or that no in-scope checkout carried a helm pin). A runner rebuild is complete when the dated tag exists on
+quay, both `.gitlab-ci.yml` files pin it, both MRs are merged, and a post-merge
+pipeline ran on the new image.
