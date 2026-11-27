@@ -48,10 +48,7 @@ the single step-by-step guide, with every command.
   easier to reach.
 - **Check the actual release.** Ask `/rhdh-context` which released product
   version is current, and prove it from the official release record — a
-  cached note or a repo tag alone is not proof. Run `triage.py release` to read
-  exact `x.y.z` product tags, ignoring `2.1`, `v*` and `redhat-developer-hub-*`
-  chart tags, then confirm the z-stream on both release-notes pages (fixed
-  issues and fixed security issues). Then check the bug against
+  cached note or a repo tag alone is not proof. Then check the bug against
   that release's code, docs, dependencies or real behaviour. An open ticket,
   an old version number or "we found no fix" never proves the bug still
   exists.

@@ -56,23 +56,14 @@ material. Neither an empty result nor an incomplete search proves no fix exists.
 
 Invoke `/rhdh-context` to resolve the actual released product, its release source,
 repository tags and stream context. Its cached compatibility matrix is a lead,
-not an authoritative current-release lookup. Run `triage.py release` to read
-product tags with `git ls-remote --tags`; only an exact `refs/tags/<x.y.z>` is a
-z-stream candidate. `2.1` is a stream, `v0.2.0` is not the product scheme, and a
-`redhat-developer-hub-*` tag is a chart version that moves independently of the
-release train. A tag alone still does not prove product shipment: read both
-release-notes pages for the stream (`fixed-issues` and `fixed-security-issues`,
-or the `whats_new-fixed_issues` and `whats_new-fixed_security_issues` layout
-used from 2.x) and confirm a section for that z-stream, since a security-only
-patch may appear only on the second page. `docs.redhat.com` returns 403 to
-plain HTTP clients; that is not proof the page is missing. If tag and pages
-disagree, resolve the actual shipped release against official product
-release/lifecycle documentation. Inspect the matching product docs and
-repository/dependency state. Read the authoritative HTTPS release record before
-setting `--current-release` and `--release-evidence`. Record verification
-date/source; the CLI only records the supplied URL and cannot magically verify
-its contents. Do not hardcode a "current" product release in an assessment or
-command default.
+not an authoritative current-release lookup. If it conflicts with a newer repo
+tag, resolve the actual shipped release against official product release/lifecycle
+documentation; a tag alone does not prove product shipment. Inspect the matching
+product docs and repository/dependency state. Read the authoritative HTTPS
+release record before setting `--current-release` and `--release-evidence`.
+Record verification date/source; the CLI only records the supplied URL and cannot
+magically verify its contents. Do not hardcode a "current" product release in an
+assessment or command default.
 
 For an already-fixed claim, identify the carrying release and prove the exact
 reviewed release contains the matching change, using a specific tag/commit
