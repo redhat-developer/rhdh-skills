@@ -172,17 +172,33 @@ git checkout -B "${HEAD}" >/dev/null
 # Rebase to the tip of the remote topic branch (when it exists) and the target
 # branch before pushing, so the PR/MR never opens behind the base.
 rebased=0
-if git fetch -q origin "${HEAD}" 2>/dev/null && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
+# Explicit refspec: single-branch clones (yarn-bump uses them) have a fetch
+# refspec that covers only one branch, so a bare "git fetch origin HEAD"
+# updates FETCH_HEAD without creating the tracking ref the rebase below
+# relies on (RHIDP-18915).
+if git fetch -q origin "+refs/heads/${HEAD}:refs/remotes/origin/${HEAD}" 2>/dev/null \
+  && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
   if ! git rebase "origin/${HEAD}" >/dev/null 2>&1; then
     git rebase --abort 2>/dev/null || true
-    echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
-    exit 1
+    # A bot-owned branch whose remote tip conflicts is disposable: both sides
+    # are generated against the same base (e.g. two weekly yarn bumps), so a
+    # conflicted rebase just means the remote copy is stale. Replace the tip
+    # instead of failing the repo (RHIDP-18915).
+    if [[ "${HEAD}" == chore/automated-* ]]; then
+      echo "[INFO] rebase onto origin/${HEAD} hit conflicts; replacing the stale bot branch tip" >&2
+      rebased=1
+    else
+      echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
+      exit 1
+    fi
+  else
+    rebased=1
   fi
-  rebased=1
 fi
 base_tip=""
 for remote in origin upstream; do
-  if git fetch -q "${remote}" "${BASE}" 2>/dev/null && git rev-parse -q --verify "${remote}/${BASE}" >/dev/null 2>&1; then
+  if git fetch -q "${remote}" "+refs/heads/${BASE}:refs/remotes/${remote}/${BASE}" 2>/dev/null \
+    && git rev-parse -q --verify "${remote}/${BASE}" >/dev/null 2>&1; then
     base_tip="${remote}/${BASE}"
     break
   fi
@@ -197,15 +213,23 @@ if [[ -n "${base_tip}" ]] && ! git merge-base --is-ancestor "${base_tip}" HEAD; 
   echo "[ERROR] HEAD is not ahead of ${base_tip}; refusing to push" >&2
   exit 1
 fi
+# Keep push stderr out of the log only until it is needed: on failure print
+# it with any embedded credentials redacted, so "push failed" stays
+# diagnosable (RHIDP-18915).
+push_err=$(mktemp)
+push_rc=0
 if [[ "${rebased}" -eq 1 ]]; then
-  if ! git push -u origin --force-with-lease "HEAD:${HEAD}" 2>/dev/null; then
-    echo "[ERROR] push failed for ${repo_slug}:${HEAD}" >&2
-    exit 1
-  fi
-elif ! git push -u origin "HEAD:${HEAD}" 2>/dev/null; then
+  git push -u origin --force-with-lease "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
+else
+  git push -u origin "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
+fi
+if [[ "${push_rc}" -ne 0 ]]; then
+  sed -E 's#(https?://)[^@/]+@#\1***@#g' "${push_err}" >&2
   echo "[ERROR] push failed for ${repo_slug}:${HEAD}" >&2
+  rm -f "${push_err}"
   exit 1
 fi
+rm -f "${push_err}"
 
 url=""
 if [[ "${host}" == "github" ]]; then
@@ -256,11 +280,29 @@ else
   # GitLab CEE
   glab_host="${CI_SERVER_HOST:-gitlab.cee.redhat.com}"
   tok="${PRIVATE_TOKEN:-}"
+  if [[ -z "${tok}" ]] && command -v glab >/dev/null 2>&1; then
+    # Keyring fallback: capture inside command substitution only; the token
+    # never crosses stdout of this script. glab prints the token line on stderr.
+    tok=$(glab auth status --hostname "${glab_host}" -t 2>&1 \
+      | sed -nE 's/^.*keyring: ([A-Za-z0-9._-]+)$/\1/p; s/^Token:[[:space:]]+([A-Za-z0-9._-]+)$/\1/p' \
+      | head -1)
+  fi
   if [[ -z "${tok}" ]]; then
-    echo "[ERROR] PRIVATE_TOKEN required for GitLab MR" >&2
+    echo "[ERROR] PRIVATE_TOKEN required for GitLab MR (or run: glab auth login --hostname ${glab_host})" >&2
     exit 1
   fi
   enc=$(printf '%s' "${repo_slug}" | jq -sRr @uri)
+  # Confirm source-branch deletion took effect: GitLab 19 does not echo the
+  # setting reliably in create/update responses (should_remove_source_branch
+  # only shows up on later GETs, and the legacy remove_source_branch response
+  # field is gone), so read the MR back and accept either response field.
+  mr_removes_source_branch() {
+    # mr_removes_source_branch <iid>
+    local json
+    json=$(curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
+      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/$1" 2>/dev/null || true)
+    [[ "$(jq -r '.should_remove_source_branch // .force_remove_source_branch // false' <<<"${json}" 2>/dev/null)" == "true" ]]
+  }
   existing_json=$(curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
     "https://${glab_host}/api/v4/projects/${enc}/merge_requests?state=opened&source_branch=${HEAD}" \
     | jq -c '.[0] // empty' 2>/dev/null || true)
@@ -273,11 +315,11 @@ else
       exit 1
     }
     ensure_body_metadata
-    updated_json=$(curl -fsS --request PUT --header "PRIVATE-TOKEN: ${tok}" \
+    curl -fsS --request PUT --header "PRIVATE-TOKEN: ${tok}" \
       --header "Content-Type: application/json" \
-      --data "$(jq -n --arg body "${BODY}" '{description:$body,remove_source_branch:true}')" \
-      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/${mr_iid}" || true)
-    if [[ "$(jq -r '.should_remove_source_branch // false' <<<"${updated_json}" 2>/dev/null)" != "true" ]]; then
+      --data "$(jq -n --arg body "${BODY}" '{description:$body,remove_source_branch:true,force_remove_source_branch:true}')" \
+      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/${mr_iid}" >/dev/null || true
+    if ! mr_removes_source_branch "${mr_iid}"; then
       echo "[ERROR] existing GitLab MR did not enable source-branch deletion: ${url}" >&2
       exit 1
     fi
@@ -286,11 +328,12 @@ else
     created_json=$(curl -fsS --request POST --header "PRIVATE-TOKEN: ${tok}" \
       --header "Content-Type: application/json" \
       --data "$(jq -n --arg s "${HEAD}" --arg t "${BASE}" --arg title "${TITLE}" --arg body "${BODY}" \
-        '{source_branch:$s,target_branch:$t,title:$title,description:$body,remove_source_branch:true}')" \
+        '{source_branch:$s,target_branch:$t,title:$title,description:$body,remove_source_branch:true,force_remove_source_branch:true}')" \
       "https://${glab_host}/api/v4/projects/${enc}/merge_requests" || true)
     url=$(jq -r '.web_url // empty' <<<"${created_json}" 2>/dev/null || true)
     [[ -n "${url}" ]] || { echo "[ERROR] GitLab MR create failed" >&2; exit 1; }
-    if [[ "$(jq -r '.should_remove_source_branch // false' <<<"${created_json}" 2>/dev/null)" != "true" ]]; then
+    mr_iid=$(jq -r '.iid // empty' <<<"${created_json}" 2>/dev/null || true)
+    if ! mr_removes_source_branch "${mr_iid}"; then
       echo "[ERROR] new GitLab MR did not enable source-branch deletion: ${url}" >&2
       exit 1
     fi

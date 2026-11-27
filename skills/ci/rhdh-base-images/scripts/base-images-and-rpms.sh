@@ -598,6 +598,15 @@ update_rpm_lockfile() {
     local -a proto_cmd=()
     containerfile=$(rpm_containerfile_for "${repo_dir}" "${kind}" "${branch}")
 
+    # Guard (RHIDP-18915): a ":tag@" ref with an empty digest makes
+    # rpm-lockfile-prototype die with a cryptic "Unknown format for image
+    # specification" error. Refuse to regenerate the lockfile and say so.
+    if grep -En '@([[:space:]]|$)' "${repo_dir}/${containerfile}" >/dev/null; then
+        status_fail "${kind}" "${branch}" rpm_lock \
+            "invalid image ref ending in '@' in ${containerfile}; fix the FROM line before regenerating rpms.lock.yaml"
+        return 0
+    fi
+
     [[ -f "${repo_dir}/${containerfile}" ]] || die "${repo_dir}: missing ${containerfile}"
     [[ -f "${repo_dir}/rpms.in.yaml" ]] || die "${repo_dir}: missing rpms.in.yaml"
 
@@ -607,7 +616,7 @@ update_rpm_lockfile() {
     if [[ ${DRY_RUN} -eq 1 ]]; then
         echo "  dry-run: bump OpenShift N-el9-beta URLs in ${repo_dir}/rpms.in.yaml when present"
         echo "  dry-run: (cd ${repo_dir} && ${rpm_tool} ${proto_args})"
-        echo "  dry-run: commit and push rpms.in.yaml and rpms.lock.yaml to open base-images PR branch (or chore/automated-update-rpm-lockfile/${branch})"
+        echo "  dry-run: commit and push rpms.in.yaml and rpms.lock.yaml to open base-images PR branch (or chore/automated-update-repo-deps/${branch})"
         return 0
     fi
 
@@ -670,10 +679,14 @@ ensure_automation_branch() {
         return 0
     fi
 
-    local rpm_branch="chore/automated-update-rpm-lockfile/${branch}"
-    log "No automation PR branch; using ${rpm_branch}" >&2
-    git checkout -B "${rpm_branch}" >/dev/null
-    printf '%s\n' "${rpm_branch}"
+    # Funnel branch for every dependent-component bump this skill makes on a
+    # repo when no base-images PR exists: rpm lockfile, node headers, catalog
+    # builder, overlays versions.json, go.mod. Named for the content, not the
+    # first kind that used it (RHIDP-18915).
+    local dep_branch="chore/automated-update-repo-deps/${branch}"
+    log "No automation PR branch; using ${dep_branch}" >&2
+    git checkout -B "${dep_branch}" >/dev/null
+    printf '%s\n' "${dep_branch}"
 }
 
 commit_push_paths() {
@@ -737,16 +750,30 @@ commit_push_paths() {
     fi
     log "Pushed ${message} to origin/${push_branch}"
 
-    if [[ "${push_branch}" == chore/automated-update-rpm-lockfile/* ]] \
+    if [[ "${push_branch}" == chore/automated-update-repo-deps/* ]] \
+        && git remote get-url origin 2>/dev/null | grep -q 'github.com' \
         && command -v gh >/dev/null 2>&1 \
         && ! gh pr list --head "${push_branch}" --state open --json number -q '.[0].number' 2>/dev/null | grep -q .; then
+        # Title from what the branch actually carries: the funnel branch is
+        # shared by rpm-lockfile, node-headers, catalog and overlays updates,
+        # and a fixed "update RPM lockfile" title mislabels node-only PRs
+        # (RHIDP-18915).
+        local subjects subject_count pr_title
+        subjects=$(git log --format=%s "${branch}"..HEAD 2>/dev/null \
+            | sed -e 's/ \[skip-build\]$//' | awk '!seen[$0]++')
+        subject_count=$(grep -c . <<< "${subjects}" || true)
+        if [[ "${subject_count}" -eq 1 ]]; then
+            pr_title="${subjects} (${branch}) [skip-build]"
+        else
+            pr_title="chore: automated updates in branch (${branch}) [skip-build]"
+        fi
         gh pr create \
             --base "${branch}" \
             --head "${push_branch}" \
-            --title "chore: update RPM lockfile in branch (${branch}) [skip-build]" \
+            --title "${pr_title}" \
             --body "${CREATE_PR_BODY}" \
             2>/dev/null \
-            || warn "Could not open RPM lockfile PR for ${push_branch}"
+            || warn "Could not open repo-deps PR for ${push_branch}"
     fi
 }
 
@@ -756,16 +783,73 @@ rhdh_nodejs_builder_image() {
         | grep -v minimal | head -1 | awk '{print $2}'
 }
 
+# Container-free node version: extract the image's rpmdb the same way
+# rpm-lockfile-prototype does (skopeo copy to a dir: layout, untar the known
+# rpmdb locations from every layer in manifest order) and query it with the
+# local rpm. CI runner pods cannot start any container (crun: mount proc:
+# Permission denied, RHIDP-18915), so this is the primary source and the
+# podman path below stays only as a fallback for runtime-capable hosts.
+node_version_from_image_rpmdb() {
+    local image="$1" inspect_ref tmp dest dbdir version digest candidate
+    command -v skopeo >/dev/null 2>&1 || return 1
+    command -v rpm >/dev/null 2>&1 || return 1
+    # skopeo rejects tag@digest refs; FROM lines carry digests
+    inspect_ref=$(printf '%s' "${image}" | sed -E 's/:[^:@/]+(@sha256:[0-9a-f]+)$/\1/')
+    tmp=$(mktemp -d)
+    dest=$(mktemp -d)
+    if ! skopeo copy --override-arch=amd64 "docker://${inspect_ref}" "dir:${tmp}" >/dev/null 2>&1; then
+        rm -rf "${tmp}" "${dest}"
+        return 1
+    fi
+    # extract in manifest order so later layers overwrite earlier ones,
+    # matching how the container filesystem is assembled
+    while IFS= read -r digest; do
+        [[ -f "${tmp}/${digest}" ]] || continue
+        tar -xf "${tmp}/${digest}" -C "${dest}" \
+            --wildcards '*var/lib/rpm*' '*usr/lib/sysimage/rpm*' 2>/dev/null || true
+    done < <(jq -r '.layers[].digest | split(":")[1]' "${tmp}/manifest.json" 2>/dev/null)
+    rm -rf "${tmp}"
+    # ubi10 keeps the rpmdb under usr/lib/sysimage/rpm; ubi9 under var/lib/rpm
+    dbdir=""
+    for candidate in "${dest}/var/lib/rpm" "${dest}/usr/lib/sysimage/rpm"; do
+        # compgen, not ls: ls fails when any single operand is missing
+        if compgen -G "${candidate}/*.sqlite" >/dev/null 2>&1 \
+            || compgen -G "${candidate}/Packages" >/dev/null 2>&1; then
+            dbdir="${candidate}"
+            break
+        fi
+    done
+    if [[ -z "${dbdir}" ]]; then
+        rm -rf "${dest}"
+        return 1
+    fi
+    # ubi9 names the package "nodejs"; ubi10 names it "nodejs24"
+    version=$(rpm -q --dbpath "${dbdir}" -a --qf '%{NAME} %{VERSION}\n' 2>/dev/null \
+        | awk '$1 ~ /^nodejs[0-9]*$/ { print $2; exit }')
+    rm -rf "${dest}"
+    [[ -n "${version}" ]] || return 1
+    printf 'v%s\n' "${version}"
+}
+
 node_version_from_image() {
     local image="$1" out err_file
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    err_file=$(mktemp)
+    out=$(node_version_from_image_rpmdb "${image}") || true
+    if [[ -n "${out}" ]]; then
+        printf '%s\n' "${out}"
+        return 0
+    fi
+    err_file=$(mktemp) || return 1
     # Keep the runtime's stderr: an empty result must be diagnosable, not a
     # silent "could not read node version" (RHIDP-18915).
-    out=$("${runner}" run --rm --network=none --entrypoint node "${image}" --version 2>"${err_file}") || true
+    # --network=host --cgroups=disabled: CI runner pods have a read-only
+    # /proc/sys and cgroup fs. Creating any netns (even --network=none) makes
+    # crun write /proc/sys/net/ipv4/ping_group_range and fail; host networking
+    # skips netns creation, and the probe needs no isolation (RHIDP-18915).
+    out=$("${runner}" run --rm --network=host --cgroups=disabled --entrypoint node "${image}" --version 2>"${err_file}") || true
     if [[ -z "$(tr -d '\n\r' <<< "${out}")" ]]; then
-        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-300)"
+        warn "Node headers: ${runner} run failed for ${image##*/}: $(tr '\n' ' ' < "${err_file}" | cut -c1-2000)"
     fi
     rm -f "${err_file}"
     tr -d '\n\r' <<< "${out}"
@@ -803,7 +887,10 @@ nodejs_rpm_version_in_image() {
     local runner out
     runner=$(container_runtime)
     [[ -n "${runner}" && -n "${major}" ]] || return 0
-    out=$("${runner}" run --rm --user 0 --entrypoint bash "${image}" -lc \
+    # --network=host --cgroups=disabled: read-only /proc/sys and cgroup fs on
+    # runner pods make crun fail on netns creation and controller setup; dnf
+    # needs network, and host networking avoids the netns entirely (RHIDP-18915).
+    out=$("${runner}" run --rm --network=host --cgroups=disabled --user 0 --entrypoint bash "${image}" -lc \
         "dnf module enable nodejs:${major} -y >/dev/null && dnf repoquery -q --latest-limit 1 nodejs" \
         2>/dev/null) || return 0
     printf '%s\n' "${out}" | python3 -c '
@@ -1327,13 +1414,26 @@ write_go_mod_versions() {
 }
 
 go_version_from_toolset_image() {
-    local image="$1"
+    local image="$1" env_version
+    # Prefer image config Env: go-toolset images carry VERSION=<go X.Y.Z>,
+    # readable with skopeo — no container runtime needed, so this works on CI
+    # runner pods where podman cannot start containers (RHIDP-18915).
+    # skopeo rejects tag@digest refs ("both a tag and digest are currently
+    # not supported"), and FROM lines carry digests; normalize to the
+    # digest-only ref (RHIDP-18915).
+    local inspect_ref
+    inspect_ref=$(printf '%s' "${image}" | sed -E 's/:[^:@/]+(@sha256:[0-9a-f]+)$/\1/')
+    env_version=$(skopeo inspect --no-tags "docker://${inspect_ref}" 2>/dev/null \
+        | jq -r '.Env[]? | select(startswith("VERSION="))' 2>/dev/null \
+        | sed -r -e "s/VERSION=//")
+    if [[ "${env_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf '%s\n' "${env_version}"
+        return 0
+    fi
+    # Fallback: run the toolchain binary where a container runtime works.
     local runner=podman
     command -v podman >/dev/null 2>&1 || runner=docker
-    # --network=none: version probes need no container networking, and podman's
-    # default pasta networking fails on CI runner pods without /dev/net/tun
-    # (RHIDP-18915). Image pull happens on the host before the netns is set up.
-    "${runner}" run --rm --network=none --entrypoint go "${image}" version 2>/dev/null \
+    "${runner}" run --rm --network=host --cgroups=disabled --entrypoint go "${image}" version 2>/dev/null \
         | awk '{print $3}' | sed 's/^go//'
 }
 

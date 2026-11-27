@@ -150,7 +150,7 @@ clone_repo() {
 has_open_gh_pr() {
   local dir="$1"
   command -v gh >/dev/null || return 1
-  gh pr list --repo "$(git -C "${dir}" remote get-url origin | sed -E 's#.*github.com[:/](.+)(\.git)?$#\1#')" \
+  gh pr list --repo "$(git -C "${dir}" remote get-url origin | sed -E 's#.*github.com[:/]##; s#\.git$##')" \
     --base "${BRANCH}" --state open --author rhdh-bot \
     --json headRefName,url 2>/dev/null \
     | jq -e --arg p "${TOPIC}" '[.[] | select(.headRefName | startswith($p))] | length > 0' >/dev/null
@@ -185,8 +185,30 @@ apply_repo_formatters() {
     echo "[INFO] dry-run: would prettier --write ${#changed[@]} changed files"
     return 0
   fi
+  # A fresh clone has neither node_modules nor a PnP setup, and yarn run
+  # needs one of them ("Couldn't find the node_modules state file"). Install
+  # before the first prettier attempt so it succeeds outright; the first
+  # yarn invocation also warms corepack's download of the pinned version.
+  if [[ ! -d node_modules && ! -f .pnp.cjs ]]; then
+    echo "[INFO] fresh clone: yarn install before prettier" >&2
+    if ! yarn install --immutable; then
+      echo "[ERROR] yarn install failed; refusing to commit an unformatted tree that CI prettier:check would reject" >&2
+      return 1
+    fi
+  fi
   echo "[INFO] prettier --write (${#changed[@]} files)"
-  yarn prettier --ignore-unknown --write -- "${changed[@]}"
+  if ! yarn prettier --ignore-unknown --write -- "${changed[@]}"; then
+    # Unexpected (install state exists): retry once in case it went stale.
+    echo "[WARN] prettier failed; reinstalling dependencies and retrying" >&2
+    if ! yarn install --immutable; then
+      echo "[ERROR] yarn install failed; refusing to commit an unformatted tree that CI prettier:check would reject" >&2
+      return 1
+    fi
+    if ! yarn prettier --ignore-unknown --write -- "${changed[@]}"; then
+      echo "[ERROR] prettier failed after install; refusing to commit an unformatted tree that CI prettier:check would reject" >&2
+      return 1
+    fi
+  fi
 }
 
 commit_and_pr() {
@@ -199,7 +221,12 @@ commit_and_pr() {
     popd >/dev/null
     return 0
   fi
-  apply_repo_formatters
+  if ! apply_repo_formatters; then
+    echo "[ERROR] ${slug}: formatter failed; skipping commit/PR" >&2
+    popd >/dev/null
+    RC=1
+    return 0
+  fi
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "[INFO] dry-run: would commit/PR ${slug}"
     popd >/dev/null

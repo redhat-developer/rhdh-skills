@@ -1,0 +1,283 @@
+"""Read-only GitHub evidence for fix verification.
+
+``gh pr view`` and ``gh search prs`` are reads. No adapter here can comment,
+merge, label, or push. A cache file makes the same evidence reproducible offline.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+from typing import Any, Dict, List, Optional
+
+from .duplicates import distinctive_phrases
+from .model import JIRA_KEY_RE, Ticket
+
+DEFAULT_REPOS = (
+    "redhat-developer/rhdh",
+    "redhat-developer/rhdh-operator",
+    "redhat-developer/rhdh-plugins",
+    "redhat-developer/community-plugins",
+    "redhat-developer/rhdh-local",
+    "redhat-developer/red-hat-developers-documentation-rhdh",
+)
+
+PR_FIELDS = "number,title,state,mergedAt,mergeCommit,baseRefName,url,closedAt"
+
+# Searching every key a bug mentions would turn one collection pass into many
+# forge calls; the first few cover the linked-ticket case in practice.
+MAX_LINKED_KEYS = 5
+
+
+class ForgeAdapterError(RuntimeError):
+    """A read adapter failed; the caller records it as missing evidence."""
+
+
+def load_cache(path: Optional[str]) -> Dict[str, Any]:
+    if not path:
+        return {}
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    if not isinstance(document, dict):
+        raise ForgeAdapterError("forge cache must be an object")
+    pulls = document.get("pulls", document)
+    return pulls if isinstance(pulls, dict) else {}
+
+
+def _run_gh(args: List[str], timeout: int = 30) -> str:
+    try:
+        completed = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except FileNotFoundError as error:
+        raise ForgeAdapterError("gh is not on PATH") from error
+    except subprocess.TimeoutExpired as error:
+        raise ForgeAdapterError(f"gh timed out after {timeout}s") from error
+    if completed.returncode != 0:
+        message = (completed.stderr or completed.stdout or "").strip()
+        raise ForgeAdapterError(f"gh failed: {message}")
+    return completed.stdout
+
+
+def normalize_pr(payload: Dict[str, Any], url: str = "") -> Dict[str, Any]:
+    merged_at = payload.get("mergedAt") or payload.get("merged_at") or ""
+    state = str(payload.get("state") or "").upper()
+    merge_commit = payload.get("mergeCommit")
+    if isinstance(merge_commit, dict):
+        merge_commit = merge_commit.get("oid") or merge_commit.get("sha") or ""
+    repository = payload.get("repository")
+    if isinstance(repository, dict):
+        repository = repository.get("nameWithOwner") or repository.get("name") or ""
+    elif not isinstance(repository, str):
+        repository = ""
+    return {
+        "url": payload.get("url") or url,
+        "number": payload.get("number"),
+        "title": payload.get("title") or "",
+        "state": state,
+        "merged": bool(merged_at) or state == "MERGED",
+        "mergedAt": merged_at,
+        "mergeCommit": merge_commit or "",
+        "baseRefName": payload.get("baseRefName") or payload.get("base_ref_name") or "",
+        "repository": repository,
+    }
+
+
+def read_api(path: str) -> Any:
+    """Authenticated GET only; credentials stay inside the native gh adapter."""
+    try:
+        return json.loads(_run_gh(["api", "--method", "GET", path], timeout=60))
+    except json.JSONDecodeError as error:
+        raise ForgeAdapterError(f"invalid forge JSON: {error}") from error
+
+
+def read_diff(repository: str, number: int) -> str:
+    """Read the actual PR diff rather than interpreting metadata as coverage."""
+    return _run_gh(["pr", "diff", str(number), "--repo", repository], timeout=60)
+
+
+def lookup_pr(url: str, cache: Dict[str, Any], use_gh: bool) -> Dict[str, Any]:
+    cached = cache.get(url)
+    if isinstance(cached, dict):
+        return normalize_pr(cached, url)
+    if not use_gh:
+        return {
+            "url": url,
+            "state": "UNKNOWN",
+            "merged": False,
+            "mergedAt": "",
+            "mergeCommit": "",
+            "baseRefName": "",
+            "title": "",
+            "source": "not-fetched",
+        }
+    try:
+        output = _run_gh(["pr", "view", url, "--json", PR_FIELDS])
+    except ForgeAdapterError as error:
+        return {
+            "url": url,
+            "state": "UNKNOWN",
+            "merged": False,
+            "mergedAt": "",
+            "mergeCommit": "",
+            "baseRefName": "",
+            "title": "",
+            "source": "error",
+            "error": str(error),
+        }
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as error:
+        return {
+            "url": url,
+            "state": "UNKNOWN",
+            "merged": False,
+            "mergedAt": "",
+            "mergeCommit": "",
+            "baseRefName": "",
+            "title": "",
+            "source": "error",
+            "error": f"invalid gh JSON: {error}",
+        }
+    if not isinstance(payload, dict):
+        return {
+            "url": url,
+            "state": "UNKNOWN",
+            "merged": False,
+            "source": "error",
+            "error": "gh returned a non-object PR response",
+        }
+    result = normalize_pr(payload, url)
+    result["source"] = "gh"
+    return result
+
+
+def search_prs_for_key(
+    key: str,
+    cache: Dict[str, Any],
+    use_gh: bool,
+    repos: Optional[List[str]] = None,
+    limit: int = 10,
+    search_log: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Return PRs that mention a Jira key, or an empty list when live search is off."""
+    if not use_gh:
+        return [
+            item
+            for item in cache.values()
+            if isinstance(item, dict)
+            and re.search(
+                r"(?<![A-Z0-9_-])" + re.escape(key) + r"(?![A-Z0-9_-])",
+                json.dumps(item, default=str),
+            )
+        ]
+    results: List[Dict[str, Any]] = []
+    seen = set()
+    for repo in repos or list(DEFAULT_REPOS):
+        args = [
+            "search",
+            "prs",
+            key,
+            "--repo",
+            repo,
+            "--limit",
+            str(limit),
+            "--json",
+            "number,title,body,state,url,repository,closedAt",
+        ]
+        try:
+            payload = json.loads(_run_gh(args))
+        except (ForgeAdapterError, json.JSONDecodeError) as error:
+            if search_log is not None:
+                search_log.append(
+                    {"key": key, "repository": repo, "status": "error", "error": str(error)}
+                )
+            continue
+        if search_log is not None:
+            search_log.append(
+                {
+                    "key": key,
+                    "repository": repo,
+                    "status": "success" if isinstance(payload, list) else "invalid_response",
+                    "returned": len(payload) if isinstance(payload, list) else 0,
+                    "possiblyTruncated": isinstance(payload, list) and len(payload) == limit,
+                }
+            )
+        for item in payload if isinstance(payload, list) else []:
+            if not isinstance(item, dict) or not re.search(
+                r"(?<![A-Z0-9_-])" + re.escape(key) + r"(?![A-Z0-9_-])",
+                str(item.get("title", "")) + " " + str(item.get("body", "")),
+            ):
+                continue
+            url = item.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            # Search results omit merge state/commit. A closed search hit may be
+            # unmerged; resolve its actual PR instead of calling it an unfixed hit.
+            normalized = lookup_pr(url, cache, True)
+            normalized["discoveredBy"] = "gh-search"
+            results.append(normalized)
+    return results
+
+
+def collect_for_ticket(
+    ticket: Ticket,
+    cache: Dict[str, Any],
+    use_gh: bool,
+    repos: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    pulls = [lookup_pr(url, cache, use_gh) for url in ticket.pr_urls]
+    search_log: List[Dict[str, Any]] = []
+    jira_keys = sorted(
+        {match for match in JIRA_KEY_RE.findall(ticket.search_text) if match != ticket.key}
+        | {link.key for link in ticket.links if link.key and link.key != ticket.key}
+        | set(ticket.former_keys)
+    )
+    known = {pull.get("url") for pull in pulls}
+
+    def add(found: List[Dict[str, Any]], via: str) -> None:
+        for pull in found:
+            url = pull.get("url")
+            if not url or url in known:
+                continue
+            known.add(url)
+            pulls.append({**pull, "foundVia": via})
+
+    add(
+        search_prs_for_key(ticket.key, cache, use_gh, repos=repos, search_log=search_log),
+        ticket.key,
+    )
+    # A fix can land under another bug's key while this ticket stays open. The
+    # linked keys are where that shows up, so search them too.
+    for linked_key in jira_keys[:MAX_LINKED_KEYS]:
+        add(
+            search_prs_for_key(linked_key, cache, use_gh, repos=repos, search_log=search_log),
+            linked_key,
+        )
+    return {
+        "key": ticket.key,
+        "summary": ticket.summary,
+        "pullRequests": pulls,
+        "searches": search_log,
+        "searchMode": "live" if use_gh else "cache-only; absence is not a negative search result",
+        "unsearchedLinkedKeys": jira_keys[MAX_LINKED_KEYS:],
+        "linkedJiraKeys": jira_keys,
+        "searchPhrases": distinctive_phrases(ticket),
+        "fixVersionFields": ticket.fix_versions,
+        "affectsVersionFields": ticket.affects_versions,
+        "hasDescription": bool(ticket.description.strip()),
+        "hasComments": bool(ticket.comments),
+        "linkedJira": [
+            {
+                "key": link.key,
+                "type": link.type,
+                "direction": link.direction,
+                "summary": link.summary,
+                "status": link.status,
+            }
+            for link in ticket.links
+        ],
+        "customerSignals": ticket.customer_signals,
+    }

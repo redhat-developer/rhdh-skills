@@ -83,7 +83,7 @@ chmod +x "${SKILL}/scripts/base-images-and-rpms.sh"
 | `--dry-run` | Print commands without executing |
 | `--analyze` | Read-only scan via `analyze-base-images.sh` (no `-b` required; defaults scripts to `main`) |
 
-**Default:** base image updates use `--pr --no-push` (local commits + PR creation, no push). RPM lockfile and node header changes are committed and **pushed to the same open `chore/automated-update-base-images-*` PR branch** when one exists; otherwise a `chore/automated-update-rpm-lockfile/<branch>` PR is opened.
+**Default:** base image updates use `--pr --no-push` (local commits + PR creation, no push). RPM lockfile and node header changes are committed and **pushed to the same open `chore/automated-update-base-images-*` PR branch** when one exists; otherwise a `chore/automated-update-repo-deps/<branch>` PR is opened.
 
 ## Analyze without updating
 
@@ -161,7 +161,7 @@ git commit -s -m "chore: update rpms.lock.yaml [skip-build]"
 git push origin <chore/automated-update-base-images-*>   # same PR as base images
 ```
 
-When no base-images PR exists (e.g. `--skip-base`), the script uses `chore/automated-update-rpm-lockfile/<branch>` and opens a PR.
+When no base-images PR exists (e.g. `--skip-base`), the script uses `chore/automated-update-repo-deps/<branch>` and opens a PR.
 
 `rpm-lockfile-prototype` often logs `No sources found for <pkg>` when the matching source RPM is unpublished (commonly `kernel-headers` and `efi-srpm-macros`). The bundled script drops those lines. Never list them as remaining risks; Konflux still consumes the binary lockfile.
 
@@ -202,6 +202,27 @@ toolchain go1.26.4
 
 Do not downgrade. If `go.mod` already pins a newer toolchain (for example `go1.26.6` from Renovate while the image ships `go1.26.5`), leave it. Konflux builds with the local toolchain; matching the image is not required.
 
+### helm_version pin (rhdh chart publish; plugin-catalog builder)
+
+helm is installed from a pinned `get.helm.sh` release in two places: rhdh
+`build/helm/prepare.sh` (`helm_version=`, GitLab rhidp/rhdh, every active
+branch — this is what the publish-helm Konflux task runs) and plugin-catalog
+`build/containerfiles/builder.Containerfile` (`ENV helm_version=`). When a
+checkout carrying either file is in the run:
+
+1. Read the current pin from every in-scope branch of both files.
+2. Get the latest helm **v3** from
+   `https://api.github.com/repos/helm/helm/releases?per_page=100` (first
+   `v3.*` tag that is not a pre-release; skip `v4.*`).
+3. Rewrite `helm_version="vX.Y.Z"` where stale — same PR as the base-image
+   bump, same branch stream.
+4. Verify with `curl -fsSI "https://get.helm.sh/helm-vX.Y.Z-linux-amd64.tar.gz"`
+   that the pinned tarball exists.
+
+The two files must stay on the same version so chart releases and builder
+images behave identically. `oc` (rhocp/4.N RPM) and podman (base image
+appstream) are not part of this step.
+
 ## Anti-patterns
 
 - Pushing without human review.
@@ -213,6 +234,8 @@ Do not downgrade. If `go.mod` already pins a newer toolchain (for example `go1.2
 - Bumping `rpms.in.yaml` or catalog `builder.Containerfile` `/rhocp/4.N/` to an unreleased OpenShift stream (`4.23`, `5.1`). Those RPMs are signed with a key UBI 9 microdnf cannot verify. Stay on the latest released 4.y.
 - Treating `rpm-lockfile-prototype` `No sources found for` / "no matching sources" warnings as a failure or remaining risk. The source RPM is often unpublished; the lockfile is still valid.
 - Lowering `go.mod` `toolchain` (or `go`) to match an older UBI Go toolset image. Keep the newer pin.
+- Bumping `helm_version` to helm v4, or "simplifying" the get.helm.sh pin back to an `ocp-tools` RPM repo. The layered repos are mutable and retire per OCP version; the pin exists because of RHDHBUGS-4139.
+- Bumping `helm_version` on one branch or one repo only, leaving chart releases and plugin-catalog builders on different helm versions.
 - Copying plugin-catalog `.nvm/` headers while leaving `builder.Containerfile` FROM on an older UBI Node tag, or leaving a stale `node-v*` in `konflux.additional-tags`.
 - Returning from a catalog update after `builder.Containerfile` changed but before that file is committed. The next branch checkout then aborts, and weekly never opens a GitLab MR. Push the Containerfile even when Node header resolution fails.
 - Setting catalog headers from the UBI image `node --version` when `builder.Containerfile` `dnf`-installs a newer `nodejs` RPM before the headers `RUN`. That is the 1.10 failure mode: image v24.19.0, module RPM 24.21.0, missing `node-v24.21.0-headers.tar.gz`.

@@ -7,7 +7,8 @@ description: >-
   and bump overlays `versions.json` `node` on `main` or a `release-1.10` branch.
   Use for weekly base-image maintenance, a UBI or RHEL bump, an RPM lockfile
   refresh, "which base images are out of date", node-v*-headers.tar.gz, catalog
-  builder FROM, builder PipelineRun BASE_IMAGES, catalog release suffix,
+  builder FROM, builder PipelineRun BASE_IMAGES, catalog release suffix, a
+  stale `helm_version` pin (helm comes from get.helm.sh, not an RPM repo),
   overlays Node version, UBI minor skew inside a Containerfile,
   or an OpenShift clients `N-el9-beta` / `4.21-el9-beta` RPM 404. After a
   catalog builder bump merges and publishes: rebuild the GitLab runner image
@@ -32,7 +33,7 @@ discovers another skill's paths.
 | Read-only current/latest image scan | `workflows/update-base-images.md`, then `scripts/base-images-and-rpms.sh --analyze ...` |
 | Explain repository rules | `references/repos.md` |
 | Preview an update | `workflows/update-base-images.md`, then `scripts/base-images-and-rpms.sh --dry-run ...` |
-| Update images, lockfiles, Node headers, catalog builder, overlays node, or Go toolchain | `workflows/update-base-images.md` |
+| Update images, lockfiles, Node headers, catalog builder, overlays node, Go toolchain, or the helm_version pin | `workflows/update-base-images.md` |
 | Rebuild the GitLab runner image after a catalog builder bump merged and published, and re-pin `.gitlab-ci.yml` in rhdh + rhdh-plugin-catalog | `workflows/gitlab-runner-rebuild.md` |
 
 A scan reports, per repository: every `FROM` image with its current and latest
@@ -77,8 +78,20 @@ until that path is migrated.
 - When a plugin-catalog checkout is in the run, rewrite
   `build/containerfiles/builder.Containerfile` `/rhocp/4.N/` path segments to
   that same latest released 4.y (for example `/rhocp/4.21/` → `/rhocp/4.22/`).
-  Leave `ocp-tools` URLs unchanged. Do not rewrite when the life cycle fetch
-  fails.
+  These files no longer carry `ocp-tools` URLs — helm is pinned from
+  get.helm.sh; leave one unchanged if it appears on an un-migrated branch.
+  Do not rewrite when the life cycle fetch fails.
+- helm is a pinned upstream binary, not an RPM: rhdh `build/helm/prepare.sh`
+  (`helm_version=`, every active branch) and plugin-catalog
+  `build/containerfiles/builder.Containerfile` (`ENV helm_version=`, per
+  branch) install from `get.helm.sh`. When a checkout carrying either file is
+  in the run, compare the pin with the latest helm v3 release
+  (https://github.com/helm/helm/releases) and bump every in-scope branch where
+  it is stale, in the same PR as the other updates. Never bump to helm v4 and
+  never move helm back to an RPM repo — the ocp-tools layered repos are
+  mutable and retire with each OCP version, which is how RHDHBUGS-4139 broke
+  the chart publish step. `oc` stays on `rhocp/4.N`; podman resolves from the
+  base image's appstream; neither moves with a helm bump.
 - When that Containerfile changes in the same run, increment its `release="N"`
   label and the matching `X.Y-N` token in `konflux.additional-tags` once
   (`release="3"` and `2.2-3` become `release="4"` and `2.2-4`). Leave
@@ -154,6 +167,7 @@ contains `node-v` matching `.nvmrc`, and name the overlays `versions.json`
 `node` value (or that those checkouts were not in scope). When the catalog
 builder Containerfile changed, name the `release` old→new and confirm builder
 PipelineRun `BASE_IMAGES` matches that file's `FROM` (or that the Containerfile
-did not change). A runner rebuild is complete when the dated tag exists on
+did not change). When `helm_version` changed, name the pin old→new for each
+file that moved (or that no in-scope checkout carried a helm pin). A runner rebuild is complete when the dated tag exists on
 quay, both `.gitlab-ci.yml` files pin it, both MRs are merged, and a post-merge
 pipeline ran on the new image.
