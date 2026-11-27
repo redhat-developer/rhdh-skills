@@ -292,6 +292,17 @@ else
     exit 1
   fi
   enc=$(printf '%s' "${repo_slug}" | jq -sRr @uri)
+  # Confirm source-branch deletion took effect: GitLab 19 does not echo the
+  # setting reliably in create/update responses (should_remove_source_branch
+  # only shows up on later GETs, and the legacy remove_source_branch response
+  # field is gone), so read the MR back and accept either response field.
+  mr_removes_source_branch() {
+    # mr_removes_source_branch <iid>
+    local json
+    json=$(curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
+      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/$1" 2>/dev/null || true)
+    [[ "$(jq -r '.should_remove_source_branch // .force_remove_source_branch // false' <<<"${json}" 2>/dev/null)" == "true" ]]
+  }
   existing_json=$(curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
     "https://${glab_host}/api/v4/projects/${enc}/merge_requests?state=opened&source_branch=${HEAD}" \
     | jq -c '.[0] // empty' 2>/dev/null || true)
@@ -304,11 +315,11 @@ else
       exit 1
     }
     ensure_body_metadata
-    updated_json=$(curl -fsS --request PUT --header "PRIVATE-TOKEN: ${tok}" \
+    curl -fsS --request PUT --header "PRIVATE-TOKEN: ${tok}" \
       --header "Content-Type: application/json" \
-      --data "$(jq -n --arg body "${BODY}" '{description:$body,remove_source_branch:true}')" \
-      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/${mr_iid}" || true)
-    if [[ "$(jq -r '.should_remove_source_branch // false' <<<"${updated_json}" 2>/dev/null)" != "true" ]]; then
+      --data "$(jq -n --arg body "${BODY}" '{description:$body,remove_source_branch:true,force_remove_source_branch:true}')" \
+      "https://${glab_host}/api/v4/projects/${enc}/merge_requests/${mr_iid}" >/dev/null || true
+    if ! mr_removes_source_branch "${mr_iid}"; then
       echo "[ERROR] existing GitLab MR did not enable source-branch deletion: ${url}" >&2
       exit 1
     fi
@@ -317,11 +328,12 @@ else
     created_json=$(curl -fsS --request POST --header "PRIVATE-TOKEN: ${tok}" \
       --header "Content-Type: application/json" \
       --data "$(jq -n --arg s "${HEAD}" --arg t "${BASE}" --arg title "${TITLE}" --arg body "${BODY}" \
-        '{source_branch:$s,target_branch:$t,title:$title,description:$body,remove_source_branch:true}')" \
+        '{source_branch:$s,target_branch:$t,title:$title,description:$body,remove_source_branch:true,force_remove_source_branch:true}')" \
       "https://${glab_host}/api/v4/projects/${enc}/merge_requests" || true)
     url=$(jq -r '.web_url // empty' <<<"${created_json}" 2>/dev/null || true)
     [[ -n "${url}" ]] || { echo "[ERROR] GitLab MR create failed" >&2; exit 1; }
-    if [[ "$(jq -r '.should_remove_source_branch // false' <<<"${created_json}" 2>/dev/null)" != "true" ]]; then
+    mr_iid=$(jq -r '.iid // empty' <<<"${created_json}" 2>/dev/null || true)
+    if ! mr_removes_source_branch "${mr_iid}"; then
       echo "[ERROR] new GitLab MR did not enable source-branch deletion: ${url}" >&2
       exit 1
     fi
