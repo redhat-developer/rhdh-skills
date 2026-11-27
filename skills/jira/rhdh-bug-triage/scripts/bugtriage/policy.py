@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 from .duplicates import DUPLICATE_CLOSE_THRESHOLD, DuplicateCandidate
 from .model import JIRA_KEY_RE, Ticket, parse_datetime
 
-POLICY_VERSION = 3
+POLICY_VERSION = 4
 FIXED_CLOSE_THRESHOLD = 0.80
 VERDICTS = {
     "duplicate",
@@ -268,6 +268,15 @@ def parse_assessment(document: Dict[str, Any]) -> Assessment:
     repro = document.get("repro") if isinstance(document.get("repro"), dict) else {}
     review = document.get("review") if isinstance(document.get("review"), dict) else {}
     passes = review.get("independentPasses", 0)
+    classification = document.get("investigation", {}).get("classification")
+    if "classification" in document.get("investigation", {}) and (
+        not isinstance(classification, dict)
+        or classification.get("kind") not in {"bug", "feature", "task", "uncertain"}
+        or not isinstance(classification.get("basis"), str)
+        or not classification["basis"].strip()
+        or classification.get("ref") not in {item.ref for item in evidence}
+    ):
+        raise ValueError("classification needs a kind, basis and an assessment evidence ref")
     return Assessment(
         key=key,
         verdict=verdict,
@@ -1240,11 +1249,9 @@ def evaluate(
         current_release=current_release,
         verification=verification or {},
     )
-    if ticket.customer_signals or ticket.is_done:
+    if ticket.is_done:
         packet.verdict, packet.action = "unclear", "abstain"
-        packet.gaps.append(
-            "customer-linked or completed ticket is outside aged non-customer triage scope"
-        )
+        packet.gaps.append("completed ticket is outside open-bug triage scope")
         if assessment is not None and not matched:
             packet.gaps.append("assessment does not match the issue under review")
         return packet
@@ -1325,5 +1332,10 @@ def evaluate(
     if packet.verdict == "needs_repro" and not packet.validation:
         packet.gaps.append("no cited current-release validation result was supplied")
     packet.recommended_step = _next_step(packet)
+    classification = packet.investigation.get("classification", {})
+    if classification.get("kind") in {"feature", "task", "uncertain"}:
+        packet.verdict, packet.action = "unclear", "comment_only"
+        packet.handoff = {"outcome": "blocked"}
+        packet.recommended_step = "Review issue classification: " + classification["basis"]
     packet.proposed_comment = recommendation_comment(packet, ticket)
     return packet

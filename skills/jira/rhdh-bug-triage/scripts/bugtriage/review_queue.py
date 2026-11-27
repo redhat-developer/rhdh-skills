@@ -7,10 +7,13 @@ import os
 import tempfile
 from pathlib import Path
 
+from .policy import _linked_text, ref_link
+
 STAGES = {
     "patch": "Local patch ready",
     "blocked": "Blocked",
     "verified_resolution": "Resolution verified",
+    "classification_review": "Issue type needs human review",
     "existing_fix": "Fix already shipped",
     "ready_to_close": "Ready for closure review",
 }
@@ -22,6 +25,45 @@ def _save(path, lines):
     ) as f:
         f.write("\n".join(lines).rstrip() + "\n")
     os.replace(f.name, path)
+
+
+def batch_counts(reviewed, excluded):
+    customers = sum(row.get("reason", "").startswith("customer-linked") for row in excluded)
+    counts = f"{reviewed + len(excluded)} examined · {reviewed} reviewed · {len(excluded)} excluded"
+    return f"{counts} ({customers} customer-related)" if customers else counts
+
+
+def exclusion_lines(excluded, audit, heading):
+    if not excluded:
+        return []
+    lines = [heading, ""]
+    for row in excluded:
+        reason = row["reason"]
+        if reason.startswith("customer-linked (") and reason.endswith(")"):
+            signal = reason[len("customer-linked (") : -1]
+            source, _, detail = signal.partition(":")
+            if source == "host" and detail.startswith(row["key"] + ":"):
+                reason = _linked_text(detail[len(row["key"]) + 1 :])
+            elif source == "label":
+                reason = f"Jira carries the {_linked_text(detail)} label"
+            elif source in {"link", "text"}:
+                reference = ref_link(detail.rsplit(":", 1)[-1])
+                reason = (
+                    f"Jira links to {reference}"
+                    if source == "link"
+                    else f"The issue mentions {reference}"
+                )
+            else:
+                reason = "Screening identified customer involvement in the cited evidence"
+            reason = (
+                f"{reason.rstrip('.')}. Excluded by the customer policy in effect for that batch."
+            )
+        elif reason.startswith("customer-field precaution"):
+            reason = "A populated customer field requires a customer-link check."
+        lines.append(
+            f"- {ref_link(row['key'])} — {reason.rstrip('.')}. [Selection record]({audit}/selection.json)"
+        )
+    return [*lines, ""]
 
 
 def refresh_review(output_dir: Path):
@@ -53,6 +95,15 @@ def refresh_review(output_dir: Path):
         f"RHDH {audit['currentRelease']} · {len(cases)} bugs reviewed · {total} local PR proposals",
         "",
     ]
+    selection = packets_file.with_name("selection.json")
+    exclusions = (
+        json.loads(selection.read_bytes()).get("excluded", []) if selection.is_file() else []
+    )
+    if audit.get("meta", {}).get("coverage", {}).get("inventoryHash") and selection.is_file():
+        lines[2] = (
+            f"RHDH {audit['currentRelease']} · {batch_counts(len(cases), exclusions)} · {total} local PR proposals"
+        )
+    lines.extend(exclusion_lines(exclusions, "01-triage/audit", "## Excluded after screening"))
     for title, pr_queue in (("PR queue", True), ("Other outcomes", False)):
         lines.extend([f"## {title}", ""])
         group = [row for row in cases if row[3] == pr_queue]
@@ -91,6 +142,8 @@ def refresh_review(output_dir: Path):
                     f"**{state}.** {finding}".rstrip(),
                 ]
             )
+            for message in current.get("jiraFieldSummary", []):
+                lines.extend(["", message])
             transition = current.get("jiraTransition", {})
             if transition:
                 status = transition["observed"]
@@ -106,6 +159,8 @@ def refresh_review(output_dir: Path):
             if current.get("blocker"):
                 lines.extend(["", f"**Blocked on.** {current['blocker']}"])
             lines.extend(["", "**Who does what next**", ""])
+            if current.get("reporterNextStep"):
+                lines.append(current["reporterNextStep"])
             linked = set()
             if current.get("fixedNextStep"):
                 lines.append(current["fixedNextStep"])

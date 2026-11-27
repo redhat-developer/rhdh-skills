@@ -189,7 +189,7 @@ class TestNormalization:
 
 
 class TestSelection:
-    def test_customer_young_and_done_are_excluded(self):
+    def test_customer_is_included_but_young_and_done_are_excluded(self):
         tickets = fixture_tickets()
         selected, excluded, eligible = select_sample(
             tickets,
@@ -197,14 +197,14 @@ class TestSelection:
             AS_OF,
         )
         keys = {item.ticket.key for item in selected}
-        assert "RHDHBUGS-1003" not in keys
-        assert "RHDHBUGS-1004" not in keys
-        assert "RHDHBUGS-1005" not in keys
+        assert "RHDHBUGS-1003" in keys
+        assert "RHDHBUGS-1004" in keys
+        assert "RHDHBUGS-1005" in keys
         assert "RHDHBUGS-1008" not in keys
         assert "RHDHBUGS-1012" not in keys
         assert eligible >= len(selected)
         reasons = {item["key"]: item["reason"] for item in excluded}
-        assert reasons["RHDHBUGS-1003"].startswith("customer-linked")
+        assert "RHDHBUGS-1003" not in reasons
         assert reasons["RHDHBUGS-1008"].startswith("younger than 90d")
 
     def test_stratified_selection_is_stable(self):
@@ -258,7 +258,7 @@ class TestSelection:
             item["reason"] for item in excluded if item["key"] == "RHDHBUGS-1012"
         ).startswith("control is done")
 
-    def test_customer_control_is_refused(self):
+    def test_customer_control_is_included(self):
         selected, excluded, _ = select_sample(
             fixture_tickets(),
             SelectionConfig(
@@ -270,11 +270,8 @@ class TestSelection:
             ),
             AS_OF,
         )
-        assert all(item.ticket.key != "RHDHBUGS-1003" for item in selected)
-        assert any(
-            item["key"] == "RHDHBUGS-1003" and "customer-linked" in item["reason"]
-            for item in excluded
-        )
+        assert any(item.ticket.key == "RHDHBUGS-1003" for item in selected)
+        assert all(item["key"] != "RHDHBUGS-1003" for item in excluded)
 
 
 class TestDuplicates:
@@ -433,8 +430,8 @@ class TestPolicy:
         )
         packet = evaluate_packet(ticket, [], assessment, CURRENT_RELEASE)
         assert packet.customer_signals
-        assert packet.action == "abstain"
-        assert packet.proposed_comment == ""
+        assert packet.action == "comment_only"
+        assert packet.proposed_comment
         assert any("customer-linked" in gap for gap in packet.gaps)
 
     def test_one_review_pass_blocks_close(self):

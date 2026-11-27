@@ -427,7 +427,7 @@ def test_surfaced_payload_is_exactly_the_same_in_all_three_artifacts(tmp_path):
                 "schemaVersion": 3,
                 "currentRelease": CURRENT_RELEASE,
                 "scope": "aged",
-                "eligibleCount": 7,
+                "eligibleCount": 10,
                 "tickets": [
                     {"key": key, "kind": "control"} for key in ["RHDHBUGS-1006", "RHDHBUGS-1010"]
                 ],
@@ -506,8 +506,8 @@ def test_completed_and_customer_tickets_cannot_pass_even_with_complete_proof(kin
     customer.customer_signals = ["label:RHDH-Customer"]
     for blocked in [done, customer]:
         packet = evaluate(blocked, candidates, assessment)
-        assert packet.action == "abstain"
-        assert not packet.proposed_comment
+        assert packet.action == ("abstain" if blocked.is_done else "comment_only")
+        assert bool(packet.proposed_comment) == (not blocked.is_done)
 
 
 def test_high_lexical_duplicate_still_requires_complete_semantic_proof_without_a_link():

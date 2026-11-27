@@ -36,6 +36,12 @@ You own this one bug, read-only, end to end. Write what you find in
    verdict is duplicate, already fixed or no longer valid, describe the
    resolution action instead and use complexity `none`.
 
+Read the description and comments for customer names. If one appears, set
+`customerNamePresent: true` in the finish result and anonymize public-facing prose.
+If the report and available evidence cannot establish how to reproduce the failure,
+set `reporterReproRequest` to a short question asking for the specific missing
+steps or sanitized observations. Never fill gaps with assumed reporter actions.
+
 **Try to settle every unknown before writing it down.** If a check or the
 verdict is heading for "unknown" or "unclear", first try the specific missing
 check read-only: nightly test results on the public web, deeper digging into

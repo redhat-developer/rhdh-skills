@@ -4,9 +4,9 @@ description: >-
   Investigates picked RHDHBUGS bugs and drafts the verdict, cited evidence,
   current-release validation or honest uncertainty, a fix plan, and the exact
   local Jira comment for each bug. Use for "triage aged bugs". Defaults to
-  aged non-customer bugs affecting only releases older than the verified
+  aged bugs affecting only releases older than the verified
   current release; explicit all-open scope bypasses age and affected-version
-  filters, not customer or Done exclusions. Includes support intake and local PR/backport
+  filters while preserving Done exclusions. Includes support intake and local PR/backport
   proposals. Jira and shared repositories stay read-only.
 ---
 
@@ -19,6 +19,8 @@ The scripts pick the bugs, gather the leads and check the paperwork; the
 thinking is done by the investigators.
 
 ## Route
+
+When asked to run again or continue an existing all-open run, invoke `next` in the same run root and carry its returned batch through follow-through. Reuse earlier batches only for an explicit replay. See [incremental review](workflows/review-events.md).
 
 For an all-open inventory, support intake, issue update, or local PR/backport proposal, use [incremental review](workflows/review-events.md). Triage produces fix plans. A fix request can generate concrete patches in a disposable local checkout.
 
@@ -107,16 +109,24 @@ Run `python3 scripts/triage.py` from the installed skill directory. The
   Pass `--require-investigation --require-fix-plan` on a full run. Continue
   through local verification and `finish` for every selected bug.
 
-By default we review open, non-customer bugs at least 90 days old whose
+By default we review open bugs at least 90 days old whose
 affected versions are all older than the release under review (5 of them,
 spread across teams). `--scope all-open` drops the age and version checks
 only. `--all` reviews every eligible bug in the export. Neither flag proves
 the export covers the whole tracker.
 
+RHDHBUGS tickets must omit customer names. When the issue text names a customer, continue ordinary technical triage and set `customerNamePresent: true` in the finish result. The local Jira draft tags the reporter to anonymize the issue. Write all draft prose without the name. A label or support link alone does not establish that a name appears in the text.
+
+Read the report and discussion before asking for more detail. If reproduction is still unclear because the report lacks information, record what was observed and set `reporterReproRequest` in the finish result. Ask the reporter for the specific missing steps, expected or actual result, version, or sanitized evidence needed to proceed. Distinguish local test conditions from the reporter’s environment.
+
+Customer-related bugs receive the same technical investigation, fix proposals, and local Jira drafts. Record customer context privately. A structured Jira link to RHDHSUPP or an explicit support reference in a mapped case field requires coordination with the support owner before customer communication or closure. Names, labels, account records and free-text mentions alone do not establish a support case. Keep customer identifiers out of public PR drafts.
+
 ## Completion
 
 For each bug, follow the strongest remaining lead. For unclear findings, check identity, historical fixes and release inclusion. For missing reproductions, attempt a bounded release-matched fixture and record what it establishes. For validated defects, prepare the actual local diff, regression checks, relevant documentation and branch-specific backports. A verified partial remedy can proceed while the original incident remains open. Record the exact external evidence or decision still needed.
 
-Consume each local proposal with `event`. Complete the batch with `finish` as described in [review events](workflows/review-events.md). Read Jira comments before proposing backports. Use branch-specific impact and verified workarounds for code. For documentation, verify that the guidance applies and fills a gap on the target release. Leave unresolved branches to a human. Where a reporter requests a new capability, address them in the TL;DR and suggest a separate feature request. Use TL;DR for the outcome, fix version and proposed backports, then Next steps for concise review actions. Put test commands, results and limits under How this was tested in each primary and backport PR body. Put each owner’s action and its links on one bullet. Label local files, link verified public PRs when available, and end the draft with the AI attribution followed by the short `v1:<fingerprint>` reference on its own line.
+Classify the reported work against the documented behavior before proposing a fix. Flag feature requests, tasks and uncertain classifications for human review. Preview missing fix versions. Every local patch or verified shipped fix needs a release-note draft, a reason to retain the existing note, or an explanation that the change is internal. Show draft wording even when Jira field verification is pending. Only propose compatible backports to supported branches.
+
+Consume each local proposal with `event`. Complete the batch with `finish` as described in [review events](workflows/review-events.md). Read Jira comments before proposing backports. Use branch-specific impact and verified workarounds for code. For documentation, verify that the guidance applies and fills a gap on the target release. Leave unresolved branches to a human. Where a reporter requests a new capability, address them in the TL;DR and suggest a separate feature request. Use TL;DR for the outcome, fix version and proposed backports, then Next steps for concise review actions. Follow the target repository’s PR template for each primary and backport. Show test commands, results and limits in its testing section and put the sanitized run transcript in a collapsible verification log. Put each owner’s action and its links on one bullet. Label local files, link verified public PRs when available, and end the draft with the AI attribution followed by the short `v1:<fingerprint>` reference on its own line.
 
 Report the root `START-HERE.md` with the observed Jira status and planned post-comment In Review handoff. Use it as the single review index. For each bug, state what was solved, distinguish a local code fix, documentation patch or previously shipped fix, and name the person, team or role responsible for each remaining action. Local completion leaves publication and Jira closure for authorized review.
