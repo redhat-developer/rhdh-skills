@@ -280,8 +280,15 @@ else
   # GitLab CEE
   glab_host="${CI_SERVER_HOST:-gitlab.cee.redhat.com}"
   tok="${PRIVATE_TOKEN:-}"
+  if [[ -z "${tok}" ]] && command -v glab >/dev/null 2>&1; then
+    # Keyring fallback: capture inside command substitution only; the token
+    # never crosses stdout of this script. glab prints the token line on stderr.
+    tok=$(glab auth status --hostname "${glab_host}" -t 2>&1 \
+      | sed -nE 's/^.*keyring: ([A-Za-z0-9._-]+)$/\1/p; s/^Token:[[:space:]]+([A-Za-z0-9._-]+)$/\1/p' \
+      | head -1)
+  fi
   if [[ -z "${tok}" ]]; then
-    echo "[ERROR] PRIVATE_TOKEN required for GitLab MR" >&2
+    echo "[ERROR] PRIVATE_TOKEN required for GitLab MR (or run: glab auth login --hostname ${glab_host})" >&2
     exit 1
   fi
   enc=$(printf '%s' "${repo_slug}" | jq -sRr @uri)

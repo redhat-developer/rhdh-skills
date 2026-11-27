@@ -9,7 +9,7 @@ description: >-
   skill needs a shared opener. Not for plugin changeset publish
   (/rhdh-pr-create) and not a replacement for midstream createPR.sh inside
   updateBaseImages.sh.
-compatibility: "bash, git, jq, curl; gh for GitHub; PRIVATE_TOKEN (and optional glab) for GitLab CEE; JIRA_API_TOKEN when linking."
+compatibility: "bash, git, jq, curl; gh for GitHub; PRIVATE_TOKEN for GitLab CEE (falls back to the glab keyring login for the host); JIRA_API_TOKEN when linking."
 ---
 
 # RHDH PR / MR opener
