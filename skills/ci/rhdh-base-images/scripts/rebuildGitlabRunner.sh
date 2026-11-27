@@ -188,11 +188,15 @@ fi
 for co in "${CI_CHECKOUTS[@]}"; do
   ci="$co/.gitlab-ci.yml"
   [[ -f "$ci" ]] || die "no .gitlab-ci.yml in $co"
-  if grep -q "image: ${RUNNER_REPO}:${STREAM_VERSION}$" "$ci"; then
+  # Match the bare stream tag and any per-build derivative of it (dated
+  # X.Y-yyyymmdd-hhmm, X.Y-yarn4-node24): once a checkout is pinned to a
+  # dated tag, a bare-${STREAM_VERSION} match would SKIPPED forever and the
+  # pin would never advance (review on #185).
+  if grep -q "image: ${RUNNER_REPO}:${STREAM_VERSION}[^[:space:]]*$" "$ci"; then
     if [[ -n "${DRYRUN:-}" ]]; then
       out "ci|${ci}|${RUNNER_REPO}:${STREAM_VERSION} -> ${RUNNER_REPO}:${DATED_TAG}"
     else
-      sed -i "s|image: ${RUNNER_REPO}:${STREAM_VERSION}$|image: ${RUNNER_REPO}:${DATED_TAG}|" "$ci"
+      sed -i "s|image: ${RUNNER_REPO}:${STREAM_VERSION}[^[:space:]]*$|image: ${RUNNER_REPO}:${DATED_TAG}|" "$ci"
       grep -q "image: ${RUNNER_REPO}:${DATED_TAG}" "$ci" || die "failed to re-pin $ci"
       out "ci|${ci}|${RUNNER_REPO}:${DATED_TAG}"
     fi

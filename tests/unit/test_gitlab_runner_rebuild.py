@@ -105,6 +105,59 @@ class TestRebuildGitlabRunnerScript:
         assert result.returncode != 0
         assert "is on branch 'release-2.1', not 'main'" in result.stdout + result.stderr
 
+    def test_dry_run_repins_an_already_dated_ci_tag(self, tmp_path: Path) -> None:
+        """A checkout pinned to a dated X.Y-yyyymmdd-hhmm tag must not SKIPPED.
+
+        Regression for the review finding on #185: the bare-${STREAM_VERSION}
+        match meant the pin never advanced after the first dated re-pin.
+        """
+        rhdh = _fake_checkout(tmp_path, "rhdh", "release-2.1")
+        cf_dir = rhdh / "build" / "containerfiles"
+        cf_dir.mkdir(parents=True)
+        (cf_dir / "gitlab-runner.Containerfile").write_text(
+            "FROM quay.io/rhdh/plugin-catalog-builder-rhel10:2.1\n"
+        )
+        catalog = _fake_checkout(tmp_path, "rhdh-plugin-catalog", "release-2.1")
+        (catalog / ".gitlab-ci.yml").write_text(
+            "image: quay.io/rhdh/gitlab-runner:2.1-20251124-1010\n"
+        )
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "skopeo").write_text(
+            "#!/usr/bin/env bash\n"
+            'case "$1" in\n'
+            '  list-tags) printf \'{"Tags":["2.1-10"]}\' ;;\n'
+            '  inspect) printf \'{"Digest":"sha256:abc123"}\' ;;\n'
+            "esac\n"
+        )
+        (bin_dir / "podman").write_text("#!/usr/bin/env bash\nexit 0\n")
+        for shim in ("skopeo", "podman"):
+            (bin_dir / shim).chmod(0o755)
+        run_env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+        result = subprocess.run(
+            _shell_script_cmd(
+                RUNNER_SCRIPT,
+                "--rhdh",
+                str(rhdh),
+                "-b",
+                "release-2.1",
+                "--version",
+                "2.1",
+                "--bump-ci",
+                str(catalog),
+                "--dry-run",
+            ),
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert result.returncode == 0, result.stderr
+        stdout = result.stdout.replace(" ", "")
+        assert f"ci|{catalog / '.gitlab-ci.yml'}|" in stdout
+        assert "SKIPPED" not in stdout
+
     def test_dry_run_completes_with_shims(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
