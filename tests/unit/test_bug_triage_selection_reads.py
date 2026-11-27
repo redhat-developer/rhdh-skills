@@ -29,7 +29,6 @@ from bugtriage.model import (  # noqa: E402
     load_export,
     normalize_export,
     normalize_issue,
-    verified_support_cases,
 )
 from bugtriage.selection import (  # noqa: E402
     Control,
@@ -65,59 +64,23 @@ def select(records, **config):
     )
 
 
-@pytest.mark.parametrize("release", ["", "latest", "2.1.x", "2.1.0-rc.1"])
-def test_aged_scope_requires_unambiguous_release_even_for_empty_input(release):
-    with pytest.raises(ValueError, match="current_release"):
-        select_sample([], SelectionConfig(current_release=release), AS_OF)
+@pytest.mark.parametrize("versions", [[], None, [{"name": "2.1.0"}], [{"name": "1.x"}]])
+def test_affected_version_does_not_filter_the_queue(versions):
+    selected, excluded, _ = select([issue(versions=versions, created=AS_OF.isoformat())])
+    assert len(selected) == 1 and not excluded
 
 
-@pytest.mark.parametrize(
-    ("versions", "reason"),
-    [
-        ([], "missing"),
-        (None, "missing"),
-        ([{"name": "2.1.0"}], "not older"),
-        ([{"name": "2.2.0"}], "not older"),
-        ([{"name": "1.0.0"}, {"name": "2.1"}], "not older"),
-        ([{"name": "1.0.0"}, {"name": "3.0.0"}], "not older"),
-        ([{"name": "1.x"}], "ambiguous"),
-        ([{"name": "1.0.0"}, {}], "ambiguous"),
-        ([{"id": "1234"}], "ambiguous"),
-        ([1], "ambiguous"),
-    ],
-)
-def test_aged_scope_excludes_missing_ambiguous_equal_or_newer_versions(versions, reason):
-    selected, excluded, eligible = select([issue(versions=versions)])
-    assert selected == []
-    assert eligible == 0
-    assert reason in excluded[0]["reason"]
-
-
-def test_every_affects_version_must_be_older_with_numeric_not_lexical_comparison():
-    selected, excluded, _ = select([issue(versions=[{"name": "v1.10"}, {"name": "2.0.99"}])])
-    assert [item.ticket.key for item in selected] == ["RHDHBUGS-1"]
-    assert excluded == []
-
-
-def test_aged_scope_uses_creation_age_and_includes_exactly_ninety_days():
-    records = [
-        issue(
-            "RHDHBUGS-90",
-            created=(AS_OF - timedelta(days=90)).isoformat(),
-            updated=AS_OF.isoformat(),
-        ),
-        issue("RHDHBUGS-89", created=(AS_OF - timedelta(days=89)).isoformat()),
-        issue("RHDHBUGS-88", created="unreadable"),
+def test_oldest_first_skips_triaged_and_non_bug_records():
+    rows = [
+        issue("RHDHBUGS-10", created=AS_OF.isoformat(), assignee=None, priority="Critical"),
+        issue("RHDHBUGS-2", created=AS_OF.isoformat(), assignee="someone", priority="Minor"),
+        issue("RHDHBUGS-4", created=(AS_OF - timedelta(days=1)).isoformat(), priority="Blocker"),
+        issue("RHDHBUGS-1", labels=["rhdh-bug-triaged"]),
+        issue("RHDHBUGS-3", issuetype={"name": "Task"}),
     ]
-    selected, excluded, _ = select(records)
-    assert [item.ticket.key for item in selected] == ["RHDHBUGS-90"]
-    assert "younger" in next(item["reason"] for item in excluded if item["key"] == "RHDHBUGS-89")
-    assert "unreadable" in next(item["reason"] for item in excluded if item["key"] == "RHDHBUGS-88")
-
-
-def test_aged_scope_cannot_be_reduced_below_ninety_days():
-    with pytest.raises(ValueError, match="at least 90"):
-        select([], aged_days=30)
+    selected, excluded, _ = select(rows)
+    assert [s.ticket.key for s in selected] == ["RHDHBUGS-4", "RHDHBUGS-2", "RHDHBUGS-10"]
+    assert {s["key"] for s in excluded} == {"RHDHBUGS-1", "RHDHBUGS-3"}
 
 
 def test_all_open_bypasses_only_age_and_affects_filters():
@@ -144,7 +107,7 @@ def test_all_open_bypasses_only_age_and_affects_filters():
 
 def test_exclusion_reason_accepts_main_orchestrator_arguments():
     ticket = normalize_issue(issue(versions=[]))
-    assert "missing" in exclusion_reason(ticket, AS_OF, 90, "2.1.0", "aged")
+    assert not exclusion_reason(ticket)
     assert exclusion_reason(ticket, AS_OF, 90, "", "all-open") == ""
 
 
@@ -155,7 +118,7 @@ def test_all_open_does_not_treat_an_unfetched_status_as_open():
     assert "cannot establish an open issue" in excluded[0]["reason"]
 
 
-def test_all_tickets_is_stable_and_sampling_remains_stratified():
+def test_creation_order_is_stable_across_teams():
     records = [
         issue(f"RHDHBUGS-{number}", team="Install" if number < 8 else "UI")
         for number in range(1, 11)
@@ -166,7 +129,7 @@ def test_all_tickets_is_stable_and_sampling_remains_stratified():
     assert len(first) == eligible == 10
     sampled, _, _ = select(records, size=2)
     assert len(sampled) == 2
-    assert {item.stratum for item in sampled} == {"Install", "UI"}
+    assert [item.ticket.key for item in sampled] == ["RHDHBUGS-1", "RHDHBUGS-2"]
 
 
 def test_controls_bypass_age_versions_but_not_done_or_project_filters():
@@ -843,7 +806,7 @@ def test_empty_host_customer_declarations_do_not_clear_native_customer_signals()
     assert "label:RHDH-Customer" in normalize_issue(record).customer_signals
 
 
-def test_support_coordination_requires_a_structured_case_reference():
+def test_support_references_remain_private_evidence():
     portal = "https://access.redhat.com/support/cases/123456"
     ticket = normalize_issue(
         issue(
@@ -857,7 +820,8 @@ def test_support_coordination_requires_a_structured_case_reference():
         ),
         {"customfield_11": "Support Case Reference"},
     )
-    assert verified_support_cases(ticket.customer_signals) == ["RHDHSUPP-22", portal]
+    assert "case:RHDHSUPP-22" in ticket.customer_signals
+    assert f"case:{portal}" in ticket.customer_signals
     other = normalize_issue(issue(description="See RHDHSUPP-19", labels=["RHDH-Customer"]))
     assert other.customer_signals
-    assert verified_support_cases(other.customer_signals) == []
+    assert not any(s.startswith("case:") for s in other.customer_signals)

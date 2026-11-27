@@ -198,7 +198,7 @@ def test_required_investigation_preserves_blocked_check_without_certifying_compl
     assert result.manifest["writes"] == []
 
 
-@pytest.mark.parametrize("field,value", [("currentRelease", "1.9.0"), ("scope", "all-open")])
+@pytest.mark.parametrize("field,value", [("currentRelease", "1.9.0"), ("scope", "aged")])
 def test_saved_sample_cannot_change_scope_or_baseline_silently(inputs, field, value):
     path = Path(inputs.sample_path)
     sample = json.loads(path.read_text())
@@ -211,7 +211,7 @@ def test_saved_sample_cannot_change_scope_or_baseline_silently(inputs, field, va
 def test_saved_sample_cannot_bypass_current_eligibility(inputs):
     path = Path(inputs.input_path)
     document = json.loads(path.read_text())
-    document["issues"][0]["fields"]["versions"] = [{"name": RELEASE}]
+    document["issues"][0]["fields"]["labels"] = ["rhdh-bug-triaged"]
     path.write_text(json.dumps(document))
     with pytest.raises(RunError, match="stale|no longer eligible"):
         run(inputs)
@@ -227,10 +227,9 @@ def test_empty_saved_sample_cannot_silently_skip_currently_eligible_issue(inputs
         run(inputs)
 
 
-def test_age_threshold_cannot_be_changed_after_selection(inputs):
+def test_legacy_age_setting_does_not_limit_selection(inputs):
     inputs.aged_days = 30
-    with pytest.raises(RunError, match="age threshold"):
-        run(inputs)
+    run(inputs)
 
 
 @pytest.mark.parametrize(
@@ -249,13 +248,13 @@ def test_saved_controls_recheck_customer_and_done_exclusions(inputs, change):
         default_jql(90),
     )
     Path(inputs.sample_path).write_text(json.dumps(sample))
-    assert sample["eligibleCount"] == 0
+    assert sample["eligibleCount"] == 1
     document["issues"][0]["fields"].update(change)
     path.write_text(json.dumps(document))
     if "labels" in change:
         run(inputs)
         return
-    with pytest.raises(RunError, match="control.*no longer eligible"):
+    with pytest.raises(RunError, match="stale|control.*no longer eligible"):
         run(inputs)
     assert not Path(inputs.output_dir).exists()
 
@@ -282,7 +281,8 @@ def test_out_of_scope_controls_cannot_make_partial_selection_complete(inputs):
         )
     result = run(inputs)
     coverage = result.manifest["coverage"]
-    assert coverage["selectedIssues"] == coverage["eligibleIssues"] == 2
+    assert coverage["selectedIssues"] == 2
+    assert coverage["eligibleIssues"] == 3
     assert coverage["selectionComplete"] is False
 
 
@@ -332,8 +332,8 @@ def test_failed_searches_and_bounded_coverage_survive_into_report(inputs, tmp_pa
 
 
 def test_default_inventory_includes_unlabelled_issues():
-    assert "labels" not in default_jql(90)
-    assert "created <= -90d" in default_jql(90)
+    assert "labels IS EMPTY" in default_jql(90)
+    assert 'labels NOT IN ("rhdh-bug-triaged")' in default_jql(90)
     assert "created <=" not in default_jql(90, "all-open")
 
 
@@ -753,7 +753,7 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         in (review / "START-HERE.md").read_text()
     )
     assert row["resolution"] in (review / "START-HERE.md").read_text()
-    assert "Support coordination required" in (review / "START-HERE.md").read_text()
+    assert "Support coordination required" not in (review / "START-HERE.md").read_text()
     draft = (review / f"01-triage/comments/{key}.md").read_text()
     assert f"### TL;DR\n\n{row['resolution']} Exact fix version unconfirmed." in draft
     assert "### How this was tested" not in draft
@@ -769,8 +769,12 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
     completed = (review / "run.json").read_bytes()
     case = json.loads(completed)["cases"][key]
     assert "@Fixture Reporter, please open a feature request for a new filter option" in draft
-    assert case["supportCases"] == ["RHDHSUPP-22"]
-    assert "RHDHSUPP-22" in draft and "RHDHSUPP-19" not in draft
+    assert case["triagedLabelPlan"] == {
+        "label": "rhdh-bug-triaged",
+        "operation": "add_if_absent",
+        "applied": False,
+    }
+    assert "RHDHSUPP-22" not in draft and "RHDHSUPP-19" not in draft
     assert case["featureRequesterMention"]["attrs"] == {
         "id": "fixture-account",
         "text": "@Fixture Reporter",
@@ -799,6 +803,36 @@ def test_finish_requires_consistent_evidence_for_all_selected_issues(inputs, tmp
         assert action in (review / "START-HERE.md").read_text()
         if named_customer:
             assert audit["packets"][0]["summary"] not in revised["proposedComment"].splitlines()[0]
+
+    label = "rhdh-bug-needs-cluster"
+    cluster_row = {**row, "clusterVerification": "Compare the pod and database session timestamps."}
+    cluster_row["reproductionSteps"] = [
+        "Run the reported setup on version 1.2.3.",
+        "Repeat on version 2.1.0.",
+    ]
+    for labels, operation in [
+        (["existing"], "add_if_absent"),
+        ([label, "existing"], "already_present"),
+    ]:
+        audit["packets"][0]["labels"] = labels
+        packet_file.write_text(json.dumps(audit))
+        assert finish([cluster_row]) == 0
+        revised = json.loads((review / "run.json").read_bytes())["cases"][key]
+        assert revised["jiraLabelPlan"] == {
+            "label": label,
+            "operation": operation,
+            "applied": False,
+            "verification": cluster_row["clusterVerification"],
+        }
+        assert (
+            "### How to reproduce\n\n1. Run the reported setup on version 1.2.3.\n2. Repeat on version 2.1.0."
+            in revised["proposedComment"]
+        )
+        assert ("has been added" in revised["proposedComment"]) == (label in labels)
+        assert "Remove the label" in revised["proposedComment"]
+        assert label in (review / "START-HERE.md").read_text()
+        assert finish([row]) == 0
+        assert "jiraLabelPlan" not in json.loads((review / "run.json").read_bytes())["cases"][key]
 
     # A raw fix object's booleans never establish release inclusion on their own.
     packet = audit["packets"][0]

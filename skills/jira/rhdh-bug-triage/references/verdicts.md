@@ -45,7 +45,7 @@ This changes how hard we look — never what counts as proof.
   change would fix both; if they need separate fixes, they are related, not
   duplicates.
 - Exactly one fully-read target that is clearly older, chosen by creation
-  dates, not issue numbers. A newer, undated or customer-linked target needs
+  dates, not issue numbers. A newer or undated target needs
   a human to pick it and cannot pass this gate.
 - Follow duplicate chains to the real original. A target that is itself a
   duplicate is not the one to keep. Never recommend keeping and closing the

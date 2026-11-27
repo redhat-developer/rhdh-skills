@@ -189,7 +189,7 @@ class TestNormalization:
 
 
 class TestSelection:
-    def test_customer_is_included_but_young_and_done_are_excluded(self):
+    def test_customer_and_young_are_included_but_done_is_excluded(self):
         tickets = fixture_tickets()
         selected, excluded, eligible = select_sample(
             tickets,
@@ -200,14 +200,14 @@ class TestSelection:
         assert "RHDHBUGS-1003" in keys
         assert "RHDHBUGS-1004" in keys
         assert "RHDHBUGS-1005" in keys
-        assert "RHDHBUGS-1008" not in keys
+        assert "RHDHBUGS-1008" in keys
         assert "RHDHBUGS-1012" not in keys
         assert eligible >= len(selected)
         reasons = {item["key"]: item["reason"] for item in excluded}
         assert "RHDHBUGS-1003" not in reasons
-        assert reasons["RHDHBUGS-1008"].startswith("younger than 90d")
+        assert "RHDHBUGS-1008" not in reasons
 
-    def test_stratified_selection_is_stable(self):
+    def test_oldest_first_selection_is_stable(self):
         tickets = fixture_tickets()
         first, _, _ = select_sample(
             tickets,
@@ -410,7 +410,7 @@ class TestPolicy:
         assert packet.explicit_duplicate_link is False
         assert_unclear_draft(packet)
 
-    def test_customer_ticket_never_gets_a_close_action(self):
+    def test_customer_ticket_still_requires_duplicate_proof(self):
         ticket = by_key()["RHDHBUGS-1003"]
         ticket.links.append(Link(type="Duplicate", key="RHDHBUGS-1001"))
         assessment = Assessment(
@@ -432,7 +432,7 @@ class TestPolicy:
         assert packet.customer_signals
         assert packet.action == "comment_only"
         assert packet.proposed_comment
-        assert any("customer-linked" in gap for gap in packet.gaps)
+        assert not any("customer-linked" in gap for gap in packet.gaps)
 
     def test_one_review_pass_blocks_close(self):
         assessment = load_assessment(str(FIXTURES / "assessments" / "RHDHBUGS-1010.json"))
@@ -658,7 +658,7 @@ class TestRun:
                 {
                     "schemaVersion": 3,
                     "currentRelease": CURRENT_RELEASE,
-                    "scope": "aged",
+                    "scope": "all-open",
                     "tickets": [{"key": "RHDHBUGS-9999", "kind": "aged"}],
                 }
             ),
@@ -697,7 +697,16 @@ class TestRun:
 
 class TestEvaluate:
     def test_evaluation_reports_no_false_close(self, tmp_path):
-        sample = sample_manifest(tmp_path)
+        labels = load_truth(str(FIXTURES / "truth.json"))
+        config = SelectionConfig(
+            current_release=CURRENT_RELEASE, size=0, controls=[Control(k) for k in labels]
+        )
+        sample = tmp_path / "labelled.json"
+        sample.write_text(
+            json.dumps(
+                build_sample_manifest(fixture_tickets(), config, AS_OF, "project = RHDHBUGS")
+            )
+        )
         out = tmp_path / "run"
         run(
             RunConfig(
@@ -864,7 +873,7 @@ class TestAdapters:
         assert (out / "index.json").is_file()
         evidence = json.loads((out / "RHDHBUGS-1006.json").read_text(encoding="utf-8"))
         assert evidence["pullRequests"][0]["url"].endswith("/pull/999")
-        assert evidence["kind"] == "aged"
+        assert evidence["kind"] == "all-open"
 
 
 class TestDryRunInvariant:

@@ -11,7 +11,7 @@ from .comments import comment_footer
 from .cycle import render_cycle_index
 from .events import required
 from .layout import refresh_review
-from .model import as_text, verified_support_cases
+from .model import TRIAGED_LABEL, as_text
 from .policy import CLOSE_ACTIONS, _linked_text, ref_link
 
 
@@ -309,17 +309,46 @@ def command_finish(args):
             for path in (run / "02-fixes/events" / key).glob("*/proposal.json")
         ]
         fields, messages = jira_field_plan(packet, stage, row, proposals, source.parent)
-        signals = packet.get("customerSignals", [])
-        support_cases = verified_support_cases(signals)
-        if support_cases:
-            case["supportCases"] = support_cases
-            messages.append(
-                "Support coordination required. Review "
-                + ", ".join(support_cases)
-                + " with the support owner before customer communication or closure."
+        steps = row.get("reproductionSteps", [])
+        if not isinstance(steps, list) or not all(
+            isinstance(step, str) and step.strip() for step in steps
+        ):
+            raise ValueError(f"{key} reproductionSteps must be a list of nonempty instructions")
+        if steps:
+            case["reproductionSteps"] = steps
+        if "clusterVerification" in row:
+            check = required(row, "clusterVerification")
+            if stage != "blocked":
+                raise ValueError(f"{key} clusterVerification requires a blocked investigation")
+            label = "rhdh-bug-needs-cluster"
+            present = label in packet.get("labels", [])
+            case["jiraLabelPlan"] = {
+                "label": label,
+                "operation": "already_present" if present else "add_if_absent",
+                "applied": False,
+                "verification": check,
+            }
+            status = (
+                f"The `{label}` label has been added to this ticket."
+                if present
+                else f"Please add `{label}` to this ticket."
             )
-        elif signals:
-            messages.append("Customer context recorded. A support-case link has not been verified.")
+            messages.append(
+                f"{status} It flags an open question that needs evidence from an existing cluster."
+            )
+            messages.append(check)
+            messages.append("Remove the label once you have posted what happened on the ticket.")
+        already_triaged = TRIAGED_LABEL in packet.get("labels", [])
+        case["triagedLabelPlan"] = {
+            "label": TRIAGED_LABEL,
+            "operation": "already_present" if already_triaged else "add_if_absent",
+            "applied": False,
+        }
+        messages.append(
+            f"Triage complete. Jira already has the `{TRIAGED_LABEL}` label."
+            if already_triaged
+            else f"Triage complete. Proposed Jira label: `{TRIAGED_LABEL}`."
+        )
         if review_type:
             messages.append(
                 f"Human classification review requested ({classification['kind']}): {classification['basis']}"
@@ -440,6 +469,16 @@ def command_finish(args):
                     heading,
                     "### TL;DR",
                     tldr,
+                    *(
+                        [
+                            "### How to reproduce",
+                            "\n".join(
+                                f"{i}. {_linked_text(step)}" for i, step in enumerate(steps, 1)
+                            ),
+                        ]
+                        if steps
+                        else []
+                    ),
                     "### Next steps",
                     next_steps,
                     comment_footer(packet["commentPlan"]["reference"]),

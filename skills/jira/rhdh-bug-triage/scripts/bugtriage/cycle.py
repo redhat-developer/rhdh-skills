@@ -1,11 +1,12 @@
-"""Resume one five-issue slice of a frozen inventory in a run directory."""
+"""Resume unfinished work or reserve the oldest eligible bugs from Jira."""
 
+import fcntl
 import hashlib
 import json
 import os
 import re
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 from .jira import export_from_acli, search_acli
 from .model import DEFAULT_SAMPLE_SIZE, normalize_export
@@ -112,11 +113,16 @@ def render_cycle_index(review):
     keys = json.loads(data)["keys"]
     first = root / "review" if (root / "review").exists() else root / "review-1"
     sections = []
-    accounted = reviewed = 0
-    for start in range(0, len(keys), DEFAULT_SAMPLE_SIZE):
-        number = start // DEFAULT_SAMPLE_SIZE + 1
+    outcomes = {}
+    queue_file = root / "private/queue.json"
+    queue = json.loads(queue_file.read_bytes()) if queue_file.exists() else None
+    batches = (
+        queue["batches"]
+        if queue
+        else [keys[i : i + DEFAULT_SAMPLE_SIZE] for i in range(0, len(keys), DEFAULT_SAMPLE_SIZE)]
+    )
+    for number, batch in enumerate(batches, 1):
         directory = first if number == 1 else root / f"review-{number}"
-        batch = keys[start : start + DEFAULT_SAMPLE_SIZE]
         if not _finished(directory, batch, digest, False):
             break
         cases = json.loads((directory / "run.json").read_bytes())["cases"]
@@ -136,11 +142,19 @@ def render_cycle_index(review):
         if excluded:
             lines.extend(["", *exclusion_lines(excluded, audit, "### Excluded after screening")])
         sections.append("\n".join(lines))
-        reviewed += len(cases)
-        accounted += len(batch)
+        outcomes.update({key: key in cases for key in batch})
+    outstanding = set(queue["pending"] if queue else ())
+    for batch in batches[len(sections) :]:
+        outstanding.update(batch)
+    for key in outstanding:
+        outcomes.pop(key, None)
+    reviewed = sum(outcomes.values())
+    accounted = len(outcomes)
+    remaining = len(outstanding)
+    total = accounted + remaining
     intro = (
         f"**{reviewed} issues reviewed across {len(sections)} completed batches.** "
-        f"{accounted - reviewed} excluded. {len(keys) - accounted} of {len(keys)} "
+        f"{accounted - reviewed} excluded. {remaining} of {total} "
         "inventory entries remain."
     )
     return "\n\n".join(["# RHDH bug triage", intro, *reversed(sections)]) + "\n"
@@ -149,6 +163,13 @@ def render_cycle_index(review):
 def resume(root, release, source=None, field_names=None):
     root = Path(root)
     private = root / "private"
+    private.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with (private / "queue.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _resume(root, private, release, source, field_names)
+
+
+def _resume(root, private, release, source, field_names):
     inventory_file = private / "bugs.json"
     first = root / "review"
     alternate = root / "review-1"
@@ -156,6 +177,7 @@ def resume(root, release, source=None, field_names=None):
         if first.exists():
             raise RunError("two first-batch reviews exist; cannot choose the cycle history")
         first = alternate
+    new_inventory = not inventory_file.exists()
     if source:
         data = Path(source).read_bytes()
     elif inventory_file.exists():
@@ -163,7 +185,7 @@ def resume(root, release, source=None, field_names=None):
     else:
         if first.exists():
             raise RunError("supply the original --inventory when adopting an existing review")
-        jql = default_jql(90, "all-open")
+        jql = default_jql()
         data = json.dumps(
             {
                 "project": "RHDHBUGS",
@@ -189,55 +211,105 @@ def resume(root, release, source=None, field_names=None):
     if stored != data:
         if source:
             raise RunError("run directory already has a different inventory")
-        return resume(root, release, field_names=field_names)
+        raise RunError("inventory changed during initialization")
     digest = _digest(data)
-    for start in range(0, len(keys), DEFAULT_SAMPLE_SIZE):
-        number = start // DEFAULT_SAMPLE_SIZE + 1
-        batch = keys[start : start + DEFAULT_SAMPLE_SIZE]
-        review = first if number == 1 else root / f"review-{number}"
-        if _finished(review, batch, digest, bool(source)):
-            continue
-        inputs = private / f"batch-{number}"
-        export = inputs / "export.json"
-        sample = inputs / "sample.json"
-        jql = "key IN (" + ", ".join(batch) + ") ORDER BY key ASC"
-        prepared = export.exists()
-        if not prepared:
-            document = export_from_acli(jql, field_names=field_names)
-            if sorted(issue["key"] for issue in document["issues"]) != sorted(batch):
-                raise RunError("Jira did not return every key in the batch")
-            document["provenance"].update(
-                inventoryHash=digest,
-                batch=number,
-                inventorySize=len(keys),
-                inventoryObservedAt=inventory["observedAt"],
-            )
-            _publish(export, json.dumps(document, indent=2).encode())
-        document = json.loads(export.read_bytes())
-        if document["provenance"].get("inventoryHash") != digest or sorted(
-            issue["key"] for issue in document["issues"]
-        ) != sorted(batch):
-            raise RunError("saved batch export differs from the inventory")
-        if not sample.exists():
-            manifest = build_sample_manifest(
-                normalize_export(document),
-                SelectionConfig(scope="all-open", current_release=release, all_tickets=True),
-                parse_as_of(None),
-                jql,
-            )
-            _publish(sample, json.dumps(manifest, indent=2).encode())
-        manifest = json.loads(sample.read_bytes())
-        if manifest["currentRelease"] != release:
-            raise RunError(
-                f"resume this batch using its recorded release {manifest['currentRelease']}"
-            )
-        return {
-            "state": "resume" if prepared or review.exists() else "ready",
-            "batch": number,
-            "keys": batch,
-            "export": str(export),
-            "sample": str(sample),
-            "asOf": manifest["asOf"],
-            "review": str(review),
+    queue_file = private / "queue.json"
+    queue = json.loads(queue_file.read_bytes()) if queue_file.exists() else None
+    if queue is None:
+        # Adopt only slices for which the old runner already created local work.
+        batches = []
+        for start in range(0, len(keys), DEFAULT_SAMPLE_SIZE):
+            n = len(batches) + 1
+            path = first if n == 1 else root / f"review-{n}"
+            if not path.exists() and not (private / f"batch-{n}/export.json").exists():
+                break
+            batches.append(keys[start : start + DEFAULT_SAMPLE_SIZE])
+        accounted = {key for batch in batches for key in batch}
+        queue = {
+            "inventoryHash": digest,
+            "batches": batches,
+            "held": sorted(accounted),
+            "pending": [k for k in keys if k not in accounted],
         }
-    return {"state": "complete", "accounted": len(keys)}
+    if queue["inventoryHash"] != digest:
+        raise RunError("queue belongs to a different inventory")
+    for number, batch in enumerate(queue["batches"], 1):
+        review = first if number == 1 else root / f"review-{number}"
+        if not _finished(review, batch, digest, bool(source)):
+            break
+    else:
+        # Jira orders the full eligible list, so a newly eligible older issue
+        # goes ahead of newer work. A ticket leaving this query releases the
+        # local hold; if it later returns it can be reviewed again.
+        if new_inventory and not queue["batches"]:
+            live = keys
+        else:
+            live = [row["key"] for row in search_acli(default_jql(), fields="key,status")]
+        if len(set(live)) != len(live) or not all(re.fullmatch(r"RHDHBUGS-\d+", k) for k in live):
+            raise RunError("invalid live queue")
+        held = set(queue["held"]).intersection(live)
+        for i in range(queue.get("acknowledged", 0), len(queue["batches"])):
+            directory = first if i == 0 else root / f"review-{i + 1}"
+            selection = json.loads((directory / "01-triage/audit/selection.json").read_bytes())
+            held.difference_update(row["key"] for row in selection["excluded"])
+        queue["acknowledged"] = len(queue["batches"])
+        pending = [key for key in live if key not in held]
+        batch = pending[:DEFAULT_SAMPLE_SIZE]
+        queue["pending"] = pending[len(batch) :]
+        queue["held"] = sorted(held.union(batch))
+        if batch:
+            queue["batches"].append(batch)
+        with NamedTemporaryFile(dir=private, delete=False) as target:
+            target.write(json.dumps(queue, indent=2).encode())
+        Path(target.name).replace(queue_file)
+        number = len(queue["batches"])
+        if queue["acknowledged"]:
+            index = render_cycle_index(first)
+            if index:
+                with NamedTemporaryFile(dir=root, delete=False) as target:
+                    target.write(index.encode())
+                Path(target.name).replace(root / "START-HERE.md")
+        if not batch:
+            return {"state": "complete", "accounted": len(set().union(*queue["batches"]))}
+        review = first if number == 1 else root / f"review-{number}"
+    inputs = private / f"batch-{number}"
+    export = inputs / "export.json"
+    sample = inputs / "sample.json"
+    jql = "key IN (" + ", ".join(batch) + ") ORDER BY key ASC"
+    prepared = export.exists()
+    if not prepared:
+        document = export_from_acli(jql, field_names=field_names)
+        if sorted(issue["key"] for issue in document["issues"]) != sorted(batch):
+            raise RunError("Jira did not return every key in the batch")
+        document["provenance"].update(
+            inventoryHash=digest,
+            batch=number,
+            inventorySize=sum(map(len, queue["batches"])) + len(queue["pending"]),
+            inventoryObservedAt=inventory["observedAt"],
+        )
+        _publish(export, json.dumps(document, indent=2).encode())
+    document = json.loads(export.read_bytes())
+    if document["provenance"].get("inventoryHash") != digest or sorted(
+        issue["key"] for issue in document["issues"]
+    ) != sorted(batch):
+        raise RunError("saved batch export differs from the inventory")
+    if not sample.exists():
+        manifest = build_sample_manifest(
+            normalize_export(document),
+            SelectionConfig(scope="all-open", current_release=release, all_tickets=True),
+            parse_as_of(None),
+            jql,
+        )
+        _publish(sample, json.dumps(manifest, indent=2).encode())
+    manifest = json.loads(sample.read_bytes())
+    if manifest["currentRelease"] != release:
+        raise RunError(f"resume this batch using its recorded release {manifest['currentRelease']}")
+    return {
+        "state": "resume" if prepared or review.exists() else "ready",
+        "batch": number,
+        "keys": batch,
+        "export": str(export),
+        "sample": str(sample),
+        "asOf": manifest["asOf"],
+        "review": str(review),
+    }

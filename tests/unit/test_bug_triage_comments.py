@@ -230,11 +230,13 @@ def test_negative_cooldown_is_rejected(case):
 
 
 @pytest.mark.parametrize("customer,done", [(True, False), (False, True)])
-def test_customer_or_done_tickets_never_propose_comments(case, customer, done):
+def test_only_done_tickets_suppress_supported_comments(case, customer, done):
     ticket, packet, assessment = case
     ticket.customer_signals = ["label:RHDH-Customer"] if customer else []
     ticket.is_done = done
-    assert plan_comment(ticket, packet, assessment, NOW)["status"] == "suppress"
+    assert plan_comment(ticket, packet, assessment, NOW)["status"] == (
+        "suppress" if done else "propose"
+    )
 
 
 @pytest.mark.parametrize(

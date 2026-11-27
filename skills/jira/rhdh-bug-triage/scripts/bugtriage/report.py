@@ -92,7 +92,7 @@ def render_report(
         f"- Comparisons with other bugs that the evidence supports: {sum(c.get('relationship') == 'duplicate_supported' for p in packets for c in p.comparisons)}. Fixes fully verified in their stated scope: {sum(p.fix_evidence.get('state') == 'verified_for_stated_scope' for p in packets)}. Partial fixes: {sum(p.fix_evidence.get('state') == 'partial_fix_supported' for p in packets)}. None of these are closures.",
         f"- Investigations finished: {investigations['completed']}; stopped at a missing check: {investigations['blocked']}. A stopped check is not a finished one.",
         f"- What the checks found: passed {outcomes['requirements_satisfied_in_stated_scope']}, failed {outcomes['requirement_violated']}, not settled {outcomes['not_determined']}. This only covers the scope each investigator looked at.",
-        f"- Reviewed: {len(packets)} bugs ({control_count} of them control bugs with known answers). Scope: {'bugs at least 90 days old' if coverage.get('scope', 'aged') == 'aged' else 'all open bugs'}.",
+        f"- Reviewed: {len(packets)} bugs ({control_count} of them control bugs with known answers). Scope: open, untriaged bugs.",
         f"- Bugs searched for duplicates and fixes: {backlog_size}. Release under review: {current_release}.",
         f"- Proof of that release: {release_evidence or 'not supplied'}.",
         f"- Picked {coverage.get('selectedIssues', len(packets))} of {coverage.get('eligibleIssues', 'unknown')} eligible bugs; {len(excluded)} were excluded, with reasons in audit/selection.json.",
@@ -227,7 +227,7 @@ def render_report(
         "Reviewers must open the cited links; reading code is not the same as running it.",
         "- A bug being open, or our search finding no fix, does not prove the bug still exists. 'Still valid' and "
         "'no longer valid' both need evidence tied to the exact release under review.",
-        "- Customer-linked and already-closed bugs never get automated comments.",
+        "- Already-closed and triaged-labelled bugs are skipped.",
         "- 'Suppressed' means we stay silent because the same advice was already given. It does not mean anyone gets notified.",
         "- Missing data and disagreement are written down as uncertainty, never hidden. We do not send generic "
         "'please reproduce' pings or reminders.",

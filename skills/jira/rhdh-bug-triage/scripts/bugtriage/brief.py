@@ -36,6 +36,10 @@ You own this one bug, read-only, end to end. Write what you find in
    verdict is duplicate, already fixed or no longer valid, describe the
    resolution action instead and use complexity `none`.
 
+When asking someone to reproduce an issue, supply `reproductionSteps` in the finish result. Use ordered instructions: name the reported version and setup, the trigger, the expected result and the reported symptom. Then ask for the same test on the exact current release verified for the run, under equivalent starting conditions. State what to record for each version. If the original version or steps are missing, ask the reporter for them instead of guessing.
+
+Never provision a cluster for triage. Trace the reported path in the released code, configuration and tests first. Link a verified shipped fix in the Jira draft. If the evidence identifies an outstanding defect, prepare and test a local PR proposal and link it in the draft. When the code and available evidence cannot distinguish the cause and an existing cluster is needed, keep the bug open. Set `clusterVerification` in the blocked finish result to the precise check a human can perform on their existing environment. This previews adding `rhdh-bug-needs-cluster` and asks the verifier to record the result and remove the label.
+
 Read the description and comments for customer names. If one appears, set
 `customerNamePresent: true` in the finish result and anonymize public-facing prose.
 If the report and available evidence cannot establish how to reproduce the failure,
