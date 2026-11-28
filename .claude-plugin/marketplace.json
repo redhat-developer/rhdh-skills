@@ -95,7 +95,9 @@
         "./skills/ci/rhdh-prow-release-branch",
         "./skills/ci/rhdh-prow-trigger",
         "./skills/ci/rhdh-pr-mr",
-        "./skills/ci/rhdh-yarn-bump"
+        "./skills/ci/rhdh-yarn-bump",
+        "./skills/ci/rhdh-operator-eol",
+        "./skills/reference/rhdh-context"
       ]
     },
     {
