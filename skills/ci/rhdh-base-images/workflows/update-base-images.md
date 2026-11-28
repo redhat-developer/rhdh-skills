@@ -9,8 +9,8 @@ Refresh **base images** and **RPM lockfiles** in the GitHub hub/operator/must-ga
 | Repo | Node / Go source | RPM containerfile |
 |------|------------------|-------------------|
 | rhdh | `build/containerfiles/Containerfile` or `docker/Dockerfile` (release-1.9) | `build/containerfiles/Containerfile` or `.rhdh/docker/Dockerfile` |
-| rhdh-operator | `go.mod` aligned with `ubi10/go-toolset` on **main** only | root `Dockerfile` (main, release-2.*, later); `.rhdh/docker/Dockerfile` on release-1.* |
-| rhdh-must-gather | `go.mod` aligned with `ubi10/go-toolset` on **main** and **release-2.*** (no Go on release-1.*) | `Containerfile` |
+| rhdh-operator | `go.mod` `toolchain` aligned with `ubi10/go-toolset` on **main** and **release-***; the `go` directive only on **main** | root `Dockerfile` (main, release-2.*, later); `.rhdh/docker/Dockerfile` on release-1.* |
+| rhdh-must-gather | `go.mod` `toolchain` aligned with `ubi10/go-toolset` on **main** and **release-2.***; the `go` directive only on **main** (no Go on release-1.*) | `Containerfile` |
 | rhdh-plugin-catalog | `builder.Containerfile` FROM + `.nvm/` + `konflux.additional-tags` `node-v*` | none |
 | rhdh-plugin-export-overlays | `versions.json` `node` | none |
 
@@ -191,16 +191,26 @@ the script:
 
 See [rhdh `.nvm/releases/README.adoc`](https://github.com/redhat-developer/rhdh/blob/main/.nvm/releases/README.adoc). On **release-1.9**, headers come from `docker/Dockerfile` (`ubi9/nodejs-22`), not Node 24.
 
-### Go toolchain (rhdh-operator main; rhdh-must-gather main and release-2.*)
+### Go toolchain (rhdh-operator main and release-*; rhdh-must-gather main and release-2.*)
 
-On **rhdh-operator `main` only** (not `release-*`), and on **rhdh-must-gather `main` and `release-2.*`**, after base image bumps, reads `go version` from the `ubi9/go-toolset` or `ubi10/go-toolset` image and updates `go.mod` **only when that version is newer** than the current `go` / `toolchain` lines. Must-gather `release-1.*` has no Go module (Rust websocat builder) and is skipped. Operator reads `.rhdh/docker/Dockerfile` on release-1.* and the root `Dockerfile` otherwise; must-gather reads the root `Containerfile`. When `go.mod` has no `toolchain` line, one is inserted. The lines look like:
+On **rhdh-operator `main` and `release-*`**, and on **rhdh-must-gather `main` and `release-2.*`**, after base image bumps, reads `go version` from the `ubi9/go-toolset` or `ubi10/go-toolset` image and updates `go.mod` **only when that version is newer** than the current `toolchain` line. Must-gather `release-1.*` has no Go module (Rust websocat builder) and is skipped. Operator reads `.rhdh/docker/Dockerfile` on release-1.* and the root `Dockerfile` otherwise; must-gather reads the root `Containerfile`. When `go.mod` has no `toolchain` line, one is inserted. The lines look like:
 
 ```text
 go 1.26.0
 toolchain go1.26.4
 ```
 
-Do not downgrade. If `go.mod` already pins a newer toolchain (for example `go1.26.6` from Renovate while the image ships `go1.26.5`), leave it. Konflux builds with the local toolchain; matching the image is not required.
+Two directives, two rules:
+
+- **`go` directive — `main` only.** Never bump it on a `release-*` branch, not even when the image is newer and not as hygiene. It is the branch's declared compatibility surface, a hard floor for everyone building the branch, and it selects the GODEBUG defaults baked into the binary. The only exception is a **security fix** that cannot land without it: that arrives as Renovate's PR, evaluated against `constraints.go`, with the bump in the same PR. A routine dependency update that would need a higher `go` directive is skipped on a release branch, never landed here.
+- **`toolchain` directive — every in-scope branch.** Track the image's Go release, including across a minor on `release-*`: the branch must keep building with the current go-toolset to keep receiving standard-library and compiler security fixes. `godebug`, not the toolchain pin, is what preserves the branch's runtime semantics. A newer pin already present (for example from Renovate) is valid; leave it.
+- **`godebug` — never touched off `main`.** Every release branch inherits it at branch cut and keeps it for the branch's lifetime (rhdh-operator `docs/go-version-policy.md`).
+
+A `go` directive older than the image's Go is the normal, intended state on a release branch: the compiler and standard library come from the image regardless, and the `toolchain` line tracks that image so the binary keeps the newest stdlib. Report the gap as expected, not as drift to fix.
+
+Do not downgrade. Konflux builds with the local toolchain; matching the image is not required.
+
+After editing, run `go mod tidy` with the Go from the go-toolset image — the compiler that builds the branch; the script runs it inside that image — then commit `go.mod` and `go.sum` together. Review the tidy diff and keep only the intended change. `go mod tidy` also rewrites the `go` directive when a module in the graph declares a higher language version: if that happens, restore `go.mod`/`go.sum` and report the component as unresolved instead of letting the floor move silently. If tidy cannot run (no container runtime, no network), restore the files and report the component as unresolved rather than pushing an untidied module.
 
 ### helm_version pin (rhdh chart publish; plugin-catalog builder)
 
@@ -234,6 +244,8 @@ appstream) are not part of this step.
 - Bumping `rpms.in.yaml` or catalog `builder.Containerfile` `/rhocp/4.N/` to an unreleased OpenShift stream (`4.23`, `5.1`). Those RPMs are signed with a key UBI 9 microdnf cannot verify. Stay on the latest released 4.y.
 - Treating `rpm-lockfile-prototype` `No sources found for` / "no matching sources" warnings as a failure or remaining risk. The source RPM is often unpublished; the lockfile is still valid.
 - Lowering `go.mod` `toolchain` (or `go`) to match an older UBI Go toolset image. Keep the newer pin.
+- Bumping the `go` directive on a `release-*` branch to match a newer go-toolset image. Raise `toolchain` there; the `go` directive is frozen at branch cut.
+- Committing a `go.mod` edit without `go mod tidy`, or leaving `go.sum` out of that commit.
 - Bumping `helm_version` to helm v4, or "simplifying" the get.helm.sh pin back to an `ocp-tools` RPM repo. The layered repos are mutable and retire per OCP version; the pin exists because of RHDHBUGS-4139.
 - Bumping `helm_version` on one branch or one repo only, leaving chart releases and plugin-catalog builders on different helm versions.
 - Copying plugin-catalog `.nvm/` headers while leaving `builder.Containerfile` FROM on an older UBI Node tag, or leaving a stale `node-v*` in `konflux.additional-tags`.

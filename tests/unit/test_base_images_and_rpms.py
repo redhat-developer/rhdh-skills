@@ -982,7 +982,7 @@ class TestGoVersionGte:
 
 
 class TestGoModUpdateApplies:
-    """Operator go.mod is main-only. Must-gather Go starts at release-2.* and main."""
+    """Operator is in scope on every branch. Must-gather Go starts at release-2.* and main."""
 
     @staticmethod
     def _applies(kind: str, branch: str) -> int:
@@ -999,10 +999,10 @@ class TestGoModUpdateApplies:
         )
         return result.returncode
 
-    def test_operator_main_only(self) -> None:
+    def test_operator_all_branches(self) -> None:
         assert self._applies("rhdh-operator", "main") == 0
-        assert self._applies("rhdh-operator", "release-2.1") == 1
-        assert self._applies("rhdh-operator", "release-1.10") == 1
+        assert self._applies("rhdh-operator", "release-2.1") == 0
+        assert self._applies("rhdh-operator", "release-1.10") == 0
 
     def test_must_gather_golang_branches(self) -> None:
         assert self._applies("rhdh-must-gather", "main") == 0
@@ -1049,3 +1049,52 @@ class TestGoModUpdateApplies:
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout == original
+
+
+class TestGoDirectiveReleaseBranchScope:
+    """The go directive moves on main only; release branches take toolchain only."""
+
+    @staticmethod
+    def _allowed(branch: str) -> int:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_directive_bump_allowed")
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\ngo_directive_bump_allowed {branch}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode
+
+    def test_main_allowed(self) -> None:
+        assert self._allowed("main") == 0
+
+    def test_release_branches_not_allowed(self) -> None:
+        assert self._allowed("release-2.1") == 1
+        assert self._allowed("release-1.10") == 1
+
+    def test_missing_branch_not_allowed(self) -> None:
+        assert self._allowed("") == 1
+
+    def test_update_gates_the_go_bump_on_the_branch(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert 'go_directive_bump_allowed "${branch}"' in function
+
+    def test_update_tidies_and_commits_go_sum(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert 'go_mod_tidy "${image}" "${repo_dir}"' in function
+        assert "git checkout -- go.mod go.sum" in function
+        assert (
+            'chore: align go.mod with ${image%%:*} go${go_full} [skip-build]" go.mod go.sum'
+            in function
+        )
+
+    def test_update_rejects_a_tidy_that_moves_the_go_directive(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert 'local expected_go="${current_go}"' in function
+        assert 'expected_go="${go_lang}"' in function
+        assert function.index("expected_go") < function.index('go_mod_tidy "${image}"')
+
+    def test_tidy_runs_in_the_toolset_image(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_mod_tidy")
+        assert "--entrypoint go" in function
+        assert "mod tidy" in function
