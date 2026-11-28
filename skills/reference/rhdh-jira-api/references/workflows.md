@@ -12,7 +12,7 @@ New → Refinement → Backlog → In Progress → Release Pending → Closed
 |--------|----------------------------|
 | New | Assignee, Priority, Team |
 | Refinement | Architect, QA Contact, Doc Contact, Link to Feature Request and/or Design Doc, Size (T-shirt) |
-| Backlog | Candidate Version label (`rhdh-n.n-candidate`), Delivery Epics (Eng, QE, Doc) defined. Optional: `stretch` label for stretch goals. |
+| Backlog | Candidate Version label (`rhdh-n.n-candidate`), Delivery Epics (Eng, QE, Doc) defined. Optional stretch-goal pair: `stretch-goal` label plus the Fix Version being attempted. Fix Version is otherwise required at In Progress. |
 | In Progress | Fix Version set. At least one child Epic is In Progress, Dev Complete, Release Pending, or Closed. |
 | Release Pending | Link to Feature Demo(s). ALL child Epics in Release Pending or Closed. |
 | Closed | Target Version publicly available. |

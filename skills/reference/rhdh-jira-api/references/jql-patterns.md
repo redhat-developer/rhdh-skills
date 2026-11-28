@@ -93,8 +93,8 @@ project = RHDHPLAN AND issuetype = Feature AND status = 'Release Pending' AND cf
 -- Epics in Dev Complete (delivery tracking)
 project = RHIDP AND issuetype = Epic AND status = 'Dev Complete'
 
--- Features with stretch label
-project = RHDHPLAN AND issuetype = Feature AND labels = stretch AND status not in (Closed)
+-- Features with stretch-goal label
+project = RHDHPLAN AND issuetype = Feature AND labels = 'stretch-goal' AND fixVersion is not EMPTY AND status not in (Closed) ORDER BY fixVersion ASC
 ```
 
 ## Queries That DON'T Work

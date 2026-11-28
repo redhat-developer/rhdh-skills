@@ -154,7 +154,7 @@ By type, the fields that matter most:
 
 | Type | Key fields |
 |---|---|
-| Feature | Priority, Team, Size (T-shirt), Assignee as Feature Owner, Components, Labels, Security Level when private |
+| Feature | Priority, Team, Size (T-shirt), Assignee as Feature Owner, Components, Labels, Fix Version when the target release is known, Security Level when private |
 | Epic | Team, Priority, Size (T-shirt), Component, Assignee as Epic Owner, Security Level when private |
 | Story / Task / Spike | Priority, Component, Assignee, Story Points (required for Spikes), Security Level when private |
 | Bug (RHDHBUGS) | Priority, Component, Assignee, **Affects Version** (required at create — see `/rhdh-jira-api`), Security Level when the bug must not be project-public |
@@ -185,11 +185,13 @@ create-then-restrict. Details: `/rhdh-jira-api` (`fields.md` — Private issues)
 | `demo` | Does this need a customer-facing demo? |
 | `rhdh-testday` | Should this be tested during release test day? |
 | `rhdh-X.Y-candidate` | Which release does this target? |
-| `stretch` | Is this a stretch goal? |
+| `stretch-goal` | For a Feature during release planning: is this lower-priority work we expect to fit but might defer under capacity or dependency risk? |
 | `RHDH-Customer` | Did this come from a support case or customer engagement? |
 
 Apply exactly one `RHDH-Customer` label — never also `rhdh-customer`, because
-Jira label search is case-insensitive and the two spellings collide.
+Jira label search is case-insensitive and the two spellings collide. Decide
+`stretch-goal` at Feature level during release planning; child Epics and issues
+inherit it during refinement rather than receiving an independent decision.
 
 **Documentation.** If the work involves documentation, set the `Documentation`
 component. After creating a Feature, prompt the user to run the Jira UI action
@@ -225,6 +227,7 @@ cat > "$REVIEW" << 'EOF'
 - **Component**: {value}
 - **Assignee**: {value}
 - **Labels**: {values}
+- **Fix Version**: {X.Y.0} — Feature target; required with `stretch-goal`
 - **Affects Version**: {value} — RHDHBUGS Bugs only; required at create (see `/rhdh-jira-api`)
 - **Security Level**: {value or public} — when private, must be on the create payload (see `/rhdh-jira-api`)
 EOF
@@ -265,8 +268,11 @@ converter. When creating through the Atlassian MCP instead of `acli`, pass
 
 `create` does **not** accept `--priority`, `--component`, `--yes`,
 `--version` / Affects Version, or `--security` flags; passing unknown flags
-fails. For most **public** types, create with `--description-file` (ADF from
-`/rhdh-jira-api`), then set the rest.
+fails. Fix Version is nevertheless settable at creation through the create
+dialog or the JSON/MCP create payload — use the full name such as `2.2.0`, and
+see `/rhdh-jira-api` (`fields.md` — Stretch-goal lifecycle) for the payload
+shape. For most **public** types, create with `--description-file` (ADF from
+`/rhdh-jira-api`), then set fields not included on the create payload.
 
 **Exception — RHDHBUGS Bug:** Affects Version must be on the create call. Use a
 single `--from-json` file that embeds both `versions` and the ADF `description`
@@ -339,9 +345,9 @@ Minimal private-create `--from-json` shape (same ADF rules; usual level
 }
 ```
 
-Then set the fields `create` could not, in one update through the authenticated
-host adapter — **except Security Level on a private issue, which is not a
-post-create field.** Show the payload for approval alongside the create command:
+Then set fields not included on the create payload, in one update through the
+authenticated host adapter — **except Security Level on a private issue, which is
+not a post-create field.** Show the payload for approval alongside the create command:
 
 ```json
 {
@@ -474,7 +480,9 @@ The user merges, drops, or approves before any Epic is created.
    customer-identifying detail belong in comments.
 5. **Rescoping.** If a Feature is too large for one release, suggest splitting
    it, document what is deferred and why as a comment, and adjust the candidate
-   label if the target release moves.
+   label if the target release moves. For `stretch-goal` deferral, follow the
+   authoritative lifecycle in `/rhdh-jira-api` (`fields.md`), including the
+   private Red Hat Employee comment and both release versions.
 6. **Spikes are Tasks.** Identified by the `SPIKE:` prefix, always time-boxed —
    there is no separate Spike issue type.
 7. **Done Checklist.** The Story template carries one. Remind the user it is part
