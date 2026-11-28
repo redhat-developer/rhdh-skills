@@ -462,17 +462,24 @@ if [[ ${#SCAN_PATHS[@]} -eq 0 ]]; then
   exit 2
 fi
 
-declare -A REF_FILES=()
 declare -a UNIQUE_REFS=()
+declare -a REF_FILES=()
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
   while IFS= read -r ref; do
     [[ -z "$ref" ]] && continue
-    if [[ -z "${REF_FILES[$ref]+x}" ]]; then
+    ref_index=-1
+    for i in "${!UNIQUE_REFS[@]}"; do
+      if [[ "${UNIQUE_REFS[$i]}" == "$ref" ]]; then
+        ref_index="$i"
+        break
+      fi
+    done
+    if (( ref_index < 0 )); then
       UNIQUE_REFS+=("$ref")
-      REF_FILES[$ref]="$file"
+      REF_FILES+=("$file")
     else
-      REF_FILES[$ref]="${REF_FILES[$ref]}"$'\n'"$file"
+      REF_FILES[ref_index]="${REF_FILES[ref_index]}"$'\n'"$file"
     fi
   done < <(extract_refs_from_file "$file")
 done < <(collect_yaml_files "${SCAN_PATHS[@]}" | sort -u)
@@ -488,9 +495,10 @@ fi
 
 RESULTS_JSON='[]'
 FAIL=0
-for ref in "${UNIQUE_REFS[@]}"; do
+for i in "${!UNIQUE_REFS[@]}"; do
+  ref="${UNIQUE_REFS[$i]}"
   item=$(classify_ref "$ref")
-  files_json=$(printf '%s\n' "${REF_FILES[$ref]}" | sort -u | jq -Rsc 'split("\n") | map(select(length>0))')
+  files_json=$(printf '%s\n' "${REF_FILES[$i]}" | sort -u | jq -Rsc 'split("\n") | map(select(length>0))')
   item=$(jq -c --argjson files "$files_json" '. + {files:$files}' <<<"$item")
   RESULTS_JSON=$(jq -nc --argjson r "$RESULTS_JSON" --argjson i "$item" '$r + [$i]')
 
@@ -536,7 +544,9 @@ if [[ "$APPLY" -eq 1 ]]; then
     [[ "$status" == "trusted" ]] && continue
     while IFS= read -r file; do
       [[ -z "$file" ]] && continue
-      sed -i -r -e "s|${old}|${suggested}|g" "$file"
+      # BSD sed (macOS) requires a backup suffix on -i; drop it on success.
+      sed -i.bak -E -e "s|${old}|${suggested}|g" "$file"
+      rm -f "${file}.bak"
     done < <(jq -r '.files[]' <<<"$row")
     log_err "applied ${old} -> ${suggested}"
   done < <(jq -c '.[]' <<<"$RESULTS_JSON")
