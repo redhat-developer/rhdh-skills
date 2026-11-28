@@ -157,12 +157,22 @@ has_open_gh_pr() {
 }
 
 has_open_gl_mr() {
+  # 0 = open MR found, 1 = none found (or no token: unchecked), 2 = the GitLab
+  # API itself failed. 2 must not be treated as "no MR": a 403 from a
+  # scope-less token once made every repo look MR-less, so the bump proceeded
+  # and its push fought a live MR's branch (RHIDP-18799).
   local slug="$1"
   local tok="${PRIVATE_TOKEN:-}"
   local host="${CI_SERVER_HOST:-gitlab.cee.redhat.com}"
   [[ -n "${tok}" ]] || return 1
-  local enc
+  local enc http
   enc=$(printf '%s' "${slug}" | jq -sRr @uri)
+  http=$(curl -sS -o /dev/null -w '%{http_code}' --header "PRIVATE-TOKEN: ${tok}" \
+    "https://${host}/api/v4/projects/${enc}/merge_requests?state=opened&target_branch=${BRANCH}") || return 1
+  if [[ "${http}" != "200" ]]; then
+    echo "[ERROR] GitLab API answered ${http} for ${slug}; cannot check for open ${TOPIC}* MR" >&2
+    return 2
+  fi
   curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
     "https://${host}/api/v4/projects/${enc}/merge_requests?state=opened&target_branch=${BRANCH}" \
     | jq -e --arg p "${TOPIC}" '[.[] | select(.source_branch | startswith($p))] | length > 0' >/dev/null
@@ -254,9 +264,13 @@ commit_and_pr() {
   if [[ -n "${ISSUE}" ]]; then
     opener_args+=(--issue "${ISSUE}")
   fi
-  GITLAB_PIPELINE="${GITLAB_PIPELINE:-true}" \
-    "${CREATE_PR_MR}" "${opener_args[@]}" \
-    || echo "[WARN] create-pr-mr failed for ${slug}" >&2
+  if ! GITLAB_PIPELINE="${GITLAB_PIPELINE:-true}" \
+    "${CREATE_PR_MR}" "${opener_args[@]}"; then
+    # A failed opener must fail the run: swallowing it here once left a
+    # rejected push reported as "yarn-bump done (rc=0)" (RHIDP-18799).
+    echo "[ERROR] create-pr-mr failed for ${slug}" >&2
+    RC=1
+  fi
   rm -f "${body_file}"
   popd >/dev/null
 }
@@ -301,8 +315,14 @@ process_gl() {
   if ! clone_repo "${url}" "${dest}"; then
     echo "[ERROR] clone failed ${slug}"; RC=1; return
   fi
-  if has_open_gl_mr "${slug}"; then
+  local gl_rc=0
+  has_open_gl_mr "${slug}" || gl_rc=$?
+  if [[ "${gl_rc}" -eq 0 ]]; then
     echo "[INFO] skip ${slug}: open ${TOPIC}* MR"; return
+  elif [[ "${gl_rc}" -eq 2 ]]; then
+    echo "[ERROR] ${slug}: cannot check for open MRs; skipping repo so we do not push a duplicate branch" >&2
+    RC=1
+    return
   fi
   local args=()
   bump_args "${dest}" args
