@@ -171,13 +171,15 @@ git checkout -B "${HEAD}" >/dev/null
 
 # Rebase to the tip of the remote topic branch (when it exists) and the target
 # branch before pushing, so the PR/MR never opens behind the base.
-rebased=0
-# Explicit refspec: single-branch clones (yarn-bump uses them) have a fetch
-# refspec that covers only one branch, so a bare "git fetch origin HEAD"
-# updates FETCH_HEAD without creating the tracking ref the rebase below
-# relies on (RHIDP-18915).
+# Expected remote tip for the explicit --force-with-lease below. A bare
+# --force-with-lease resolves the tracking ref through the configured fetch
+# refspec; single-branch clones (yarn-bump uses them) cover only the base
+# branch there, so the lookup fails and every lease push is rejected with
+# "(stale info)" even though we just fetched the topic branch explicitly.
+# Passing the expected tip by value sidesteps the refspec lookup (RHIDP-18799).
+lease_expected=""
 if git fetch -q origin "+refs/heads/${HEAD}:refs/remotes/origin/${HEAD}" 2>/dev/null \
-  && git rev-parse -q --verify "origin/${HEAD}" >/dev/null 2>&1; then
+  && lease_expected=$(git rev-parse -q --verify "origin/${HEAD}"); then
   if ! git rebase "origin/${HEAD}" >/dev/null 2>&1; then
     git rebase --abort 2>/dev/null || true
     # A bot-owned branch whose remote tip conflicts is disposable: both sides
@@ -186,13 +188,10 @@ if git fetch -q origin "+refs/heads/${HEAD}:refs/remotes/origin/${HEAD}" 2>/dev/
     # instead of failing the repo (RHIDP-18915).
     if [[ "${HEAD}" == chore/automated-* ]]; then
       echo "[INFO] rebase onto origin/${HEAD} hit conflicts; replacing the stale bot branch tip" >&2
-      rebased=1
     else
       echo "[ERROR] rebase onto origin/${HEAD} hit conflicts; resolve, then rerun" >&2
       exit 1
     fi
-  else
-    rebased=1
   fi
 fi
 base_tip=""
@@ -218,8 +217,11 @@ fi
 # diagnosable (RHIDP-18915).
 push_err=$(mktemp)
 push_rc=0
-if [[ "${rebased}" -eq 1 ]]; then
-  git push -u origin --force-with-lease "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
+if [[ -n "${lease_expected}" ]]; then
+  # Remote topic branch exists: force-with-lease with the tip we fetched.
+  # A rebase or tip replace rewrote local history, so this needs the lease;
+  # a plain fast-forward push also succeeds under it.
+  git push -u origin --force-with-lease="refs/heads/${HEAD}:${lease_expected}" "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
 else
   git push -u origin "HEAD:${HEAD}" 2>"${push_err}" || push_rc=$?
 fi
