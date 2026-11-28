@@ -15,7 +15,7 @@
 - Branches: `main`, `release-1.10`, `release-2.*`
 - Base images: root `Containerfile`, `.rhdh/docker/Containerfile`
 - RPM lock: root `Containerfile` + `rpms.in.yaml` → `rpms.lock.yaml`. RHEL 9 streams that install `openshift-clients` pin `rhocp-N-for-rhel-9-$basearch-rpms` to `https://mirror.openshift.com/pub/openshift-v4/$basearch/dependencies/rpms/N-el9-beta/`; bump N to the latest released 4.y stream that is still on the mirror before regenerating the lockfile. Do not follow unreleased directories (`4.23-el9-beta`, `5.1-el9-beta`). UBI 10 / RHDH 2.y images do not use that repo. See https://access.redhat.com/product-life-cycles/api/v1/products?name=Red%20Hat%20OpenShift%20Container%20Platform
-- Go toolchain: on `main`, raise `go.mod` `go` and `toolchain` to the `ubi10/go-toolset` (or `ubi9/go-toolset`) image in the root `Containerfile` when that image is newer. On `release-2.*`, raise the `toolchain` line only — **never the `go` directive**, which is frozen at branch cut and selects the branch's GODEBUG defaults (only a security fix that cannot land without it may raise it, in Renovate's PR for that fix). Insert `toolchain` when the line is missing. Do not downgrade a newer pin. Run `go mod tidy` after any edit and commit `go.mod` with `go.sum`. `release-1.*` has no `go.mod`.
+- Go toolchain: on `main`, raise `go.mod` `go` and `toolchain` to the `ubi10/go-toolset` (or `ubi9/go-toolset`) image in the root `Containerfile` when that image is newer, and move `godebug default=` with the `go` directive. On `release-2.*`, raise the `toolchain` line only — **never the `go` directive**, which is frozen at branch cut and selects the branch's GODEBUG defaults (only a security fix that cannot land without it may raise it, in Renovate's PR for that fix), and never touch `godebug`. Insert `toolchain` when the line is missing. Do not downgrade a newer pin. Run `go mod tidy` after any edit and commit `go.mod` with `go.sum`. `release-1.*` has no `go.mod`.
 - Markers: `cmd/gather/` directory on a `release-2.*` or `main` branch; `collection-scripts/` directory on a `release-1.10` branch
 
 ## redhat-developer/rhdh-operator
@@ -23,7 +23,7 @@
 - Clone: `https://github.com/redhat-developer/rhdh-operator.git`
 - Branches: `main`, `release-1.9`, `release-1.10`, …
 - Base images: `.rhdh/docker/Dockerfile`, root `Dockerfile`
-- Go toolchain: on every branch, raise `go.mod` `toolchain` to the `ubi10/go-toolset` (or `ubi9/go-toolset`) image in that `Dockerfile` when newer, even across a Go minor — that is how the branch keeps standard-library security fixes. The `go` directive moves on `main` only. Run `go mod tidy` after any edit and commit `go.mod` with `go.sum`.
+- Go toolchain: on every branch, raise `go.mod` `toolchain` to the `ubi10/go-toolset` (or `ubi9/go-toolset`) image in that `Dockerfile` when newer, even across a Go minor — that is how the branch keeps standard-library security fixes. The `go` directive moves on `main` only, and `godebug default=` moves with it there and is never touched on `release-*`. Run `go mod tidy` after any edit and commit `go.mod` with `go.sum`.
 - RPM lock: root `Dockerfile` or `.rhdh/docker/Dockerfile` + `rpms.in.yaml` → `rpms.lock.yaml`. The `rpm-builder` stage uses `--installroot`; regenerate with `rpm-lockfile-prototype --bare` (not `-f`).
 - Workflow reference: `.github/workflows/update-rpm-lockfile.yaml`
 

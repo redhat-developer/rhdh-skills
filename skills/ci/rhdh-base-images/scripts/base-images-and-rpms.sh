@@ -1406,13 +1406,31 @@ go_mod_containerfile_rel() {
     esac
 }
 
-# $1 language version (1.26.0), $2 full toolchain (1.26.7), $3/$4 are 0 or 1.
-# Inserts a toolchain line when go.mod has none (must-gather). Never called to downgrade.
+# Print the godebug default token for a declared go version: 1.27.0 -> go1.27.
+# Empty when the operand is not a go version, so callers can skip the edit.
+go_mod_godebug_default() {
+    local major minor _
+    IFS=. read -r major minor _ <<< "${1#go}"
+    if [[ -z "${major}" || -z "${minor}" ]]; then
+        return 0
+    fi
+    echo "go${major}.${minor}"
+}
+
+# Print the current `godebug default=` token (for example go1.26), or nothing.
+go_mod_godebug_pin() {
+    sed -n -E 's/^godebug .*default=([^[:space:]]+).*/\1/p' go.mod 2>/dev/null | head -1
+}
+
+# $1 language version (1.26.0), $2 full toolchain (1.26.7), $3/$4/$5 are 0 or 1.
+# Inserts a toolchain line when go.mod has none (must-gather) and a godebug pin
+# when there is none (main). Never called to downgrade.
 write_go_mod_versions() {
     local go_lang="$1"
     local go_full="$2"
     local bump_go="$3"
     local bump_toolchain="$4"
+    local bump_godebug="${5:-0}"
     if [[ ${bump_go} -eq 1 ]]; then
         sed -i -e "s/^go .*/go ${go_lang}/" go.mod
     fi
@@ -1421,6 +1439,19 @@ write_go_mod_versions() {
             sed -i -e "s/^toolchain .*/toolchain go${go_full}/" go.mod
         else
             sed -i -e "/^go /a toolchain go${go_full}" go.mod
+        fi
+    fi
+    if [[ ${bump_godebug} -eq 1 ]]; then
+        local pin
+        pin=$(go_mod_godebug_default "${go_lang}")
+        if [[ -n "${pin}" ]]; then
+            if grep -qE '^godebug .*default=[^[:space:]]+' go.mod; then
+                sed -i -E "s/^(godebug .*)default=[^[:space:]]+/\1default=${pin}/" go.mod
+            elif grep -qE '^toolchain ' go.mod; then
+                sed -i -e "/^toolchain /a godebug default=${pin}" go.mod
+            else
+                sed -i -e "/^go /a godebug default=${pin}" go.mod
+            fi
         fi
     fi
 }
@@ -1532,7 +1563,7 @@ update_operator_go_mod() {
 
     go_lang=$(go_mod_language_version "${go_full}")
     current_toolchain=$(grep -E '^toolchain ' go.mod 2>/dev/null | awk '{print $2}' || true)
-    local current_go current_plain bump_go=0 bump_toolchain=0
+    local current_go current_plain bump_go=0 bump_toolchain=0 bump_godebug=0
     current_go=$(grep -E '^go ' go.mod 2>/dev/null | awk '{print $2}' || true)
     current_plain="${current_toolchain#go}"
 
@@ -1551,7 +1582,20 @@ update_operator_go_mod() {
         bump_toolchain=1
     fi
 
-    if [[ ${bump_go} -eq 0 && ${bump_toolchain} -eq 0 ]]; then
+    # On main the pin must equal the go directive, so it moves with it. This also
+    # repairs a pin left behind by an earlier bump (go 1.27.0 + go1.26 pin).
+    if go_directive_bump_allowed "${branch}"; then
+        local resulting_go="${current_go}" wanted_pin
+        if [[ ${bump_go} -eq 1 ]]; then
+            resulting_go="${go_lang}"
+        fi
+        wanted_pin=$(go_mod_godebug_default "${resulting_go}")
+        if [[ -n "${wanted_pin}" && "$(go_mod_godebug_pin)" != "${wanted_pin}" ]]; then
+            bump_godebug=1
+        fi
+    fi
+
+    if [[ ${bump_go} -eq 0 && ${bump_toolchain} -eq 0 && ${bump_godebug} -eq 0 ]]; then
         if [[ "${current_plain}" == "${go_full}" ]]; then
             log "Go toolchain: already aligned with go${go_full}"
         else
@@ -1561,16 +1605,23 @@ update_operator_go_mod() {
         return 0
     fi
 
-    if [[ ${bump_go} -eq 1 ]]; then
-        log "Go toolchain: updating go.mod to go ${go_lang} / toolchain go${go_full} (forward only)"
-    else
-        log "Go toolchain: updating toolchain to go${go_full} (forward only; go directive stays at ${current_go})"
-    fi
     local expected_go="${current_go}"
     if [[ ${bump_go} -eq 1 ]]; then
         expected_go="${go_lang}"
     fi
-    write_go_mod_versions "${go_lang}" "${go_full}" "${bump_go}" "${bump_toolchain}"
+
+    local changes=""
+    if [[ ${bump_go} -eq 1 ]]; then
+        changes="${changes} go ${go_lang}"
+    fi
+    if [[ ${bump_toolchain} -eq 1 ]]; then
+        changes="${changes} toolchain go${go_full}"
+    fi
+    if [[ ${bump_godebug} -eq 1 ]]; then
+        changes="${changes} godebug default=$(go_mod_godebug_default "${expected_go}")"
+    fi
+    log "Go toolchain: updating go.mod (${changes# }) (forward only)"
+    write_go_mod_versions "${go_lang}" "${go_full}" "${bump_go}" "${bump_toolchain}" "${bump_godebug}"
 
     # go.mod and go.sum must agree after a directive edit, so tidy before the
     # commit and refuse to push a module that could not be tidied.

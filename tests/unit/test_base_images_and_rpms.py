@@ -1098,3 +1098,109 @@ class TestGoDirectiveReleaseBranchScope:
         function = _extract_bash_function(MAIN_SCRIPT, "go_mod_tidy")
         assert "--entrypoint go" in function
         assert "mod tidy" in function
+
+
+class TestGoModGodebugPin:
+    """Main keeps godebug equal to the go directive; release branches never move it."""
+
+    @staticmethod
+    def _write(tmp_path: Path, original: str, *args: str) -> str:
+        functions = "\n\n".join(
+            _extract_bash_function(MAIN_SCRIPT, name)
+            for name in ("go_mod_godebug_default", "write_go_mod_versions")
+        )
+        (tmp_path / "go.mod").write_text(original, encoding="utf-8")
+        call = " ".join(args)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{functions}\ncd "$1" && write_go_mod_versions {call} && cat go.mod',
+                "bash",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    def test_pin_moves_with_the_go_bump(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.26.0\n\ntoolchain go1.26.11\n\ngodebug default=go1.26\n",
+            "1.27.0",
+            "1.27.4",
+            "1",
+            "1",
+            "1",
+        )
+        assert "\ngo 1.27.0\n" in out
+        assert "\ntoolchain go1.27.4\n" in out
+        assert "\ngodebug default=go1.27\n" in out
+
+    def test_stale_pin_is_repaired_without_a_go_bump(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n\ngodebug default=go1.26\n",
+            "1.27.0",
+            "1.27.4",
+            "0",
+            "0",
+            "1",
+        )
+        assert "godebug default=go1.27\n" in out
+        assert "default=go1.26" not in out
+
+    def test_pin_is_inserted_when_absent(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n",
+            "1.27.0",
+            "1.27.4",
+            "0",
+            "0",
+            "1",
+        )
+        assert "godebug default=go1.27" in out
+
+    def test_pin_is_left_alone_when_the_flag_is_off(self, tmp_path: Path) -> None:
+        original = (
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n\ngodebug default=go1.25\n"
+        )
+        out = self._write(tmp_path, original, "1.27.0", "1.27.4", "0", "0", "0")
+        assert out == original
+
+    def test_other_godebug_settings_survive(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n"
+            "\ngodebug default=go1.26 tlsmlkem=0\n",
+            "1.27.0",
+            "1.27.4",
+            "0",
+            "0",
+            "1",
+        )
+        assert "godebug default=go1.27 tlsmlkem=0\n" in out
+
+    @pytest.mark.parametrize(
+        ("go_version", "expected"),
+        (("1.27.4", "go1.27"), ("1.28.0", "go1.28"), ("", "")),
+    )
+    def test_default_derives_from_the_go_version(self, go_version: str, expected: str) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_mod_godebug_default")
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\ngo_mod_godebug_default '{go_version}'"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == expected
+
+    def test_update_passes_the_godebug_flag(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert '"${bump_go}" "${bump_toolchain}" "${bump_godebug}"' in function
+        assert "go_mod_godebug_pin" in function

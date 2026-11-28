@@ -138,9 +138,11 @@ until that path is migrated.
 - The `toolchain` directive follows the go-toolset image on every in-scope
   branch, including across a Go minor on `release-*`: the branch must keep
   building with the current toolset so it keeps receiving standard-library and
-  compiler security fixes. `godebug` is what preserves the branch's runtime
-  semantics, so never touch it off `main`: every release branch inherits the pin
-  at branch cut and keeps it for the branch's lifetime (see rhdh-operator
+  compiler security fixes. `godebug` is what preserves a branch's runtime
+  semantics: on `main` move it to `default=go<major>.<minor>` in the same edit
+  as the `go` directive (the pin must equal it, and a stale pin is repaired),
+  and off `main` never touch it — every release branch inherits the pin at
+  branch cut and keeps it for the branch's lifetime (see rhdh-operator
   `docs/go-version-policy.md`). Report the resulting `go` / `toolchain` / image
   version gap as expected, not as drift to fix.
 - Run `go mod tidy` after every `go.mod` edit, in every repository and on every
@@ -197,7 +199,8 @@ PipelineRun `BASE_IMAGES` matches that file's `FROM` (or that the Containerfile
 did not change). When `helm_version` changed, name the pin old→new for each
 file that moved (or that no in-scope checkout carried a helm pin). When
 `go.mod` changed, name the `toolchain` old→new per branch, state that the `go`
-directive did not move on any `release-*` branch, and confirm `go mod tidy` was
-clean (no further `go.mod` / `go.sum` change when re-run). A runner rebuild is complete when the dated tag exists on
+directive did not move on any `release-*` branch, name `godebug` old→new on
+`main` (or that it was already in step with the directive), and confirm
+`go mod tidy` was clean (no further `go.mod` / `go.sum` change when re-run). A runner rebuild is complete when the dated tag exists on
 quay, both `.gitlab-ci.yml` files pin it, both MRs are merged, and a post-merge
 pipeline ran on the new image.
