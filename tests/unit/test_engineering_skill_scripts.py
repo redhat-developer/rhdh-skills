@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parents[2]
 
 
@@ -33,6 +35,387 @@ def test_fetch_pr_context_parses_supported_references_and_issue_links():
     )
     assert github_issues == [7, 8]
     assert jira_keys == ["RHIDP-123"]
+
+
+def test_list_bot_prs_classify_branch():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+    assert mod.classify_branch("main") == "main"
+    assert mod.classify_branch("master") == "main"
+    assert mod.classify_branch("release-1.10") == "release"
+    assert mod.classify_branch("release-2.1") == "release"
+    assert mod.classify_branch("feature-branch") == "other"
+
+
+def test_list_bot_prs_normalize_dep_name():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+    assert mod.normalize_dep_name("module google.golang.org/grpc") == "google.golang.org/grpc"
+    assert mod.normalize_dep_name("digest github.com/foo/bar") == "github.com/foo/bar"
+    assert mod.normalize_dep_name("google.golang.org/grpc") == "google.golang.org/grpc"
+
+    # extract_dep_name should normalize both Renovate and Dependabot title formats
+    renovate = "chore(deps): update module google.golang.org/grpc to v1.83.1"
+    dependabot = "Bump google.golang.org/grpc from 1.82.1 to 1.83.1"
+    assert mod.extract_dep_name(renovate) == mod.extract_dep_name(dependabot)
+
+
+def test_list_bot_prs_detect_semver_level():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+    assert mod.detect_semver_level("Bump foo from 1.2.3 to 2.0.0") == "major"
+    assert mod.detect_semver_level("Update bar from 1.2.3 to 1.3.0") == "minor"
+    assert mod.detect_semver_level("chore(deps): update baz 1.2.3 to 1.2.4") == "patch"
+    assert mod.detect_semver_level("Update something") == "unknown"
+
+
+def test_list_bot_prs_detect_go_directives():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    diff_go = """\
+--- a/go.mod
++++ b/go.mod
+-go 1.22
++go 1.23
+"""
+    result = mod.detect_go_directives(diff_go)
+    assert result["go_directive_bumped"]
+    assert result["go_directive_value"] == "1.23"
+    assert not result["go_toolchain_bumped"]
+    assert not result["go_godebug_changed"]
+
+    diff_tc = """\
+--- a/go.mod
++++ b/go.mod
+-toolchain go1.22.5
++toolchain go1.23.0
+"""
+    result = mod.detect_go_directives(diff_tc)
+    assert not result["go_directive_bumped"]
+    assert result["go_toolchain_bumped"]
+
+    diff_neither = """\
+--- a/go.mod
++++ b/go.mod
+-require golang.org/x/text v0.14.0
++require golang.org/x/text v0.15.0
+"""
+    result = mod.detect_go_directives(diff_neither)
+    assert not result["go_directive_bumped"]
+    assert not result["go_toolchain_bumped"]
+    assert not result["go_godebug_changed"]
+
+
+def test_list_bot_prs_detect_godebug_changes():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    # A security bump raises the directive and re-pins in the same change.
+    diff_added = """\
+--- a/go.mod
++++ b/go.mod
+-go 1.25.0
++go 1.26.0
++godebug default=go1.26
+"""
+    result = mod.detect_go_directives(diff_added)
+    assert result["go_directive_bumped"]
+    assert result["go_godebug_changed"]
+    assert result["go_godebug_value"] == "default=go1.26"
+
+    diff_changed = """\
+--- a/go.mod
++++ b/go.mod
+-godebug default=go1.25
++godebug default=go1.26
+"""
+    result = mod.detect_go_directives(diff_changed)
+    assert not result["go_directive_bumped"]
+    assert result["go_godebug_changed"]
+
+    # A removed pin unbinds whatever directive the branch declares.
+    diff_removed = """\
+--- a/go.mod
++++ b/go.mod
+-godebug default=go1.25
+"""
+    result = mod.detect_go_directives(diff_removed)
+    assert result["go_godebug_changed"]
+    assert result["go_godebug_value"] is None
+
+    # A rename that keeps the value is not a change.
+    diff_unchanged = """\
+--- a/go.mod
++++ b/go.mod
+-godebug default=go1.26
++godebug default=go1.26
+"""
+    assert not mod.detect_go_directives(diff_unchanged)["go_godebug_changed"]
+
+
+def test_list_bot_prs_parse_gomod_directives():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    pinned = """\
+module github.com/redhat-developer/rhdh-operator
+
+go 1.26.0
+
+toolchain go1.26.11
+
+godebug default=go1.25
+
+require k8s.io/api v0.34.1
+"""
+    assert mod.parse_gomod_directives(pinned) == {
+        "go": "1.26.0",
+        "toolchain": "go1.26.11",
+        "godebug": "default=go1.25",
+    }
+
+    # Branches cut before the pin existed carry no godebug line.
+    unpinned = "go 1.22.7\n\ntoolchain go1.22.9\n"
+    assert mod.parse_gomod_directives(unpinned)["godebug"] is None
+
+
+def test_list_bot_prs_discovers_go_repos(monkeypatch):
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    files = {
+        ("acme/operator", "go.mod"): "module acme\n",
+        ("acme/workspace", "go.work"): "go 1.26.0\n",
+    }
+    monkeypatch.setattr(
+        mod,
+        "fetch_branch_file",
+        lambda repo, path, ref, cache: files.get((repo, path)),
+    )
+
+    assert mod.is_go_repo("acme/operator", "main", {})
+    assert mod.is_go_repo("acme/workspace", "main", {})
+    assert not mod.is_go_repo("acme/chart", "main", {})
+
+    assert mod.is_security_pr(["kind/security"], "chore(deps): update x to v1")
+    assert mod.is_security_pr([], "chore(deps): update x to v1 [security]")
+    assert not mod.is_security_pr(["kind/dependency upgrade"], "chore(deps): update x")
+
+
+def test_list_bot_prs_security_from_alerts(monkeypatch):
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    class Result:
+        def __init__(self, returncode, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    # GitHub-hosted Dependabot leaves the title alone, so the alert is the only
+    # signal that the bump is a security fix.
+    alerts_jsonl = (
+        '{"pkg": "golang.org/x/net", "patched": "0.38.0"}\n'
+        '{"pkg": "Setuptools", "patched": "84.1.0"}\n'
+        '{"pkg": "orphan", "patched": null}\n'
+    )
+    monkeypatch.setattr(mod, "run_gh", lambda args, check=True: Result(0, alerts_jsonl))
+
+    alerts = mod.fetch_open_alerts("o/r", {})
+    assert alerts == {
+        "golang.org/x/net": "0.38.0",
+        "setuptools": "84.1.0",
+        "orphan": None,
+    }
+    assert mod.security_from_alerts(alerts, "golang.org/x/net")
+    assert mod.security_from_alerts(alerts, " Setuptools ")
+    assert mod.security_from_alerts(alerts, "orphan")
+    assert not mod.security_from_alerts(alerts, "github.com/google/uuid")
+    assert not mod.security_from_alerts(None, "golang.org/x/net")
+
+    # A bump that stops short of the patched version is a version update that
+    # happens to touch a flagged package, not a fix for the alert.
+    assert not mod.security_from_alerts(alerts, "setuptools", "83.0.0")
+    assert mod.security_from_alerts(alerts, "setuptools", "84.1.0")
+    assert mod.security_from_alerts(alerts, "setuptools", "84.1")
+    assert mod.security_from_alerts(alerts, "setuptools", "85.0.0")
+    # An unparseable target keeps the alert as the signal.
+    assert mod.security_from_alerts(alerts, "setuptools", None)
+    assert mod.security_from_alerts(alerts, "setuptools", "12ab34")
+
+    # Alerts disabled for the repository is "no signal", not a failed run.
+    monkeypatch.setattr(
+        mod,
+        "run_gh",
+        lambda args, check=True: Result(
+            1, stderr="gh: Dependabot alerts are disabled for this repository. (HTTP 403)"
+        ),
+    )
+    cache = {}
+    assert mod.fetch_open_alerts("o/r", cache) is None
+    assert mod.fetch_open_alerts("o/r", cache) is None
+
+
+def test_list_bot_prs_fetch_branch_file(monkeypatch):
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    class Result:
+        def __init__(self, returncode, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    calls = []
+
+    def fake_run_gh(args, check=True):
+        calls.append(args)
+        if "go.mod" in args[1]:
+            return Result(0, stdout="godebug default=go1.26\n")
+        return Result(1, stderr="gh: Not Found (HTTP 404)")
+
+    monkeypatch.setattr(mod, "run_gh", fake_run_gh)
+
+    cache = {}
+    assert mod.fetch_branch_file("o/r", "go.mod", "main", cache) == "godebug default=go1.26\n"
+    assert mod.fetch_branch_file("o/r", "go.work", "main", cache) is None
+
+    fetched = len(calls)
+    mod.fetch_branch_file("o/r", "go.mod", "main", cache)
+    assert len(calls) == fetched, "a repeated lookup should hit the cache"
+
+    # A transient failure must not read as "the branch has no go.mod", which
+    # would silently switch the directive checks off.
+    monkeypatch.setattr(
+        mod,
+        "run_gh",
+        lambda args, check=True: Result(1, stderr="gh: Server Error (HTTP 502)"),
+    )
+    with pytest.raises(SystemExit):
+        mod.fetch_branch_file("o/r", "go.mod", "release-2.1", {})
+
+
+def test_list_bot_prs_detect_duplicates():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    prs = [
+        {
+            "repo": "redhat-developer/rhdh-operator",
+            "number": 10,
+            "base_branch": "main",
+            "dep_name": "golang.org/x/text",
+            "author": "renovate[bot]",
+            "duplicate_of": None,
+        },
+        {
+            "repo": "redhat-developer/rhdh-operator",
+            "number": 11,
+            "base_branch": "main",
+            "dep_name": "golang.org/x/text",
+            "author": "dependabot[bot]",
+            "duplicate_of": None,
+        },
+    ]
+    mod.find_duplicates(prs)
+    assert prs[0]["duplicate_of"] is None
+    assert prs[1]["duplicate_of"] == 10
+
+
+def test_list_bot_prs_compute_ci_status():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    assert mod.compute_ci_status([]) == "unknown"
+    assert (
+        mod.compute_ci_status(
+            [
+                {"name": "build", "state": "SUCCESS"},
+                {"name": "tide", "state": "PENDING"},
+            ]
+        )
+        == "pass"
+    )
+    assert (
+        mod.compute_ci_status(
+            [
+                {"name": "build", "state": "FAILURE"},
+                {"name": "tide", "state": "PENDING"},
+            ]
+        )
+        == "fail"
+    )
+    assert (
+        mod.compute_ci_status(
+            [
+                {"name": "build", "state": "PENDING"},
+            ]
+        )
+        == "pending"
+    )
+
+
+def test_list_bot_prs_detect_chart_folders():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    files = [
+        {"path": "charts/backstage/Chart.yaml"},
+        {"path": "charts/backstage/Chart.lock"},
+        {"path": "charts/rhdh/Chart.yaml"},
+        {"path": "README.md"},
+    ]
+    assert mod.detect_chart_folders(files) == ["backstage", "rhdh"]
+    assert mod.detect_chart_folders([{"path": "go.mod"}]) == []
+
+
+def test_list_bot_prs_detect_dep_type():
+    mod = load_script(
+        "skills/plugins/rhdh-pr-triage/scripts/list_bot_prs.py",
+        "list_bot_prs",
+    )
+
+    assert mod.detect_dep_type("Update go.mod deps", [{"path": "go.mod"}]) == "go-module"
+    assert (
+        mod.detect_dep_type(
+            "Bump actions/checkout from 3 to 4",
+            [{"path": ".github/workflows/ci.yaml"}],
+        )
+        == "gh-actions"
+    )
+    assert (
+        mod.detect_dep_type(
+            "Update chart dep",
+            [{"path": "charts/backstage/Chart.yaml"}],
+        )
+        == "chart-dep"
+    )
+    assert mod.detect_dep_type("Update npm package", [{"path": "package.json"}]) == "other"
 
 
 def test_overlay_analyzers_preserve_workspace_and_priority_classification():
@@ -190,8 +573,8 @@ def test_shared_adf_parser_keeps_the_current_milestone_date():
     dates = milestones.extract_milestone_dates(description)
     assert dates["code_freeze"] == f"{datetime.now().year}-08-31"
     assert dates["feature_freeze"] == "TBD"
-    assert milestones.parse_natural_date("Sep 2, 2025") == "2025-09-02"
-    assert milestones.parse_natural_date("TBD") is None
+    assert milestones._parse_natural_date("Sep 2, 2025") == "2025-09-02"
+    assert milestones._parse_natural_date("TBD") is None
 
 
 def test_plugin_metadata_reads_every_file_at_the_requested_ref(monkeypatch):
