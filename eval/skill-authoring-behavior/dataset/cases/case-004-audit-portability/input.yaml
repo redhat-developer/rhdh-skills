@@ -1,0 +1,4 @@
+prompt: |
+  Audit the complete fixture/broken-skill directory for Agent Skills compliance,
+  portability, safety, and evaluation quality. Write a prioritized report to
+  output/audit.md. Do not edit the fixture.

@@ -1,0 +1,11 @@
+prompt: |
+  Create a portable Agent Skill named migration-review under
+  output/migration-review. The prior grilling interview is complete and this is
+  the confirmed shared understanding: it handles "review this database
+  migration" requests; accepts a repository path or supplied SQL diff; performs
+  read-only analysis; reports ordering, rollback, locking, and data-loss risks
+  with file evidence; never applies a migration; works on Windows, macOS, and
+  Linux; and uses no external service. Success means the skill is self-contained,
+  follows the Agent Skills standard, and includes repository-level
+  agent-eval-harness assets or an exact execution blocker. Do not ask additional
+  scope questions.

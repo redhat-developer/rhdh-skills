@@ -44,6 +44,11 @@ kind of data, even if they don't explicitly ask for a "dashboard."
 
 ## Optimization Process
 
+These queries evaluate routing only. Put them in the prompt-mode routing dataset
+described by `evaluation-guide.md`; explicitly invoking the skill cannot prove
+that an agent would have selected it. Task behavior belongs in a separate
+skill-mode evaluation.
+
 ### Step 1: Design eval queries
 
 Write two sets:

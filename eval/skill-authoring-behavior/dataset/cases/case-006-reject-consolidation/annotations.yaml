@@ -1,0 +1,8 @@
+workflow: consolidate
+expected_decision: keep-separate
+rubric: |
+  The result rejects consolidation because creation is a mutating workflow while
+  status is a read-only query with a distinct trigger and risk profile. It applies
+  split-by-verb and misroute-cost reasoning rather than grouping by the deployment
+  noun. It proposes targeted description near-miss cases and preserves both
+  skills without editing the fixtures.
