@@ -161,21 +161,33 @@ has_open_gl_mr() {
   # API itself failed. 2 must not be treated as "no MR": a 403 from a
   # scope-less token once made every repo look MR-less, so the bump proceeded
   # and its push fought a live MR's branch (RHIDP-18799).
+  # One request carries both the body and the HTTP status: a second probe
+  # round trip would double the latency for no information. git cannot answer
+  # this (a branch outlives its MR — that is the stale-tip case the explicit
+  # lease handles), and an SSH ls-remote handshake costs more than the API
+  # call (~5s vs ~0.6s measured); glab wraps this same endpoint and is not in
+  # the preflight (node npm jq git curl), so curl it is.
   local slug="$1"
   local tok="${PRIVATE_TOKEN:-}"
   local host="${CI_SERVER_HOST:-gitlab.cee.redhat.com}"
   [[ -n "${tok}" ]] || return 1
-  local enc http
+  local enc http body found
   enc=$(printf '%s' "${slug}" | jq -sRr @uri)
-  http=$(curl -sS -o /dev/null -w '%{http_code}' --header "PRIVATE-TOKEN: ${tok}" \
-    "https://${host}/api/v4/projects/${enc}/merge_requests?state=opened&target_branch=${BRANCH}") || return 1
+  body=$(mktemp)
+  http=$(curl -sS -o "${body}" -w '%{http_code}' --header "PRIVATE-TOKEN: ${tok}" \
+    "https://${host}/api/v4/projects/${enc}/merge_requests?state=opened&target_branch=${BRANCH}") || http="000"
   if [[ "${http}" != "200" ]]; then
     echo "[ERROR] GitLab API answered ${http} for ${slug}; cannot check for open ${TOPIC}* MR" >&2
+    rm -f "${body}"
     return 2
   fi
-  curl -fsS --header "PRIVATE-TOKEN: ${tok}" \
-    "https://${host}/api/v4/projects/${enc}/merge_requests?state=opened&target_branch=${BRANCH}" \
-    | jq -e --arg p "${TOPIC}" '[.[] | select(.source_branch | startswith($p))] | length > 0' >/dev/null
+  found=0
+  jq -e --arg p "${TOPIC}" '[.[] | select(.source_branch | startswith($p))] | length > 0' "${body}" >/dev/null || found=$?
+  rm -f "${body}"
+  # jq -e: 0 = MR found, 1 = none; anything else is a parse failure, treat as
+  # unknown (2) rather than "no MR".
+  [[ "${found}" -le 1 ]] || found=2
+  return "${found}"
 }
 
 # Yarn rewrites .yarnrc.yml with double quotes; repos that run prettier:check
