@@ -110,8 +110,9 @@ Automated base-image maintenance for branch \`${branch}\`.
 This PR was opened by the **rhdh-base-images** skill
 (\`base-images-and-rpms.sh\`), a **governed, AI-assisted automation pipeline**
 that keeps UBI \`FROM\` bumps in lockstep with \`rpms.lock.yaml\`, Node headers
-(\`.nvmrc\` / \`node-v*-headers.tar.gz\`), operator \`go.mod\` (main),
-must-gather \`go.mod\` (main and \`release-2.*\`),
+(\`.nvmrc\` / \`node-v*-headers.tar.gz\`), operator \`go.mod\` \`toolchain\` (main),
+must-gather \`go.mod\` \`toolchain\` (main and \`release-2.*\`; the \`go\` directive
+stays frozen on release branches),
 plugin-catalog builder pins, and overlays \`versions.json\` \`node\` when those
 checkouts are in scope.
 
@@ -1371,16 +1372,27 @@ operator_go_toolset_image() {
         | head -1 | awk '{print $2}'
 }
 
-# Operator aligns go.mod on main only. Must-gather is Go from release-2.* onward
-# (and main); release-1.* still builds with the Rust websocat stage.
+# Scope is per repo, not per directive: the operator carries a go-toolset image
+# on every branch (main and release-*), must-gather from release-2.* onward
+# (release-1.* still builds with the Rust websocat stage and has no Go module).
+# Which directive may move is decided by go_directive_bump_allowed.
 go_mod_update_applies() {
     local kind="$1"
     local branch="$2"
     case "${kind}" in
-        rhdh-operator) [[ "${branch}" == "main" ]] ;;
+        rhdh-operator) [[ "${branch}" == "main" || "${branch}" == release-* ]] ;;
         rhdh-must-gather) [[ "${branch}" == "main" || "${branch}" == release-2.* ]] ;;
         *) return 1 ;;
     esac
+}
+
+# The go directive is raised on main only. On a release branch it is that
+# branch's declared compatibility surface, it is a hard floor for every
+# consumer building the branch, and it selects the GODEBUG defaults compiled
+# into the binary. Only a security fix that cannot land without it may raise it
+# there, as Renovate's own PR — never as part of base-image maintenance.
+go_directive_bump_allowed() {
+    [[ "${1:-}" == "main" ]]
 }
 
 go_mod_containerfile_rel() {
@@ -1394,13 +1406,31 @@ go_mod_containerfile_rel() {
     esac
 }
 
-# $1 language version (1.26.0), $2 full toolchain (1.26.7), $3/$4 are 0 or 1.
-# Inserts a toolchain line when go.mod has none (must-gather). Never called to downgrade.
+# Print the godebug default token for a declared go version: 1.27.0 -> go1.27.
+# Empty when the operand is not a go version, so callers can skip the edit.
+go_mod_godebug_default() {
+    local major minor _
+    IFS=. read -r major minor _ <<< "${1#go}"
+    if [[ -z "${major}" || -z "${minor}" ]]; then
+        return 0
+    fi
+    echo "go${major}.${minor}"
+}
+
+# Print the current `godebug default=` token (for example go1.26), or nothing.
+go_mod_godebug_pin() {
+    sed -n -E 's/^godebug .*default=([^[:space:]]+).*/\1/p' go.mod 2>/dev/null | head -1
+}
+
+# $1 language version (1.26.0), $2 full toolchain (1.26.7), $3/$4/$5 are 0 or 1.
+# Inserts a toolchain line when go.mod has none (must-gather) and a godebug pin
+# when there is none (main). Never called to downgrade.
 write_go_mod_versions() {
     local go_lang="$1"
     local go_full="$2"
     local bump_go="$3"
     local bump_toolchain="$4"
+    local bump_godebug="${5:-0}"
     if [[ ${bump_go} -eq 1 ]]; then
         sed -i -e "s/^go .*/go ${go_lang}/" go.mod
     fi
@@ -1409,6 +1439,19 @@ write_go_mod_versions() {
             sed -i -e "s/^toolchain .*/toolchain go${go_full}/" go.mod
         else
             sed -i -e "/^go /a toolchain go${go_full}" go.mod
+        fi
+    fi
+    if [[ ${bump_godebug} -eq 1 ]]; then
+        local pin
+        pin=$(go_mod_godebug_default "${go_lang}")
+        if [[ -n "${pin}" ]]; then
+            if grep -qE '^godebug .*default=[^[:space:]]+' go.mod; then
+                sed -i -E "s/^(godebug .*)default=[^[:space:]]+/\1default=${pin}/" go.mod
+            elif grep -qE '^toolchain ' go.mod; then
+                sed -i -e "/^toolchain /a godebug default=${pin}" go.mod
+            else
+                sed -i -e "/^go /a godebug default=${pin}" go.mod
+            fi
         fi
     fi
 }
@@ -1452,6 +1495,31 @@ go_version_gte() {
     [[ "$(printf '%s\n%s\n' "${left}" "${right}" | sort -V | tail -n1)" == "${left}" ]]
 }
 
+# Run `go mod tidy` with the toolset image's Go, so go.mod and go.sum agree
+# after a directive edit. Uses the invoking uid with caches under /tmp, so the
+# checkout keeps its ownership. Returns non-zero when no container runtime is
+# available; the caller then restores go.mod / go.sum instead of committing an
+# untidied module.
+go_mod_tidy() {
+    local image="$1"
+    local repo_dir="$2"
+    local runner=podman
+    command -v podman >/dev/null 2>&1 || runner=docker
+    command -v "${runner}" >/dev/null 2>&1 || return 1
+    local -a user_args
+    if [[ "${runner}" == "podman" ]]; then
+        # Rootless podman rejects --user for an id it cannot map (setgroups);
+        # keep-id keeps the checkout owned by the invoking user instead.
+        user_args=(--userns=keep-id)
+    else
+        user_args=(--user "$(id -u):$(id -g)")
+    fi
+    "${runner}" run --rm --network=host "${user_args[@]}" \
+        -e HOME=/tmp -e GOCACHE=/tmp/go-cache -e GOPATH=/tmp/go \
+        -v "${repo_dir}:/src:Z" -w /src \
+        --entrypoint go "${image}" mod tidy
+}
+
 update_operator_go_mod() {
     local repo_dir="$1"
     local branch="$2"
@@ -1459,11 +1527,7 @@ update_operator_go_mod() {
     local dockerfile
 
     if ! go_mod_update_applies "${kind}" "${branch}"; then
-        if [[ "${kind}" == "rhdh-must-gather" ]]; then
-            log "Go toolchain: skipping go.mod update on ${branch} (must-gather golang is release-2.* and main)"
-        else
-            log "Go toolchain: skipping go.mod update on ${branch} (main only)"
-        fi
+        log "Go toolchain: skipping go.mod update on ${branch} (no Go module on this branch)"
         return 0
     fi
 
@@ -1478,7 +1542,7 @@ update_operator_go_mod() {
 
     log "Go toolchain: checking version from ${image##*/}"
     if [[ ${DRY_RUN} -eq 1 ]]; then
-        echo "  dry-run: align go.mod with go version from ${image}"
+        echo "  dry-run: align go.mod toolchain (and the go directive on main) with go version from ${image}"
         return 0
     fi
 
@@ -1499,20 +1563,39 @@ update_operator_go_mod() {
 
     go_lang=$(go_mod_language_version "${go_full}")
     current_toolchain=$(grep -E '^toolchain ' go.mod 2>/dev/null | awk '{print $2}' || true)
-    local current_go current_plain bump_go=0 bump_toolchain=0
+    local current_go current_plain bump_go=0 bump_toolchain=0 bump_godebug=0
     current_go=$(grep -E '^go ' go.mod 2>/dev/null | awk '{print $2}' || true)
     current_plain="${current_toolchain#go}"
 
     # Never lower go.mod to match an older toolset image. A newer toolchain
     # (for example from Renovate) is valid in Konflux local-toolchain mode.
-    if [[ -z "${current_go}" ]] || ! go_version_gte "${current_go}" "${go_lang}"; then
-        bump_go=1
+    # The go directive moves on main only; on a release branch the gap to the
+    # image is expected and only the toolchain directive follows the image.
+    if go_directive_bump_allowed "${branch}"; then
+        if [[ -z "${current_go}" ]] || ! go_version_gte "${current_go}" "${go_lang}"; then
+            bump_go=1
+        fi
+    elif [[ -n "${current_go}" ]] && ! go_version_gte "${current_go}" "${go_lang}"; then
+        log "Go toolchain: keeping go ${current_go} on ${branch} (go directive is main-only; toolchain only)"
     fi
     if [[ -z "${current_plain}" ]] || ! go_version_gte "${current_plain}" "${go_full}"; then
         bump_toolchain=1
     fi
 
-    if [[ ${bump_go} -eq 0 && ${bump_toolchain} -eq 0 ]]; then
+    # On main the pin must equal the go directive, so it moves with it. This also
+    # repairs a pin left behind by an earlier bump (go 1.27.0 + go1.26 pin).
+    if go_directive_bump_allowed "${branch}"; then
+        local resulting_go="${current_go}" wanted_pin
+        if [[ ${bump_go} -eq 1 ]]; then
+            resulting_go="${go_lang}"
+        fi
+        wanted_pin=$(go_mod_godebug_default "${resulting_go}")
+        if [[ -n "${wanted_pin}" && "$(go_mod_godebug_pin)" != "${wanted_pin}" ]]; then
+            bump_godebug=1
+        fi
+    fi
+
+    if [[ ${bump_go} -eq 0 && ${bump_toolchain} -eq 0 && ${bump_godebug} -eq 0 ]]; then
         if [[ "${current_plain}" == "${go_full}" ]]; then
             log "Go toolchain: already aligned with go${go_full}"
         else
@@ -1522,10 +1605,48 @@ update_operator_go_mod() {
         return 0
     fi
 
-    log "Go toolchain: updating go.mod to go ${go_lang} / toolchain go${go_full} (forward only)"
-    write_go_mod_versions "${go_lang}" "${go_full}" "${bump_go}" "${bump_toolchain}"
+    local expected_go="${current_go}"
+    if [[ ${bump_go} -eq 1 ]]; then
+        expected_go="${go_lang}"
+    fi
 
-    commit_push_paths "${branch}" "chore: align go.mod with ${image%%:*} go${go_full} [skip-build]" go.mod
+    local changes=""
+    if [[ ${bump_go} -eq 1 ]]; then
+        changes="${changes} go ${go_lang}"
+    fi
+    if [[ ${bump_toolchain} -eq 1 ]]; then
+        changes="${changes} toolchain go${go_full}"
+    fi
+    if [[ ${bump_godebug} -eq 1 ]]; then
+        changes="${changes} godebug default=$(go_mod_godebug_default "${expected_go}")"
+    fi
+    log "Go toolchain: updating go.mod (${changes# }) (forward only)"
+    write_go_mod_versions "${go_lang}" "${go_full}" "${bump_go}" "${bump_toolchain}" "${bump_godebug}"
+
+    # go.mod and go.sum must agree after a directive edit, so tidy before the
+    # commit and refuse to push a module that could not be tidied.
+    if ! go_mod_tidy "${image}" "${repo_dir}"; then
+        log "Go toolchain: go mod tidy failed; restoring go.mod / go.sum"
+        git checkout -- go.mod go.sum 2>/dev/null || true
+        status_fail "${kind}" "${branch}" go "Go toolchain: go mod tidy failed after editing go.mod"
+        popd >/dev/null
+        return 0
+    fi
+
+    # tidy also rewrites the go directive when a module in the graph declares a
+    # higher language version. That is a deliberate decision, never a side
+    # effect: restore and report instead of silently moving the floor.
+    local post_go
+    post_go=$(grep -E '^go ' go.mod 2>/dev/null | awk '{print $2}' || true)
+    if [[ -n "${expected_go}" && "${post_go}" != "${expected_go}" ]]; then
+        log "Go toolchain: go mod tidy moved the go directive to ${post_go}; restoring go.mod / go.sum"
+        git checkout -- go.mod go.sum 2>/dev/null || true
+        status_fail "${kind}" "${branch}" go "Go toolchain: go mod tidy changed the go directive from ${expected_go} to ${post_go}"
+        popd >/dev/null
+        return 0
+    fi
+
+    commit_push_paths "${branch}" "chore: align go.mod with ${image%%:*} go${go_full} [skip-build]" go.mod go.sum
     popd >/dev/null
 }
 

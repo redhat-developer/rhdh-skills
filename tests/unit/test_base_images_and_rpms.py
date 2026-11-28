@@ -982,7 +982,7 @@ class TestGoVersionGte:
 
 
 class TestGoModUpdateApplies:
-    """Operator go.mod is main-only. Must-gather Go starts at release-2.* and main."""
+    """Operator is in scope on every branch. Must-gather Go starts at release-2.* and main."""
 
     @staticmethod
     def _applies(kind: str, branch: str) -> int:
@@ -999,10 +999,10 @@ class TestGoModUpdateApplies:
         )
         return result.returncode
 
-    def test_operator_main_only(self) -> None:
+    def test_operator_all_branches(self) -> None:
         assert self._applies("rhdh-operator", "main") == 0
-        assert self._applies("rhdh-operator", "release-2.1") == 1
-        assert self._applies("rhdh-operator", "release-1.10") == 1
+        assert self._applies("rhdh-operator", "release-2.1") == 0
+        assert self._applies("rhdh-operator", "release-1.10") == 0
 
     def test_must_gather_golang_branches(self) -> None:
         assert self._applies("rhdh-must-gather", "main") == 0
@@ -1049,3 +1049,158 @@ class TestGoModUpdateApplies:
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout == original
+
+
+class TestGoDirectiveReleaseBranchScope:
+    """The go directive moves on main only; release branches take toolchain only."""
+
+    @staticmethod
+    def _allowed(branch: str) -> int:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_directive_bump_allowed")
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\ngo_directive_bump_allowed {branch}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode
+
+    def test_main_allowed(self) -> None:
+        assert self._allowed("main") == 0
+
+    def test_release_branches_not_allowed(self) -> None:
+        assert self._allowed("release-2.1") == 1
+        assert self._allowed("release-1.10") == 1
+
+    def test_missing_branch_not_allowed(self) -> None:
+        assert self._allowed("") == 1
+
+    def test_update_gates_the_go_bump_on_the_branch(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert 'go_directive_bump_allowed "${branch}"' in function
+
+    def test_update_tidies_and_commits_go_sum(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert 'go_mod_tidy "${image}" "${repo_dir}"' in function
+        assert "git checkout -- go.mod go.sum" in function
+        assert (
+            'chore: align go.mod with ${image%%:*} go${go_full} [skip-build]" go.mod go.sum'
+            in function
+        )
+
+    def test_update_rejects_a_tidy_that_moves_the_go_directive(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert 'local expected_go="${current_go}"' in function
+        assert 'expected_go="${go_lang}"' in function
+        assert function.index("expected_go") < function.index('go_mod_tidy "${image}"')
+
+    def test_tidy_runs_in_the_toolset_image(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_mod_tidy")
+        assert "--entrypoint go" in function
+        assert "mod tidy" in function
+
+
+class TestGoModGodebugPin:
+    """Main keeps godebug equal to the go directive; release branches never move it."""
+
+    @staticmethod
+    def _write(tmp_path: Path, original: str, *args: str) -> str:
+        functions = "\n\n".join(
+            _extract_bash_function(MAIN_SCRIPT, name)
+            for name in ("go_mod_godebug_default", "write_go_mod_versions")
+        )
+        (tmp_path / "go.mod").write_text(original, encoding="utf-8")
+        call = " ".join(args)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{functions}\ncd "$1" && write_go_mod_versions {call} && cat go.mod',
+                "bash",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    def test_pin_moves_with_the_go_bump(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.26.0\n\ntoolchain go1.26.11\n\ngodebug default=go1.26\n",
+            "1.27.0",
+            "1.27.4",
+            "1",
+            "1",
+            "1",
+        )
+        assert "\ngo 1.27.0\n" in out
+        assert "\ntoolchain go1.27.4\n" in out
+        assert "\ngodebug default=go1.27\n" in out
+
+    def test_stale_pin_is_repaired_without_a_go_bump(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n\ngodebug default=go1.26\n",
+            "1.27.0",
+            "1.27.4",
+            "0",
+            "0",
+            "1",
+        )
+        assert "godebug default=go1.27\n" in out
+        assert "default=go1.26" not in out
+
+    def test_pin_is_inserted_when_absent(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n",
+            "1.27.0",
+            "1.27.4",
+            "0",
+            "0",
+            "1",
+        )
+        assert "godebug default=go1.27" in out
+
+    def test_pin_is_left_alone_when_the_flag_is_off(self, tmp_path: Path) -> None:
+        original = (
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n\ngodebug default=go1.25\n"
+        )
+        out = self._write(tmp_path, original, "1.27.0", "1.27.4", "0", "0", "0")
+        assert out == original
+
+    def test_other_godebug_settings_survive(self, tmp_path: Path) -> None:
+        out = self._write(
+            tmp_path,
+            "module example.com/m\n\ngo 1.27.0\n\ntoolchain go1.27.4\n"
+            "\ngodebug default=go1.26 tlsmlkem=0\n",
+            "1.27.0",
+            "1.27.4",
+            "0",
+            "0",
+            "1",
+        )
+        assert "godebug default=go1.27 tlsmlkem=0\n" in out
+
+    @pytest.mark.parametrize(
+        ("go_version", "expected"),
+        (("1.27.4", "go1.27"), ("1.28.0", "go1.28"), ("", "")),
+    )
+    def test_default_derives_from_the_go_version(self, go_version: str, expected: str) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "go_mod_godebug_default")
+        result = subprocess.run(
+            ["bash", "-c", f"{function}\ngo_mod_godebug_default '{go_version}'"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == expected
+
+    def test_update_passes_the_godebug_flag(self) -> None:
+        function = _extract_bash_function(MAIN_SCRIPT, "update_operator_go_mod")
+        assert '"${bump_go}" "${bump_toolchain}" "${bump_godebug}"' in function
+        assert "go_mod_godebug_pin" in function

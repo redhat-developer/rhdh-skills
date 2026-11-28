@@ -118,12 +118,42 @@ until that path is migrated.
   Catalog maps `release-1.Y` → GitLab `rhdh-1.Y-rhel-9` and
   `release-2.Y` → GitLab `release-2.Y` (using UBI10 / RHEL10). Catalog has no
   `rpms.lock.yaml`. Do not `[skip-build]` the catalog builder commit.
-- On rhdh-operator `main`, raise `go.mod` to the Go toolset image when the
-  image is newer. On rhdh-must-gather `main` and `release-2.*`, do the same
-  from the root `Containerfile` `ubi9/go-toolset` or `ubi10/go-toolset` image,
-  inserting a `toolchain` line when `go.mod` has none. Skip must-gather
-  `release-1.*` (no Go module). Never lower `go` or `toolchain` to match an
-  older image; a newer pin (for example from Renovate) is valid.
+- The Go versioning step covers every rhdh-operator branch (`main` and
+  `release-*`) and rhdh-must-gather `main` and `release-2.*`: read the Go
+  version from the `ubi9/go-toolset` or `ubi10/go-toolset` image in the operator
+  `Dockerfile` / must-gather root `Containerfile`, and insert a `toolchain` line
+  when `go.mod` has none. Skip must-gather `release-1.*` (no Go module). Which
+  directive may move depends on the branch — see the bullets below.
+  Never lower `go` or `toolchain` to match an older image; a newer pin (for
+  example from Renovate) is valid.
+- Raise the `go` directive on `main` only. **Never bump the `go` directive on a
+  `release-*` branch**, not even to match a newer builder image and not as
+  hygiene: the directive is the branch's declared compatibility surface, it is
+  a hard floor for every consumer building that branch, and it selects the
+  GODEBUG defaults compiled into the binary. The only exception is a **security
+  fix** that cannot land without it — Renovate's security PR, evaluated against
+  `constraints.go`, is the route for that, and the bump belongs in that fix's
+  own PR. A routine dependency update that would need a higher `go` directive is
+  skipped on a release branch, never landed here.
+- The `toolchain` directive follows the go-toolset image on every in-scope
+  branch, including across a Go minor on `release-*`: the branch must keep
+  building with the current toolset so it keeps receiving standard-library and
+  compiler security fixes. `godebug` is what preserves a branch's runtime
+  semantics: on `main` move it to `default=go<major>.<minor>` in the same edit
+  as the `go` directive (the pin must equal it, and a stale pin is repaired),
+  and off `main` never touch it — every release branch inherits the pin at
+  branch cut and keeps it for the branch's lifetime (see rhdh-operator
+  `docs/go-version-policy.md`). Report the resulting `go` / `toolchain` / image
+  version gap as expected, not as drift to fix.
+- Run `go mod tidy` after every `go.mod` edit, in every repository and on every
+  branch, with the Go from the go-toolset image that builds the branch (the
+  script runs it inside that image), and commit
+  `go.mod` and `go.sum` together. Review the tidy diff: keep only the intended
+  change and restore unrelated module churn, especially on a release branch.
+  Never commit `go.mod` and `go.sum` that disagree. `go mod tidy` can itself
+  raise the `go` directive when a dependency declares a higher language version:
+  treat that as a stop, restore the file, and report it — the floor never moves
+  as a side effect.
 - Exclude RHDH `e2e-tests/` and `.ci/` from image scans.
 - After a catalog builder bump merges and Konflux publishes `X.Y-N`, rebuild
   `quay.io/rhdh/gitlab-runner` from it and pin `.gitlab-ci.yml` in **both**
@@ -167,6 +197,10 @@ contains `node-v` matching `.nvmrc`, and name the overlays `versions.json`
 builder Containerfile changed, name the `release` old→new and confirm builder
 PipelineRun `BASE_IMAGES` matches that file's `FROM` (or that the Containerfile
 did not change). When `helm_version` changed, name the pin old→new for each
-file that moved (or that no in-scope checkout carried a helm pin). A runner rebuild is complete when the dated tag exists on
+file that moved (or that no in-scope checkout carried a helm pin). When
+`go.mod` changed, name the `toolchain` old→new per branch, state that the `go`
+directive did not move on any `release-*` branch, name `godebug` old→new on
+`main` (or that it was already in step with the directive), and confirm
+`go mod tidy` was clean (no further `go.mod` / `go.sum` change when re-run). A runner rebuild is complete when the dated tag exists on
 quay, both `.gitlab-ci.yml` files pin it, both MRs are merged, and a post-merge
 pipeline ran on the new image.
