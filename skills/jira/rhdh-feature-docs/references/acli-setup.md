@@ -279,7 +279,7 @@ If you experience timeouts, you can increase the timeout in `jira_acli.py`:
 # Default timeout is 30 seconds
 result = subprocess.run(
     ["acli", "jira", "workitem", "view", issue_key],
-    timeout=60  # Increase to 60 seconds
+    timeout=60,  # Increase to 60 seconds
 )
 ```
 
